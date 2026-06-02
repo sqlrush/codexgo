@@ -1,0 +1,26 @@
+# --- Upstream reference source (NOT redistributed) ---
+# A shallow clone of openai/codex @ rust-v0.136.0 lives here for analysis only.
+# It is OpenAI's Apache-2.0 source and must not be committed to this repo.
+/reference-codex/
+
+# --- Claude Code session / memory artifacts ---
+/.claude/
+
+# --- Go build artifacts ---
+/bin/
+/dist/
+*.test
+*.out
+coverage.*
+profile.*
+
+# --- Go modules ---
+/vendor/
+go.work
+go.work.sum
+
+# --- Editor / OS ---
+.DS_Store
+.idea/
+.vscode/
+*.swp
