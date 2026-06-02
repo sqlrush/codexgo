@@ -191,3 +191,31 @@ This is a multi-engineer, multi-quarter effort. The TUI (Phase 9) and the core
 engine (Phase 7) are each on the order of several engineer-months. The roadmap is
 structured so value is delivered incrementally — a working headless agent at the
 end of Phase 8 — well before the full TUI and peripheral surface are complete.
+
+## 8. Collaboration & autonomy model
+
+Agreed working mode: implement autonomously by referencing the Codex 0.136.0 source;
+pause only for genuine decision points.
+
+**Escalated to the maintainer (work pauses) — only these five triggers:**
+1. A trade-off that conflicts with a stated project goal — e.g. a dependency forcing
+   cgo (vs the cgo-free aim) or a choice that breaks drop-in format/protocol parity.
+2. A **material** drop-in deviation that cannot be avoided (user-visible behavior or
+   ecosystem interop) — accept vs invest more.
+3. Scope/priority changes — deferring or dropping a spec/feature (e.g. cross-platform
+   voice).
+4. Anything requiring the maintainer's accounts/credentials/infra — recording real
+   model golden fixtures, enterprise-only features, CI secrets, signing keys.
+5. Outward-facing / irreversible / cost-incurring actions — publishing releases,
+   npm/brew, large-scale paid API usage, secret rotation, force-push/deletes.
+
+**Decided autonomously (reference source + project principles + the §6 dep table):**
+- All deterministic translation; internal structure, naming, and test design.
+- Library choices that satisfy the stated goals (the §6 defaults).
+- Non-material / unavoidable deviations — logged in `DEVIATIONS.md` and reported in
+  the phase-end summary, not blocking.
+- Build/test fixes, refactors, and local commits/pushes to this repo.
+
+**Cadence:** fully autonomous within a spec; a short, non-blocking
+"done / tested / deviations / next" summary at each phase boundary. The maintainer is
+pinged only when one of the five triggers above is hit.
