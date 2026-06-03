@@ -2,7 +2,7 @@
 // (codex-rs/sandboxing) to Go as part of a faithful, drop-in-compatible
 // reimplementation of Codex 0.136.0.
 //
-// The package focuses on the policy model and the macOS Seatbelt backend:
+// The package focuses on the policy model and three platform backends:
 //
 //   - The SandboxPolicy / PermissionProfile model and the
 //     AskForApproval x SandboxPolicy matrix: [SandboxablePreference],
@@ -16,10 +16,28 @@
 //   - The common command-spawn path (environment, working directory, optional
 //     PTY, and context-based cancellation), implemented on top of internal/pty.
 //
-// The Linux (Landlock/seccomp/bubblewrap) and Windows (restricted-token)
-// backends are separate specs; this package defines the [Backend] interface and
-// provides explicit "not yet implemented" stubs so callers compile on every
-// platform.
+// # Native Linux and Windows backends
+//
+// The Linux and Windows backends are implemented natively (no shelling to
+// bubblewrap or external helpers). Both wrap the command the same way the macOS
+// backend wraps it with /usr/bin/sandbox-exec: by re-executing the current
+// binary with the [NativeSandboxArgv0] sentinel and passing the fully-resolved
+// [NativeSandboxSpec] via the [NativeSandboxSpecEnv] environment variable. A
+// binary's main() detects the sentinel and dispatches to RunLinuxSandboxMain or
+// RunWindowsSandboxMain (the platform-tagged helper entrypoints), which apply the
+// sandbox and exec the real command.
+//
+//   - Linux: user/mount/pid/(net) namespaces (via unshare), a read-only root
+//     with writable binds and read-only re-binds of protected subpaths, a fresh
+//     /proc (skipped gracefully in restrictive containers), a Landlock
+//     filesystem ruleset (raw landlock_* syscalls), and a hand-rolled seccomp
+//     BPF network filter (classic BPF assembled in seccomp_bpf.go). WSL1 is
+//     detected and reported as unsupported.
+//   - Windows: a restricted / low-integrity primary token plus deny-read ACLs on
+//     denied paths, with the command launched under that token via
+//     CreateProcessAsUser. The enforcement tier follows [protocol.WindowsSandboxLevel].
+//
+// All native syscall access uses golang.org/x/sys (cgo-free).
 //
 // # Permission resolution
 //

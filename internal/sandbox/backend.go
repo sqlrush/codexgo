@@ -97,9 +97,9 @@ func NewBackend(sandboxType SandboxType) (Backend, error) {
 	case SandboxTypeMacosSeatbelt:
 		return newSeatbeltBackend()
 	case SandboxTypeLinuxSeccomp:
-		return nil, notImplementedBackendError(sandboxType, "Linux seccomp/Landlock sandbox (spec 13)")
+		return newLandlockBackend()
 	case SandboxTypeWindowsRestrictedToken:
-		return nil, notImplementedBackendError(sandboxType, "Windows restricted-token sandbox (spec 14)")
+		return newWindowsBackend()
 	default:
 		return nil, notImplementedBackendError(sandboxType, "unknown sandbox type")
 	}
