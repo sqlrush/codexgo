@@ -12,7 +12,7 @@
 *.test
 *.out
 coverage.*
-profile.*
+*.pprof
 
 # --- Go modules ---
 /vendor/
