@@ -232,10 +232,13 @@ func isMetadataWriteDenied(p protocol.FileSystemSandboxPolicy, target, cwd strin
 	if !ok {
 		return false
 	}
-	if hasExplicitWriteEntryForMetadataPath(p, protectedPath, resolvedTarget, cwd) {
-		return false
-	}
-	return !canWritePathWithCwd(p, protectedPath, cwd)
+	// Mirrors Rust is_metadata_write_denied, which returns the negation of
+	// has_explicit_write_entry_for_metadata_path. The earlier Go port recursed
+	// back into canWritePathWithCwd(protectedPath) here, but a protected metadata
+	// path is itself a metadata child of the same writable root, so that produced
+	// unbounded recursion (stack overflow) for the default protected-metadata
+	// case. The Rust reference does not recurse.
+	return !hasExplicitWriteEntryForMetadataPath(p, protectedPath, resolvedTarget, cwd)
 }
 
 // metadataChildOfWritableRoot mirrors metadata_child_of_writable_root.
