@@ -24,5 +24,13 @@ Categories: `format` (on-disk), `protocol` (wire), `behavioral`, `cosmetic`.
 | 02 protocol | cosmetic | `op.go` is 1193 lines (> 800 guideline) | `Op` marshal/unmarshal form one cohesive 25-variant unit; splitting hurts cohesion | accepted |
 | 03 execpolicy | behavioral | `network_rule`, `amend.rs`, and the clap CLI omitted (scoped to the prefix-rule matcher) | belong to network-policy (spec 15) and CLI (spec 41); the matcher itself is faithful | accepted |
 | 03 execpolicy | behavioral | Starlark f-strings not enabled (`go.starlark.net` has none) | codex's bundled policies use no f-strings | accepted |
+| 12 sandbox | behavioral | **INCOMPLETE**: only the policy model/matrix/resolution is implemented; seatbelt `.sbpl` generation, the `Backend` interface, and the spawn path are NOT yet done (`.sbpl` assets currently unused) | 503 outage left the agent's work partial; the runnable seatbelt backend + spawn is a follow-up before `codex exec` can sandbox commands on macOS | review (must finish) |
+| 25 code-mode | behavioral | **INCOMPLETE**: only the types + goja value helpers exist; `CodeModeService`/`Session` engine and real `exec`/`wait` methods are NOT implemented | 503 outage left it partial; the JS execution engine is a follow-up (code-mode is feature-flagged off by default) | review (must finish) |
+| 19 threadstore | behavioral | `LocalThreadStore` read/list/search/metadata/archive return `Unsupported`; only the live-writer + in-memory store are faithful | depends on ~200KB of state-DB/rollout-scan helpers not yet ported; resume/list to be completed | review |
+| 08 login | behavioral | AWS SigV4 is an interface stub; agent-task X25519 registration network side-effects out of scope | not on the OpenAI/ChatGPT critical path; add with Bedrock support | accepted |
+| 04 config | behavioral | layer-state/fingerprint/origins, macOS MDM managed prefs, cloud-requirements, git-trust project loading, keymap parsing carried as opaque TOML trees / omitted | large peripheral surface; load/merge/validate + typed schema are faithful | accepted |
+| 32 app-server-protocol | behavioral | ts-rs/schemars schema-export generator deferred; a few cross-area fields carried as `json.RawMessage` | the runtime types/methods are faithful; the codegen tool is non-runtime | accepted |
 
 > Entries are appended as each spec lands and reports its deviations.
+> **`review (must finish)`** items are genuine gaps to close before claiming the
+> corresponding spec complete — they are not permanent accepted deviations.
