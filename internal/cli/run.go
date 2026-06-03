@@ -106,22 +106,30 @@ type subcommandHandler func(ctx context.Context, parsed ParsedCommandLine, strea
 // subcommand name to its handler. The handlers live in their own files
 // (cmd_*.go) for cohesion.
 var handlers = map[string]subcommandHandler{
-	"exec":       runExecSubcommand,
-	"login":      runLoginSubcommand,
-	"logout":     runLogoutSubcommand,
-	"mcp":        runMcpSubcommand,
-	"mcp-server": runMcpServerSubcommand,
-	"app-server": runAppServerSubcommand,
-	"apply":      runApplySubcommand,
-	"resume":     runResumeSubcommand,
-	"fork":       runForkSubcommand,
-	"archive":    runArchiveSubcommand,
-	"unarchive":  runUnarchiveSubcommand,
-	"features":   runFeaturesSubcommand,
-	"completion": runCompletionSubcommand,
-	"sandbox":    runSandboxSubcommand,
-	"doctor":     runDoctorSubcommand,
-	"debug":      runDebugSubcommand,
+	"exec":           runExecSubcommand,
+	"review":         runReviewSubcommand,
+	"login":          runLoginSubcommand,
+	"logout":         runLogoutSubcommand,
+	"mcp":            runMcpSubcommand,
+	"plugin":         runPluginSubcommand,
+	"mcp-server":     runMcpServerSubcommand,
+	"app-server":     runAppServerSubcommand,
+	"remote-control": runRemoteControlSubcommand,
+	"app":            runAppSubcommand,
+	"apply":          runApplySubcommand,
+	"resume":         runResumeSubcommand,
+	"fork":           runForkSubcommand,
+	"archive":        runArchiveSubcommand,
+	"unarchive":      runUnarchiveSubcommand,
+	"cloud":          runCloudSubcommand,
+	"exec-server":    runExecServerSubcommand,
+	"features":       runFeaturesSubcommand,
+	"completion":     runCompletionSubcommand,
+	"update":         runUpdateSubcommand,
+	"sandbox":        runSandboxSubcommand,
+	"doctor":         runDoctorSubcommand,
+	"debug":          runDebugSubcommand,
+	"help":           runHelpSubcommand,
 }
 
 // rejectRemoteMode rejects --remote / --remote-auth-token-env for subcommands
@@ -145,7 +153,7 @@ func printTopLevelHelp(w io.Writer) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Commands:")
 	for _, s := range subcommandSummaries {
-		fmt.Fprintf(w, "  %-12s %s\n", s.Name, s.Summary)
+		fmt.Fprintf(w, "  %-15s %s\n", s.Name, s.Summary)
 	}
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Options:")
