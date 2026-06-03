@@ -24,3 +24,6 @@ go.work.sum
 .idea/
 .vscode/
 *.swp
+
+# Captured codex outputs (contain OpenAI content) — local parity fixtures, not redistributed
+/testdata/golden/*.json

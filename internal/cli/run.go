@@ -83,7 +83,7 @@ func Run(ctx context.Context, argv []string, streams Streams) int {
 // subcommands first (matching reject_remote_mode_for_subcommand in main.rs).
 func dispatchSubcommand(ctx context.Context, parsed ParsedCommandLine, streams Streams) int {
 	if parsed.Subcommand == "" {
-		return runDefaultNoSubcommand(parsed, streams)
+		return runDefaultNoSubcommand(ctx, parsed, streams)
 	}
 
 	if err := rejectRemoteMode(parsed.Root, parsed.Subcommand); err != nil {

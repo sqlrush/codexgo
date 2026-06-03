@@ -42,11 +42,13 @@ func TestRunHelp(t *testing.T) {
 }
 
 func TestRunNoSubcommandExitsNonZero(t *testing.T) {
+	// runWith provides a non-terminal stdin/stderr, so the default command takes
+	// the TTY guard path: it must not launch the TUI and must exit non-zero.
 	code, _, errOut := runWith(t, []string{"codex"}, "")
 	if code == 0 {
 		t.Errorf("code = %d, want non-zero", code)
 	}
-	if !strings.Contains(errOut, "interactive TUI not yet implemented") {
+	if !strings.Contains(errOut, "requires a terminal") {
 		t.Errorf("stderr = %q", errOut)
 	}
 }

@@ -14,6 +14,9 @@ type loadedConfig struct {
 	CodexHome      string
 	StoreMode      config.AuthCredentialsStoreMode
 	ChatgptBaseURL *string
+	// Tui is the resolved [tui] config block, or nil when unset. The interactive
+	// TUI launcher uses it to load the configured theme.
+	Tui *config.Tui
 }
 
 // loadConfig loads the merged configuration honoring the root -c overrides,
@@ -39,6 +42,7 @@ func loadConfig(root RootOptions) (loadedConfig, error) {
 		CodexHome:      result.CodexHome,
 		StoreMode:      resolveStoreMode(result.Config.CliAuthCredentialsStore),
 		ChatgptBaseURL: result.Config.ChatgptBaseURL,
+		Tui:            result.Config.Tui,
 	}, nil
 }
 

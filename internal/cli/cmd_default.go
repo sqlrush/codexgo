@@ -1,12 +1,45 @@
 package cli
 
-import "fmt"
+import (
+	"context"
+	"fmt"
 
-// runDefaultNoSubcommand handles `codex` with no subcommand. The interactive TUI
-// is a later roadmap phase (Phase 9); until then this prints a clear notice and
-// exits non-zero so wrappers and scripts can detect that no work ran.
-func runDefaultNoSubcommand(_ ParsedCommandLine, streams Streams) int {
-	fmt.Fprintf(streams.Stderr, "codex %s — parity target: codex 0.136.0\n", Version)
-	fmt.Fprintln(streams.Stderr, "interactive TUI not yet implemented (see ROADMAP Phase 9); use `codex exec` to run non-interactively")
-	return 1
+	"github.com/sqlrush/codexgo/internal/appserver"
+	"github.com/sqlrush/codexgo/internal/appserverclient"
+	"github.com/sqlrush/codexgo/internal/tui"
+)
+
+// runDefaultNoSubcommand handles `codex` with no subcommand: launch the
+// interactive TUI against an in-process engine, mirroring codex's default
+// behavior. The TUI requires an interactive terminal; in non-interactive
+// contexts (pipes/CI) it prints a clear notice and exits non-zero so wrappers
+// and scripts can detect that no interactive session ran.
+func runDefaultNoSubcommand(ctx context.Context, _ ParsedCommandLine, streams Streams) int {
+	if !streams.StdinIsTerminal || !streams.StderrIsTerminal {
+		fmt.Fprintf(streams.Stderr, "codex %s — parity target: codex 0.136.0\n", Version)
+		fmt.Fprintln(streams.Stderr, "the interactive TUI requires a terminal; use `codex exec` for non-interactive runs")
+		return 1
+	}
+
+	asm, err := buildAssembly()
+	if err != nil {
+		fmt.Fprintln(streams.Stderr, "codex:", err)
+		return 1
+	}
+	client := appserverclient.StartInProcess(ctx, appserverclient.InProcessStartArgs{
+		Assembly: asm,
+		Defaults: appserver.Defaults{
+			Model:      "gpt-mock",
+			ProviderID: "openai",
+			Cwd:        resolveCwd(),
+			UserAgent:  "codex-cli-go/" + Version,
+		},
+	})
+	defer client.Shutdown(context.WithoutCancel(ctx))
+
+	if err := tui.Run(ctx, tui.RunConfig{Client: client, Workdir: resolveCwd()}); err != nil {
+		fmt.Fprintln(streams.Stderr, "codex:", err)
+		return 1
+	}
+	return 0
 }

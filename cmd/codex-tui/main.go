@@ -13,13 +13,10 @@ import (
 	"os"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-
 	"github.com/sqlrush/codexgo/internal/api"
 	"github.com/sqlrush/codexgo/internal/appserver"
 	"github.com/sqlrush/codexgo/internal/appserverclient"
 	"github.com/sqlrush/codexgo/internal/core"
-	"github.com/sqlrush/codexgo/internal/filesearch"
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/tui"
 )
@@ -63,34 +60,11 @@ func run() error {
 	})
 	defer client.Shutdown(context.WithoutCancel(ctx))
 
-	caps := tui.DetectCapabilities()
-	sender := tui.NewAppEventSender()
-	engine := tui.NewEngine(tui.EngineConfig{Client: client, Sender: sender})
-
-	if _, err := engine.Start(ctx, ""); err != nil {
-		return fmt.Errorf("start thread: %w", err)
-	}
-
-	theme := tui.LoadTheme(nil, caps)
-	model := tui.NewModel(tui.ModelConfig{
-		Caps:       caps,
-		Sender:     sender,
-		Engine:     engine,
-		Transcript: tui.NewChatTranscript(theme),
-		Bottom: tui.NewChatBottomPane(tui.ChatBottomPaneConfig{
-			Theme:      theme,
-			FileSearch: fileSearch(workdir()),
-		}),
-	})
-
-	program := tea.NewProgram(model, tea.WithAltScreen(), tea.WithContext(ctx))
-	sender.Attach(program)
-
-	// Pump engine events into the program on a background goroutine.
-	go engine.Pump(ctx)
-
-	if _, err := program.Run(); err != nil {
-		return fmt.Errorf("run program: %w", err)
+	if err := tui.Run(ctx, tui.RunConfig{
+		Client:  client,
+		Workdir: workdir(),
+	}); err != nil {
+		return fmt.Errorf("run tui: %w", err)
 	}
 	return nil
 }
@@ -134,24 +108,6 @@ func chunkBy(s string, n int) []string {
 		out = append(out, string(runes[i:end]))
 	}
 	return out
-}
-
-// fileSearch builds an @mention completion function over the working directory.
-func fileSearch(root string) tui.FileSearchFunc {
-	return func(query string) []string {
-		if query == "" {
-			return nil
-		}
-		res, err := filesearch.Run(query, []string{root}, filesearch.DefaultOptions(), nil)
-		if err != nil {
-			return nil
-		}
-		paths := make([]string, 0, len(res.Matches))
-		for _, m := range res.Matches {
-			paths = append(paths, m.Path)
-		}
-		return paths
-	}
 }
 
 func workdir() string {
