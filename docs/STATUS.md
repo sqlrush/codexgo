@@ -29,7 +29,7 @@ Legend: ✅ implemented + tested · 🟡 implemented with documented deviation/p
 | 13 | Linux sandbox (landlock+seccomp) | ✅ | native, cgo-free; cross-compiles (behavioral test linux-only) |
 | 14 | Windows sandbox (restricted token) | ✅ | native; cross-compiles (behavioral test windows-only) |
 | 15 | network proxy (SOCKS5/HTTP) | 🟡 | policy+env exact; HTTPS MITM data-path deferred |
-| 16 | tools framework + built-ins | ✅ | shell_command/apply_patch verified drop-in |
+| 16 | tools framework + built-ins | ✅ | shell_command/apply_patch verified drop-in; UnifiedExec PTY pair (exec_command/write_stdin) wired with per-model selection |
 | 17 | rollout JSONL | ✅ | |
 | 18 | state SQLite | ✅ | embedded migrations, pure-Go sqlite |
 | 19 | thread store / history / graph | ✅ | read/list/search/archive; search substring vs ripgrep |
@@ -40,7 +40,7 @@ Legend: ✅ implemented + tested · 🟡 implemented with documented deviation/p
 | 24 | hooks | ✅ | |
 | 25 | code-mode (JS) | ✅ | goja engine; JS-feature gaps vs V8 documented |
 | 26 | extensions/connectors/memories | 🟡 | guardian/goal/memories/imagegen/websearch; connectors-in-core partial |
-| 27–31 | core engine | 🟡 | turn loop / streaming / tools / approvals / compaction / assembly run end-to-end; advanced breadth (multi-agent/unified-exec/realtime/goals-deep) ported as packages, not all wired into the live loop |
+| 27–31 | core engine | 🟡 | turn loop / streaming / tools / approvals / compaction / assembly run end-to-end; unified-exec now wired into the live loop (PTY tool pair); remaining advanced breadth (multi-agent/realtime/goals-deep) ported as packages, not all wired |
 | 32 | app-server protocol | ✅ | JSON-RPC registry, v1/v2 |
 | 33 | app-server + transport | 🟡 | stdio/uds/ws + turn-driving methods; full method surface partial |
 | 34 | `codex exec` (headless) | ✅ | **turn JSONL byte-identical** to codex (text + tool turns) |
@@ -69,9 +69,9 @@ Automated, credential-free, binary-vs-binary (env-gated on `CODEX_PARITY_BIN`):
 | `exec --json` error turn | ✅ same terminal `turn.failed` + exit code (msg text tracked) |
 | `exec -o/--output-last-message` | ✅ byte-identical file |
 | `exec --output-schema` request `text` | ✅ byte-identical json_schema block |
-| full `/responses` request body | 🟡 `model`/`tool_choice`/`store`/`stream`/`include`/`service_tier`/`text`/`reasoning`/`parallel_tool_calls`/`instructions` byte-identical; `tools` (full registry) tracked |
+| full `/responses` request body | 🟡 `model`/`tool_choice`/`store`/`stream`/`include`/`service_tier`/`text`/`reasoning`/`parallel_tool_calls`/`instructions` byte-identical; `tools` registry 5/11 advertised (ordered subsequence, `TestParityToolOrder`) |
 | `/responses` `input` context | ✅ permissions + environment_context byte-identical (`TestParityInputContext`); `<skills_instructions>` sub-gap tracked |
-| built-in tool specs | 🟡 `view_image`/`update_plan`/`exec_command`/`apply_patch`(custom grammar) byte-identical (`TestParityToolSpecs`); `write_stdin`/goals/`tool_search`/`web_search` + per-model selection (UnifiedExec) pending |
+| built-in tool specs | 🟡 `view_image`/`update_plan`/`exec_command`/`write_stdin`/`apply_patch`(custom grammar) byte-identical (`TestParityToolSpecs`); per-model selection (`shell_type_for_model_and_features`) + UnifiedExec PTY bridge live; goals/`tool_search`/`web_search` specs pending |
 | `doctor --json` | 🟡 18 check IDs + container/keys match; per-check `details` shape differs |
 | `completion` | 🟡 functional; not clap-byte-identical |
 
@@ -79,16 +79,23 @@ Automated, credential-free, binary-vs-binary (env-gated on `CODEX_PARITY_BIN`):
 
 Breadth: all 49 specs build; the headless agent runs and is a verified drop-in for
 the core flows (text + tool turns). The `/responses` REQUEST is now byte-identical
-to codex for every scalar field plus `instructions` and the four advertised tool
-specs. Remaining toward a literal 100%, both large subsystem ports surfaced by the
-request-body differential:
-- **`input` context system** — DONE for permissions + environment_context
-  (byte-identical, `TestParityInputContext`); only `<skills_instructions>` (a
-  `SKILL.md` scan) and the non-read-only `<filesystem>` XML remain.
-- **`tools` registry** — codex's gpt-5.5 set is the UnifiedExec PTY family
-  (`exec_command` + `write_stdin`) plus goals/`tool_search`/`web_search`; matching
-  it requires those tool *behaviors* (PTY sessions in `internal/unifiedexec`, goal
-  store) + the per-model selection (`shell_type_for_model_and_features`,
-  `spec_plan.rs`). The four advertised specs already match byte-for-byte.
-Plus TUI pixel-fidelity and the documented long-tail deviations. Rough
-faithful-and-verified completeness: **~72%**.
+to codex for every scalar field plus `instructions`, the `input` context
+(permissions + environment_context), and the five advertised tool specs.
+
+**UnifiedExec bridge is live**: the per-model/per-feature shell selection
+(`shell_type_for_model_and_features`, ported in `internal/tools/tool_config.go`)
+drives the per-turn registry, so on PTY-capable hosts codexgo advertises the
+`exec_command` + `write_stdin` PTY pair (backed by `internal/unifiedexec`
+sessions) with `shell_command` registered dispatch-only — exactly codex's
+spec_plan behavior. The advertised tool list is verified as an ordered
+subsequence of codex's (`TestParityToolOrder`), each spec byte-identical.
+
+Remaining toward a literal 100%:
+- **`tools` registry tail** — 6/11 tools still unadvertised: `get_goal`/
+  `create_goal`/`update_goal` (needs the goal-store behavior), `request_user_input`
+  (executor exists; needs the config gate + spec parity), `tool_search` (needs the
+  deferred-tool registry), `web_search` (hosted spec).
+- **`input` context** — only `<skills_instructions>` (a `SKILL.md` scan) and the
+  non-read-only `<filesystem>` XML remain.
+- TUI pixel-fidelity and the documented long-tail deviations.
+Rough faithful-and-verified completeness: **~75%**.
