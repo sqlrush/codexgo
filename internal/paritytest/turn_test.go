@@ -12,7 +12,7 @@ package paritytest
 //	CODEX_PARITY_BIN=/path/to/codex \
 //	  go test ./internal/paritytest/ -run TestParityTurnExec -v
 //
-// How each binary is driven (and why they differ):
+// How each binary is driven:
 //
 //   - Real codex: the actual binary, exec --json, configured purely through the
 //     CODEX_HOME/config.toml `[model_providers.parity]` block. The provider's
@@ -20,23 +20,20 @@ package paritytest
 //     dummy bearer token. This exercises codex's real Responses client, SSE
 //     parser, turn loop, and exec JSONL serializer end to end.
 //
-//   - codexgo: driven IN-PROCESS through internal/appserver.Assemble + a real
-//     appserver.NewModelClientFactory whose provider points at the same server.
-//     This is required because codexgo's `cmd/codex exec` assembly
-//     (internal/cli/assembly.go) always builds the model client with
-//     CreateOpenAIProvider(nil) and resolves credentials only from
-//     OPENAI_API_KEY / CODEX_API_KEY / auth.json -- it does NOT honor a custom
-//     `[model_providers.parity]` base_url or its `env_key`, so the codexgo binary
-//     would silently fall back to the scripted mock and never hit the server.
-//     Driving codexgo in-process exercises the same real code path the binary
-//     would use against api.openai.com (core.ResponsesModelClient -> the
-//     internal/api SSE parser -> the exec turn loop -> the exec JSONL sink), just
-//     with the provider base_url retargeted. The gap in the binary wiring is a
-//     genuine drop-in finding, documented in docs/PARITY.md.
+//   - codexgo: the built codexgo `codex` binary (via buildCodexgo), driven the
+//     exact same way -- exec --json, configured purely through the identical
+//     CODEX_HOME/config.toml `[model_providers.parity]` block and PARITY_FAKE_KEY.
+//     This proves the binary itself is a behavioral drop-in: its exec assembly now
+//     honors the custom `model_provider` selection, the provider's `base_url`, and
+//     its `env_key` (internal/cli/assembly.go + provider_select.go), builds a real
+//     core.ResponsesModelClient against the configured server, and never falls back
+//     to the scripted mock. Previously the assembly always built the OpenAI
+//     provider and resolved credentials only from OPENAI_API_KEY / CODEX_API_KEY /
+//     auth.json, so the binary silently fell back to the mock; that gap is now
+//     closed and recorded in docs/PARITY.md.
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -46,15 +43,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/sqlrush/codexgo/internal/api"
-	"github.com/sqlrush/codexgo/internal/appserver"
-	"github.com/sqlrush/codexgo/internal/appserverproto"
-	"github.com/sqlrush/codexgo/internal/client"
-	"github.com/sqlrush/codexgo/internal/core"
-	execpkg "github.com/sqlrush/codexgo/internal/exec"
-	"github.com/sqlrush/codexgo/internal/modelproviderinfo"
-	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
 // turnPrompt is the user prompt sent to both binaries. The fake server ignores
@@ -79,6 +67,7 @@ const parityModelSlug = "gpt-5.5"
 // endpoint, and asserts that the normalized JSONL event streams match.
 func TestParityTurnExec(t *testing.T) {
 	ref := referenceBin(t)
+	cgoBin := buildCodexgo(t)
 
 	srv := newResponsesServer(t)
 	defer srv.Close()
@@ -87,10 +76,10 @@ func TestParityTurnExec(t *testing.T) {
 	refRaw := runRealCodexTurn(t, ref, srv.URL)
 	refEvents := parseJSONL(t, "codex", refRaw)
 
-	// codexgo: driven in-process with a real provider-backed model client that
-	// targets the same server. See the file-level comment for why the binary is
-	// not used here.
-	cgoRaw := runCodexgoTurnInProcess(t, srv.URL)
+	// codexgo: the built binary, driven identically (exec --json against the same
+	// fake server through the same drop-in config.toml + PARITY_FAKE_KEY), proving
+	// the binary itself honors the custom provider and is a drop-in.
+	cgoRaw := runCodexgoTurnBinary(t, cgoBin, srv.URL)
 	cgoEvents := parseJSONL(t, "codexgo", cgoRaw)
 
 	// 1) Normalized event-type sequence must match.
@@ -233,102 +222,36 @@ func writeParityConfig(t *testing.T, home, serverURL string) {
 	}
 }
 
-// runCodexgoTurnInProcess drives one codexgo exec --json turn in-process against
-// serverURL, returning the captured JSONL stdout. It builds the engine the same
-// way codexgo's binary does (appserver.Assemble + appserver.NewModelClientFactory
-// selecting a real core.ResponsesModelClient), but with the provider retargeted
-// at the fake server and a static auth resolver supplying the dummy bearer token.
-func runCodexgoTurnInProcess(t *testing.T, serverURL string) string {
+// runCodexgoTurnBinary writes the identical drop-in config.toml into a temp
+// CODEX_HOME and runs the built codexgo binary's `exec --json` against the fake
+// server, returning the captured stdout (the JSONL stream). The binary is
+// configured *only* through config.toml + the PARITY_FAKE_KEY env var -- the same
+// inputs the real codex binary receives -- so a passing comparison proves the
+// codexgo binary itself honors the custom `[model_providers.parity]` provider
+// (base_url + env_key) and is a behavioral drop-in.
+func runCodexgoTurnBinary(t *testing.T, bin, serverURL string) string {
 	t.Helper()
+	home := t.TempDir()
+	writeParityConfig(t, home, serverURL)
 
-	baseURL := serverURL + "/v1"
-	provider := modelproviderinfo.ModelProviderInfo{
-		Name:               "parity",
-		BaseURL:            &baseURL,
-		EnvKey:             strPtr(fakeEnvKey),
-		WireApi:            modelproviderinfo.WireApiResponses,
-		RequiresOpenAIAuth: false,
-	}
-
-	mode := appserverproto.AuthModeApiKey
-	resolver := appserver.AuthResolverFunc(
-		func(context.Context, protocol.ThreadID, core.SessionConfiguration) (appserver.ResolvedAuth, error) {
-			return appserver.ResolvedAuth{
-				HasCredentials: true,
-				AuthProvider:   bearerAuthProvider{token: fakeAPIKey},
-				AuthMode:       &mode,
-			}, nil
-		},
+	cmd := exec.Command(bin, "exec", "--json", "--skip-git-repo-check", turnPrompt)
+	cmd.Env = append(os.Environ(),
+		"CODEX_HOME="+home,
+		fakeEnvKey+"="+fakeAPIKey,
+		// Ensure no ambient OpenAI/Codex credentials leak in and accidentally
+		// select a different auth path than the configured provider's env_key.
+		"OPENAI_API_KEY=",
+		"CODEX_API_KEY=",
+		"CODEX_ACCESS_TOKEN=",
 	)
-
-	// The fallback mock must never be selected here (credentials are always
-	// present); supply one anyway so the factory contract is satisfied.
-	fallback := appserver.ModelClientFactory(
-		func(_ context.Context, _ protocol.ThreadID, cfg core.SessionConfiguration) (core.ModelClient, error) {
-			t.Errorf("codexgo unexpectedly fell back to the mock client; the real client should have been selected")
-			return core.NewMockModelClient(cfg.Model(), nil), nil
-		},
-	)
-
-	factory, err := appserver.NewModelClientFactory(appserver.RealModelClientFactoryConfig{
-		AuthResolver: resolver,
-		Provider:     provider,
-		Fallback:     fallback,
-	})
-	if err != nil {
-		t.Fatalf("build model client factory: %v", err)
-	}
-
-	asm, err := appserver.Assemble(appserver.AssemblyConfig{
-		ModelClientFactory: factory,
-		DefaultModel:       parityModelSlug,
-	})
-	if err != nil {
-		t.Fatalf("assemble codexgo engine: %v", err)
-	}
-
-	cli, err := execpkg.ParseArgs([]string{"--json", "--skip-git-repo-check", turnPrompt})
-	if err != nil {
-		t.Fatalf("parse exec args: %v", err)
-	}
-
+	cmd.Stdin = bytes.NewReader(nil)
 	var stdout, stderr bytes.Buffer
-	env := execpkg.Environment{
-		Stdin:    bytes.NewReader(nil),
-		Stdout:   &stdout,
-		Stderr:   &stderr,
-		Assembly: asm,
-		Defaults: appserver.Defaults{
-			Model:      parityModelSlug,
-			ProviderID: "parity",
-			Cwd:        ".",
-			UserAgent:  "codex-cli-go",
-		},
-	}
-	if code := execpkg.Run(context.Background(), cli, env); code != 0 {
-		t.Fatalf("codexgo exec exited %d\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("codexgo exec failed: %v\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
 	}
 	return stdout.String()
-}
-
-// bearerAuthProvider is a minimal api.AuthProvider that attaches a static bearer
-// token, mirroring the Authorization header the real codex sends from its
-// env_key-derived API key. It never mutates the incoming request.
-type bearerAuthProvider struct{ token string }
-
-// compile-time assertion that bearerAuthProvider satisfies api.AuthProvider.
-var _ api.AuthProvider = bearerAuthProvider{}
-
-// AddAuthHeaders sets the Authorization bearer header.
-func (b bearerAuthProvider) AddAuthHeaders(h http.Header) {
-	h.Set("Authorization", "Bearer "+b.token)
-}
-
-// ApplyAuth returns a copy of req with the bearer header applied.
-func (b bearerAuthProvider) ApplyAuth(_ context.Context, req client.Request) (client.Request, *api.AuthError) {
-	out := req.WithCompression(req.Compression)
-	b.AddAuthHeaders(out.Headers)
-	return out, nil
 }
 
 // parseJSONL splits raw stdout into one decoded JSON object per non-blank line,
@@ -446,6 +369,3 @@ func stripVolatile(ev map[string]any) {
 		delete(item, "id")
 	}
 }
-
-// strPtr returns a pointer to s.
-func strPtr(s string) *string { return &s }

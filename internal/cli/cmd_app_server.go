@@ -28,17 +28,10 @@ func runAppServerSubcommand(ctx context.Context, parsed ParsedCommandLine, strea
 		}
 	}
 
-	asm, err := buildAssembly()
+	asm, defaults, err := buildAssemblyWithDefaults()
 	if err != nil {
 		fmt.Fprintf(streams.Stderr, "codex app-server: %v\n", err)
 		return 1
-	}
-
-	defaults := appserver.Defaults{
-		Model:      "gpt-mock",
-		ProviderID: "openai",
-		Cwd:        resolveCwd(),
-		UserAgent:  "codex-cli-go",
 	}
 
 	if err := appserver.ServeStdioWithProcessor(ctx, asm, defaults, streams.Stdin, streams.Stdout); err != nil {

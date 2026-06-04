@@ -31,7 +31,7 @@ Living record of differential validation of `codexgo` against the reference
 
 | Surface | Command | Result |
 |---|---|---|
-| `exec --json` turn lifecycle | `codex exec --json "hello"` vs codexgo | ✅ **Pass** — see `TestParityTurnExec`. Both binaries are pointed at the **same fake `/v1/responses` SSE endpoint** via the **same drop-in `config.toml`** (`[model_providers.parity]`, `env_key`), and produce a **byte-identical normalized JSONL stream**: same event-type sequence, same final agent message, same usage. No real OpenAI credentials required. |
+| `exec --json` turn lifecycle | `codex exec --json "hello"` vs codexgo | ✅ **Pass** — see `TestParityTurnExec`. **Both binaries** are pointed at the **same fake `/v1/responses` SSE endpoint** via the **same drop-in `config.toml`** (`[model_providers.parity]`, `env_key`), and produce a **byte-identical normalized JSONL stream**: same event-type sequence, same final agent message, same usage. The codexgo binary now honors the custom `model_provider` selection, its `base_url`, and its `env_key` directly — no in-process harness. No real OpenAI credentials required. |
 
 ### `TestParityTurnExec` — the turn-level differential
 
@@ -89,36 +89,41 @@ codexgo: {"type":"turn.completed","usage":{"input_tokens":11,"cached_input_token
    (`thread-00000000000000000001`). Both are opaque per-run identifiers. The test
    strips `thread_id` (and any item `id`) before comparing.
 
-**Drop-in gap found (genuine, documented): the codexgo binary does not honor a
-custom provider's `base_url`/`env_key`.**
+**Drop-in gap CLOSED: the codexgo binary now honors a custom provider's
+`base_url`/`env_key`.**
 
-The real codex binary is driven *exactly* as a user would: the actual binary,
-`exec --json`, configured purely through `config.toml`. It picks up
+Both binaries are now driven *exactly* as a user would: the actual binary,
+`exec --json`, configured purely through `config.toml`. Each picks up
 `[model_providers.parity]`, sends `Authorization: Bearer dummy`, POSTs to the
 fake `/v1/responses`, and emits a normal turn.
 
-**codexgo is driven in-process** through `internal/appserver.Assemble` plus a real
-`appserver.NewModelClientFactory` whose provider points at the same server. This
-is necessary because codexgo's `cmd/codex exec` assembly
-(`internal/cli/assembly.go` → `buildAssembly`) currently:
+codexgo's `cmd/codex exec` assembly (`internal/cli/assembly.go` →
+`buildAssemblyWithDefaults`, with provider selection in
+`internal/cli/provider_select.go`) now:
 
-- always builds the model provider with `modelproviderinfo.CreateOpenAIProvider(nil)`,
-  ignoring any custom `[model_providers.<id>]` `base_url`; and
-- resolves credentials only from `OPENAI_API_KEY` / `CODEX_API_KEY` / `auth.json`
-  (`internal/cli/model_client.go`), ignoring a provider's custom `env_key`.
+- reads the resolved `model_provider` selection and the `[model_providers]` map
+  from the loaded config (projected through `internal/cli/config_load.go`), merges
+  the configured providers onto the built-in catalog
+  (`modelproviderinfo.MergeConfiguredModelProviders` over
+  `BuiltInModelProviders`, honoring `openai_base_url`), and builds the
+  `api.Provider` for the **selected** provider — so a custom
+  `[model_providers.<id>]` `base_url` (and `wire_api`, `http_headers`, retry, …)
+  is honored;
+- resolves credentials honoring the provider's `env_key` first (a static
+  `Authorization: Bearer <env_key value>`), and only falls back to the
+  `OPENAI_API_KEY` / `CODEX_API_KEY` / `auth.json` login path for
+  `requires_openai_auth` providers; and
+- honors the configured `model` (over `CODEX_MODEL`, over the mock slug) and
+  threads the resolved provider id + model into the exec/review/TUI session
+  defaults.
 
-As a result, the **codexgo binary** run against this config.toml silently falls
-back to the scripted mock and never contacts the server (verified: no request
-reaches the test server, and it emits the mock reply). The in-process harness
-exercises the *same* real code path the binary would use against
-`api.openai.com` — `core.ResponsesModelClient` → the `internal/api` SSE parser →
-the exec turn loop → the exec JSONL sink — just with the provider base_url
-retargeted, so the turn-level behavioral comparison is faithful. Closing the
-binary-level gap (threading the parsed config's `model_provider` /
-`model_providers` and the provider `env_key` into `buildAssembly`) is the
-remaining work to make a *custom-provider* `config.toml` fully drop-in for the
-codexgo binary; the OpenAI-provider path (`OPENAI_API_KEY` + default base_url) is
-already wired in the binary.
+The scripted mock remains the fallback **only** when no usable credential /
+provider resolves (preserving the offline/dev behavior and
+`CODEX_EXEC_MOCK_REPLY`). As a result, the **codexgo binary** run against this
+config.toml now contacts the server and produces a real turn whose normalized
+JSONL stream is byte-identical to the real codex binary's — proving the binary
+itself is a behavioral drop-in for a custom provider. The OpenAI-provider path
+(`OPENAI_API_KEY` + default base_url) is wired through the same code.
 
 ## Pending (need a one-time authenticated recording — maintainer)
 
@@ -156,12 +161,12 @@ further offline differentials:
 
 Format/CLI-surface parity is validated and faithful (model catalog identical;
 subcommand set complete; `apply_patch` byte-identical). The **turn-level
-behavioral drop-in proof is now done**: `TestParityTurnExec` runs one real
-`exec --json` model turn through both binaries against a fake `/v1/responses`
-endpoint with **no OpenAI credentials**, and the normalized JSONL streams are
-byte-identical (same event sequence, message text, and usage). The remaining
-honest caveats are (1) the codexgo *binary* does not yet honor a custom
-provider's `base_url`/`env_key` from `config.toml` (so codexgo is driven
-in-process for this test; the OpenAI-provider path is wired in the binary), and
-(2) tool-call / compaction / app-server wire-stream differentials are still
-pending.
+behavioral drop-in proof is now done, binary-vs-binary**: `TestParityTurnExec`
+runs one real `exec --json` model turn through **both built binaries** against a
+fake `/v1/responses` endpoint, configured purely through the same drop-in
+`config.toml` + `PARITY_FAKE_KEY`, with **no OpenAI credentials**, and the
+normalized JSONL streams are byte-identical (same event sequence, message text,
+and usage). The codexgo binary now honors a custom provider's `model_provider`
+selection, `base_url`, and `env_key` (previous in-process workaround removed). The
+remaining honest caveat is that tool-call / compaction / app-server wire-stream
+differentials are still pending.

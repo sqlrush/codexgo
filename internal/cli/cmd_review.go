@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/sqlrush/codexgo/internal/appserver"
 	"github.com/sqlrush/codexgo/internal/exec"
 )
 
@@ -33,7 +32,7 @@ func runReviewSubcommand(ctx context.Context, parsed ParsedCommandLine, streams 
 		return 2
 	}
 
-	asm, err := buildAssembly()
+	asm, defaults, err := buildAssemblyWithDefaults()
 	if err != nil {
 		fmt.Fprintln(streams.Stderr, "codex review:", err)
 		return 1
@@ -45,12 +44,7 @@ func runReviewSubcommand(ctx context.Context, parsed ParsedCommandLine, streams 
 		Stderr:          streams.Stderr,
 		StdinIsTerminal: streams.StdinIsTerminal,
 		Assembly:        asm,
-		Defaults: appserver.Defaults{
-			Model:      "gpt-mock",
-			ProviderID: "openai",
-			Cwd:        resolveCwd(),
-			UserAgent:  "codex-cli-go",
-		},
+		Defaults:        defaults,
 	}
 
 	return exec.Run(ctx, cli, env)

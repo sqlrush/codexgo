@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/sqlrush/codexgo/internal/appserver"
 	"github.com/sqlrush/codexgo/internal/appserverclient"
 	"github.com/sqlrush/codexgo/internal/tui"
 )
@@ -21,19 +20,17 @@ func runDefaultNoSubcommand(ctx context.Context, _ ParsedCommandLine, streams St
 		return 1
 	}
 
-	asm, err := buildAssembly()
+	asm, defaults, err := buildAssemblyWithDefaults()
 	if err != nil {
 		fmt.Fprintln(streams.Stderr, "codex:", err)
 		return 1
 	}
+	// Keep the versioned interactive user-agent; the model + provider id come from
+	// the resolved configuration so the TUI honors a custom `model_provider`.
+	defaults.UserAgent = "codex-cli-go/" + Version
 	client := appserverclient.StartInProcess(ctx, appserverclient.InProcessStartArgs{
 		Assembly: asm,
-		Defaults: appserver.Defaults{
-			Model:      "gpt-mock",
-			ProviderID: "openai",
-			Cwd:        resolveCwd(),
-			UserAgent:  "codex-cli-go/" + Version,
-		},
+		Defaults: defaults,
 	})
 	defer client.Shutdown(context.WithoutCancel(ctx))
 

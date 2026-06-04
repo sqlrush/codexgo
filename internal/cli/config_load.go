@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/sqlrush/codexgo/internal/config"
+	"github.com/sqlrush/codexgo/internal/modelproviderinfo"
 )
 
 // loadedConfig is the subset of resolved configuration the CLI subcommands need:
@@ -17,6 +18,20 @@ type loadedConfig struct {
 	// Tui is the resolved [tui] config block, or nil when unset. The interactive
 	// TUI launcher uses it to load the configured theme.
 	Tui *config.Tui
+	// ModelProviderID is the resolved `model_provider` selection (the active
+	// provider id), or nil when unset. The assembly resolves this against the
+	// merged provider catalog to pick the api.Provider. It mirrors the Rust
+	// model_provider_id resolution in core/src/config/mod.rs.
+	ModelProviderID *string
+	// ModelProviders is the configured `[model_providers]` map, keyed by id. It is
+	// merged onto the built-in catalog so custom providers extend the defaults.
+	ModelProviders map[string]modelproviderinfo.ModelProviderInfo
+	// DefaultModel is the resolved `model` slug, or nil when unset. It is the
+	// preferred default model for the assembly over CODEX_MODEL and the mock slug.
+	DefaultModel *string
+	// OpenAIBaseURL overrides the built-in OpenAI provider's base URL when set and
+	// non-empty, matching the Rust `openai_base_url` handling.
+	OpenAIBaseURL *string
 }
 
 // loadConfig loads the merged configuration honoring the root -c overrides,
@@ -39,10 +54,14 @@ func loadConfig(root RootOptions) (loadedConfig, error) {
 	}
 
 	return loadedConfig{
-		CodexHome:      result.CodexHome,
-		StoreMode:      resolveStoreMode(result.Config.CliAuthCredentialsStore),
-		ChatgptBaseURL: result.Config.ChatgptBaseURL,
-		Tui:            result.Config.Tui,
+		CodexHome:       result.CodexHome,
+		StoreMode:       resolveStoreMode(result.Config.CliAuthCredentialsStore),
+		ChatgptBaseURL:  result.Config.ChatgptBaseURL,
+		Tui:             result.Config.Tui,
+		ModelProviderID: result.Config.ModelProvider,
+		ModelProviders:  result.Config.ModelProviders,
+		DefaultModel:    result.Config.Model,
+		OpenAIBaseURL:   result.Config.OpenAIBaseURL,
 	}, nil
 }
 
