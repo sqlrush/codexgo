@@ -30,6 +30,17 @@ type Defaults struct {
 	BaseInstructions string
 	// UserAgent is reported in the initialize handshake response.
 	UserAgent string
+
+	// IncludeEnvironmentContext seeds the codex `<permissions instructions>` +
+	// `<environment_context>` messages into a new thread's history at session start.
+	IncludeEnvironmentContext bool
+	// SandboxMode is the effective filesystem sandbox mode for those messages.
+	SandboxMode protocol.SandboxMode
+	// NetworkAccessEnabled toggles the rendered network-access word.
+	NetworkAccessEnabled bool
+	// ApprovalPolicy is the default approval policy for spawned threads. The zero
+	// value (empty Kind) falls back to on-request; `codex exec` sets it to never.
+	ApprovalPolicy protocol.AskForApproval
 }
 
 // Processor handles client JSON-RPC requests against a [core] engine and streams

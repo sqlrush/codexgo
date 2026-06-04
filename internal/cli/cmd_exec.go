@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/sqlrush/codexgo/internal/exec"
+	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
 // runExecSubcommand handles `codex exec` (alias `e`): non-interactive agent runs.
@@ -23,6 +24,11 @@ func runExecSubcommand(ctx context.Context, parsed ParsedCommandLine, streams St
 		fmt.Fprintln(streams.Stderr, "codex exec:", err)
 		return 1
 	}
+
+	// `codex exec` is non-interactive: its default approval policy is `never`
+	// (exec/lib.rs), unlike the interactive on-request default. This drives both
+	// the rendered permissions instructions and turn execution.
+	defaults.ApprovalPolicy = protocol.AskForApproval{Kind: protocol.AskForApprovalNever}
 
 	// Honor the `-C/--cd` working directory: commands and apply_patch resolve
 	// relative paths against it, matching codex exec. A relative value is resolved

@@ -98,16 +98,23 @@ func (p *Processor) resumeForkConfig(
 // (on-request / user) because the SessionConfigured event the engine emits at
 // spawn embeds them; an empty AskForApproval would fail to serialize.
 func (p *Processor) baseConfig() core.SessionConfiguration {
+	approval := p.defaults.ApprovalPolicy
+	if approval.Kind == "" {
+		approval = protocol.AskForApproval{Kind: protocol.AskForApprovalOnRequest}
+	}
 	return core.SessionConfiguration{
 		ProviderID: p.defaults.ProviderID,
 		CollaborationMode: protocol.CollaborationMode{
 			Settings: protocol.Settings{Model: p.defaults.Model},
 		},
-		Cwd:               p.defaults.Cwd,
-		CodexHome:         p.assembly.CodexHome,
-		BaseInstructions:  p.defaults.BaseInstructions,
-		ApprovalPolicy:    protocol.AskForApproval{Kind: protocol.AskForApprovalOnRequest},
-		ApprovalsReviewer: protocol.ApprovalsReviewerUser,
+		Cwd:                       p.defaults.Cwd,
+		CodexHome:                 p.assembly.CodexHome,
+		BaseInstructions:          p.defaults.BaseInstructions,
+		ApprovalPolicy:            approval,
+		ApprovalsReviewer:         protocol.ApprovalsReviewerUser,
+		IncludeEnvironmentContext: p.defaults.IncludeEnvironmentContext,
+		SandboxMode:               p.defaults.SandboxMode,
+		NetworkAccessEnabled:      p.defaults.NetworkAccessEnabled,
 	}
 }
 

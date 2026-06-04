@@ -44,7 +44,7 @@ func buildAssemblyWithDefaults() (*appserver.Assembly, appserver.Defaults, error
 	if !ok {
 		// Configuration could not be loaded; run with the mock so the engine still
 		// works offline (e.g. in tests or a fresh checkout without a config file).
-		return assembleResult(fallback, "", "", defaultModelProviderID)
+		return assembleResult(fallback, "", "", defaultModelProviderID, "")
 	}
 
 	model := configDefaultModel(cfg)
@@ -53,13 +53,13 @@ func buildAssemblyWithDefaults() (*appserver.Assembly, appserver.Defaults, error
 	if err != nil {
 		// A bad provider selection must not break the offline paths; fall back to
 		// the mock so the engine still runs.
-		return assembleResult(fallback, cfg.CodexHome, model, defaultModelProviderID)
+		return assembleResult(fallback, cfg.CodexHome, model, defaultModelProviderID, derefSandboxMode(cfg.SandboxMode))
 	}
 
 	resolver, ok := buildProviderAuthResolver(cfg, selected)
 	if !ok {
 		// No credential source applies to the selected provider; use the mock.
-		return assembleResult(fallback, cfg.CodexHome, model, selected.ID)
+		return assembleResult(fallback, cfg.CodexHome, model, selected.ID, derefSandboxMode(cfg.SandboxMode))
 	}
 
 	factory, err := appserver.NewModelClientFactory(appserver.RealModelClientFactoryConfig{
@@ -77,7 +77,16 @@ func buildAssemblyWithDefaults() (*appserver.Assembly, appserver.Defaults, error
 	if err != nil {
 		return nil, appserver.Defaults{}, fmt.Errorf("cli: build model client factory: %w", err)
 	}
-	return assembleResult(factory, cfg.CodexHome, model, selected.ID)
+	return assembleResult(factory, cfg.CodexHome, model, selected.ID, derefSandboxMode(cfg.SandboxMode))
+}
+
+// derefSandboxMode returns the configured sandbox mode, or the empty value (which
+// assembleResult resolves to read-only) when unset.
+func derefSandboxMode(mode *protocol.SandboxMode) protocol.SandboxMode {
+	if mode == nil {
+		return ""
+	}
+	return *mode
 }
 
 // buildProviderAuthResolver selects the credential resolver for the active
@@ -108,9 +117,12 @@ func buildProviderAuthResolver(cfg loadedConfig, selected selectedProvider) (app
 // slug. The same resolved model + provider id flow into both the assembly's
 // models manager and the returned Defaults so the binary's exec/review/TUI paths
 // honor the configured selection.
-func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultModel, providerID string) (*appserver.Assembly, appserver.Defaults, error) {
+func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultModel, providerID string, sandboxMode protocol.SandboxMode) (*appserver.Assembly, appserver.Defaults, error) {
 	if codexHome == "" {
 		codexHome = resolveCodexHome()
+	}
+	if sandboxMode == "" {
+		sandboxMode = protocol.SandboxModeReadOnly
 	}
 	model := resolveDefaultModel(defaultModel)
 	asm, err := appserver.Assemble(appserver.AssemblyConfig{
@@ -133,6 +145,12 @@ func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultMode
 		ProviderID: providerID,
 		Cwd:        resolveCwd(),
 		UserAgent:  "codex-cli-go",
+		// Seed codex's initial context (permissions + environment_context) into new
+		// threads, like the reference binary. Network defaults to restricted, which
+		// matches the read-only/workspace-write defaults.
+		IncludeEnvironmentContext: true,
+		SandboxMode:               sandboxMode,
+		NetworkAccessEnabled:      false,
 	}
 	return asm, defaults, nil
 }

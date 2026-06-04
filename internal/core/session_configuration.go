@@ -46,6 +46,21 @@ type SessionConfiguration struct {
 	// WindowsSandboxLevel is the effective Windows sandbox level.
 	WindowsSandboxLevel protocol.WindowsSandboxLevel
 
+	// IncludeEnvironmentContext gates the codex `<permissions instructions>` +
+	// `<environment_context>` initial-context messages that are seeded into a new
+	// thread's history at session start (mirrors config.include_environment_context).
+	// It defaults to false so unit tests that build a SessionConfiguration directly
+	// are unaffected; the real binary's assembly sets it true.
+	IncludeEnvironmentContext bool
+	// SandboxMode is the effective filesystem sandbox mode used to render the
+	// permissions + environment-context messages (defaults to read-only).
+	SandboxMode protocol.SandboxMode
+	// NetworkAccessEnabled toggles the rendered network-access word.
+	NetworkAccessEnabled bool
+	// Shell is the user's default shell name reported in the environment context
+	// (empty falls back to the host default shell at render time).
+	Shell string
+
 	// Cwd is the absolute working-directory root for the session.
 	Cwd string
 	// WorkspaceRoots are the thread-scoped workspace roots.

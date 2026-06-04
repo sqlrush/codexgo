@@ -5,6 +5,7 @@ import (
 
 	"github.com/sqlrush/codexgo/internal/config"
 	"github.com/sqlrush/codexgo/internal/modelproviderinfo"
+	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
 // loadedConfig is the subset of resolved configuration the CLI subcommands need:
@@ -32,6 +33,9 @@ type loadedConfig struct {
 	// OpenAIBaseURL overrides the built-in OpenAI provider's base URL when set and
 	// non-empty, matching the Rust `openai_base_url` handling.
 	OpenAIBaseURL *string
+	// SandboxMode is the resolved `sandbox_mode`, or nil when unset (codex defaults
+	// to read-only). Used to render the environment-context message.
+	SandboxMode *protocol.SandboxMode
 }
 
 // loadConfig loads the merged configuration honoring the root -c overrides,
@@ -62,6 +66,7 @@ func loadConfig(root RootOptions) (loadedConfig, error) {
 		ModelProviders:  result.Config.ModelProviders,
 		DefaultModel:    result.Config.Model,
 		OpenAIBaseURL:   result.Config.OpenAIBaseURL,
+		SandboxMode:     result.Config.SandboxMode,
 	}, nil
 }
 

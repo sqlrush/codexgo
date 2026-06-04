@@ -119,6 +119,15 @@ func Spawn(ctx context.Context, args CodexSpawnArgs) (CodexSpawnOk, error) {
 	// SessionConfigured event so resume UIs see consistent state.
 	seedInitialHistory(sess, args.ConversationHistory)
 
+	// For a fresh thread (no resumed/forked history), seed the codex initial
+	// context — the `<permissions instructions>` + `<environment_context>` messages
+	// — so the model sees the active sandbox/approval and cwd from turn one, like
+	// the reference binary. Gated on IncludeEnvironmentContext (set by the real
+	// binary's assembly) so direct-construction unit tests are unaffected.
+	if args.Configuration.IncludeEnvironmentContext && len(sess.HistoryItems()) == 0 {
+		sess.RecordItems(buildSessionInitialContext(args.Configuration))
+	}
+
 	codex := &Codex{
 		txSub:    txSub,
 		rxEvent:  rxEvent,
