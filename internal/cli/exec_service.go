@@ -8,6 +8,7 @@ import (
 
 	"github.com/sqlrush/codexgo/internal/core"
 	"github.com/sqlrush/codexgo/internal/execserver"
+	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
 // localExecService is the binary's [core.ExecService]: it runs an already-argv-
@@ -109,4 +110,15 @@ func drainProcess(ctx context.Context, proc execserver.ExecProcess) (core.ExecRe
 		Stdout:   stdout.String(),
 		Stderr:   stderr.String(),
 	}, nil
+}
+
+// headlessUserInputRequester is the [core.UserInputRequester] for the headless
+// exec path: request_user_input is advertised (codex enables it by default) but
+// there is no interactive client to answer, so every call resolves as
+// cancelled. The TUI / app-server clients supply a real requester when wired.
+type headlessUserInputRequester struct{}
+
+// RequestUserInput reports the request as cancelled (no interactive client).
+func (headlessUserInputRequester) RequestUserInput(context.Context, string, protocol.RequestUserInputArgs) (protocol.RequestUserInputResponse, bool) {
+	return protocol.RequestUserInputResponse{}, false
 }

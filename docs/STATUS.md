@@ -69,9 +69,9 @@ Automated, credential-free, binary-vs-binary (env-gated on `CODEX_PARITY_BIN`):
 | `exec --json` error turn | ✅ same terminal `turn.failed` + exit code (msg text tracked) |
 | `exec -o/--output-last-message` | ✅ byte-identical file |
 | `exec --output-schema` request `text` | ✅ byte-identical json_schema block |
-| full `/responses` request body | 🟡 `model`/`tool_choice`/`store`/`stream`/`include`/`service_tier`/`text`/`reasoning`/`parallel_tool_calls`/`instructions` byte-identical; `tools` registry 5/11 advertised (ordered subsequence, `TestParityToolOrder`) |
+| full `/responses` request body | 🟡 `model`/`tool_choice`/`store`/`stream`/`include`/`service_tier`/`text`/`reasoning`/`parallel_tool_calls`/`instructions` byte-identical; `tools` registry 7/11 advertised (ordered subsequence, `TestParityToolOrder`) |
 | `/responses` `input` context | ✅ permissions + environment_context byte-identical (`TestParityInputContext`); `<skills_instructions>` sub-gap tracked |
-| built-in tool specs | 🟡 `view_image`/`update_plan`/`exec_command`/`write_stdin`/`apply_patch`(custom grammar) byte-identical (`TestParityToolSpecs`); per-model selection (`shell_type_for_model_and_features`) + UnifiedExec PTY bridge live; goals/`tool_search`/`web_search` specs pending |
+| built-in tool specs | 🟡 `view_image`/`update_plan`/`exec_command`/`write_stdin`/`request_user_input`/`apply_patch`(custom grammar)/`web_search`(hosted) byte-identical (`TestParityToolSpecs`); per-model selection + UnifiedExec PTY bridge live; goals/`tool_search` specs pending |
 | `doctor --json` | 🟡 18 check IDs + container/keys match; per-check `details` shape differs |
 | `completion` | 🟡 functional; not clap-byte-identical |
 
@@ -91,11 +91,12 @@ spec_plan behavior. The advertised tool list is verified as an ordered
 subsequence of codex's (`TestParityToolOrder`), each spec byte-identical.
 
 Remaining toward a literal 100%:
-- **`tools` registry tail** — 6/11 tools still unadvertised: `get_goal`/
-  `create_goal`/`update_goal` (needs the goal-store behavior), `request_user_input`
-  (executor exists; needs the config gate + spec parity), `tool_search` (needs the
-  deferred-tool registry), `web_search` (hosted spec).
+- **`tools` registry tail** — 4/11 tools still unadvertised: `get_goal`/
+  `create_goal`/`update_goal` (needs the goal-store behavior) and `tool_search`
+  (needs the deferred-tool registry). `request_user_input` (default-enabled,
+  headless calls resolve as cancelled) and the hosted `web_search` spec
+  (cached-mode default) are now advertised byte-identically.
 - **`input` context** — only `<skills_instructions>` (a `SKILL.md` scan) and the
   non-read-only `<filesystem>` XML remain.
 - TUI pixel-fidelity and the documented long-tail deviations.
-Rough faithful-and-verified completeness: **~75%**.
+Rough faithful-and-verified completeness: **~76%**.

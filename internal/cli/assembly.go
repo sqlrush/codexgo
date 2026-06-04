@@ -143,6 +143,11 @@ func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultMode
 			return core.BuiltinToolRouter(core.BuiltinToolDeps{
 				Exec:        newLocalExecService(),
 				UnifiedExec: unifiedexec.NewExecutor(nil),
+				// request_user_input is advertised by default (codex's
+				// experimental_request_user_input_enabled). Headless exec has no
+				// interactive client, so calls resolve as cancelled; the TUI /
+				// app-server clients supply a real requester when they land.
+				UserInput: headlessUserInputRequester{},
 			})
 		},
 	})

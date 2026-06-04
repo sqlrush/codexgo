@@ -184,6 +184,25 @@ func NormalizeModeKind(v string) ModeKind {
 	}
 }
 
+// TUIVisibleCollaborationModes lists the collaboration modes surfaced in the
+// TUI mode picker, in display order. Mirrors TUI_VISIBLE_COLLABORATION_MODES.
+var TUIVisibleCollaborationModes = [2]ModeKind{ModeKindDefault, ModeKindPlan}
+
+// DisplayName returns the user-facing mode name. Mirrors
+// ModeKind::display_name (the hidden variants are omitted here).
+func (m ModeKind) DisplayName() string {
+	switch m {
+	case ModeKindPlan:
+		return "Plan"
+	default:
+		return "Default"
+	}
+}
+
+// AllowsRequestUserInput reports whether the request_user_input tool is
+// available in this mode. Mirrors ModeKind::allows_request_user_input.
+func (m ModeKind) AllowsRequestUserInput() bool { return m == ModeKindPlan }
+
 // WebSearchLocation is an optional, sparse location used to bias web search.
 // All fields use omitempty because the Rust struct uses Option fields with no
 // skip annotation; serde emits `null` for None, but in JSON-schema-friendly

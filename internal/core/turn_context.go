@@ -43,6 +43,15 @@ type TurnContext struct {
 	// `turn_context.features`). A nil value means "defaults"; resolve through
 	// [turnFeatures] rather than reading the field directly.
 	Features *features.Features
+
+	// WebSearchMode is the effective web-search mode (config.web_search_mode).
+	// Empty means the codex default (cached); resolve through
+	// [turnWebSearchMode].
+	WebSearchMode protocol.WebSearchMode
+	// ExperimentalRequestUserInput gates the request_user_input tool
+	// (config.experimental_request_user_input_enabled). Nil means the codex
+	// default (enabled); resolve through [turnRequestUserInputEnabled].
+	ExperimentalRequestUserInput *bool
 	// ModelContextWindow is the effective context window in tokens, if known.
 	ModelContextWindow *int64
 

@@ -319,4 +319,3 @@ func TestTurnShellToolTypeModelInfoFallbacks(t *testing.T) {
 		t.Errorf("absent ModelInfo: shell type = %q", got)
 	}
 }
-

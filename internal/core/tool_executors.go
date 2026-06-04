@@ -133,9 +133,9 @@ func builtinExecutors(deps BuiltinToolDeps) []toolExecutor {
 
 	// Hosted specs come after every runtime in the model-visible order
 	// (build_model_visible_specs_and_registry appends hosted_specs last).
-	if deps.WebSearch != nil {
-		execs = append(execs, webSearchExecutor{runner: deps.WebSearch})
-	}
+	// web_search is provider-executed, so it registers without a local runner;
+	// a wired WebSearch dep additionally enables the local dispatch path.
+	execs = append(execs, webSearchExecutor{runner: deps.WebSearch})
 	return execs
 }
 
@@ -425,8 +425,16 @@ func (requestUserInputExecutor) Name() protocol.ToolName {
 	return protocol.PlainToolName("request_user_input")
 }
 
-func (requestUserInputExecutor) Spec(*TurnContext) (tools.ToolSpec, bool) {
-	return functionSpecStub("request_user_input", "Ask the user one or more questions."), true
+// Spec advertises request_user_input when the turn enables it (codex's
+// config.experimental_request_user_input_enabled, default true). The
+// description embeds the collaboration modes that allow the tool (Plan by
+// default), mirroring request_user_input_spec.rs.
+func (requestUserInputExecutor) Spec(tc *TurnContext) (tools.ToolSpec, bool) {
+	if !turnRequestUserInputEnabled(tc) {
+		return tools.ToolSpec{}, false
+	}
+	modes := tools.RequestUserInputAvailableModes(turnFeatures(tc))
+	return tools.CreateRequestUserInputTool(tools.RequestUserInputToolDescription(modes)), true
 }
 
 func (requestUserInputExecutor) MatchesPayload(p tools.ToolPayload) bool {
@@ -505,8 +513,19 @@ type webSearchExecutor struct {
 
 func (webSearchExecutor) Name() protocol.ToolName { return protocol.PlainToolName("web_search") }
 
-func (webSearchExecutor) Spec(*TurnContext) (tools.ToolSpec, bool) {
-	return functionSpecStub("web_search", "Search the web for relevant information."), true
+// Spec advertises the hosted web_search tool (executed server-side by the
+// model provider). Mirrors hosted_model_tool_specs: the effective mode (codex
+// config.web_search_mode, default cached) selects external_web_access, and the
+// model's web_search_tool_type selects the content types.
+//
+// STUB: provider capability gating (provider.capabilities().web_search) is
+// owned by the provider area; codexgo advertises whenever the mode allows.
+func (webSearchExecutor) Spec(tc *TurnContext) (tools.ToolSpec, bool) {
+	mode := turnWebSearchMode(tc)
+	return tools.CreateWebSearchTool(tools.WebSearchToolOptions{
+		WebSearchMode:     &mode,
+		WebSearchToolType: turnModelInfo(tc).WebSearchToolType,
+	})
 }
 
 func (webSearchExecutor) MatchesPayload(p tools.ToolPayload) bool {
@@ -514,6 +533,12 @@ func (webSearchExecutor) MatchesPayload(p tools.ToolPayload) bool {
 }
 
 func (e webSearchExecutor) Handle(ctx context.Context, h *toolHandlerContext) (tools.ToolOutput, error) {
+	// web_search is a hosted tool: the model provider executes it server-side
+	// and no function call should reach the local registry. The runner-backed
+	// path below serves clients that wire a local searcher (tests, OSS providers).
+	if e.runner == nil {
+		return nil, tools.RespondToModelError("web_search is executed by the model provider; no local handler is available")
+	}
 	args, err := functionPayloadArguments(h.ToolName, h.Payload)
 	if err != nil {
 		return nil, err

@@ -63,8 +63,10 @@ func TestParityToolSpecs(t *testing.T) {
 
 	// Tools codexgo advertises today that must match codex byte-for-byte. With
 	// the UnifiedExec bridge, the PTY pair (exec_command + write_stdin) is the
-	// advertised shell family on PTY-capable hosts, exactly like codex.
-	for _, name := range []string{"view_image", "update_plan", "exec_command", "write_stdin", "apply_patch"} {
+	// advertised shell family on PTY-capable hosts, exactly like codex;
+	// request_user_input (enabled by default) and the hosted web_search spec
+	// (cached mode default) round out 7 of codex's 11.
+	for _, name := range []string{"view_image", "update_plan", "exec_command", "write_stdin", "request_user_input", "apply_patch", "web_search"} {
 		rv, ok := ref[name]
 		if !ok {
 			t.Fatalf("codex did not advertise %q (got %d tools)", name, len(ref))

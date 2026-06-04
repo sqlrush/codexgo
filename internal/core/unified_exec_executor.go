@@ -75,6 +75,27 @@ func turnShellToolType(tc *TurnContext) modelsmanager.ConfigShellToolType {
 	return tools.ShellTypeForModelAndFeatures(&mi, turnFeatures(tc))
 }
 
+// turnWebSearchMode resolves the effective web-search mode for a turn,
+// mirroring `config.web_search_mode` with codex's default (Cached when
+// unconfigured — resolve_web_search_mode falls back to WebSearchMode::Cached).
+func turnWebSearchMode(tc *TurnContext) protocol.WebSearchMode {
+	if tc != nil && tc.WebSearchMode != "" {
+		return tc.WebSearchMode
+	}
+	return protocol.WebSearchModeCached
+}
+
+// turnRequestUserInputEnabled mirrors codex's
+// config.experimental_request_user_input_enabled, which defaults to TRUE when
+// the [tools.experimental_request_user_input] table is absent
+// (resolve_experimental_request_user_input_enabled).
+func turnRequestUserInputEnabled(tc *TurnContext) bool {
+	if tc == nil || tc.ExperimentalRequestUserInput == nil {
+		return true
+	}
+	return *tc.ExperimentalRequestUserInput
+}
+
 // turnTruncationPolicy resolves the model-output truncation policy for a turn
 // from the model's catalog metadata (the Rust `turn.truncation_policy`).
 func turnTruncationPolicy(tc *TurnContext) truncation.TruncationPolicy {

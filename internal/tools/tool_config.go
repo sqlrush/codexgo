@@ -3,6 +3,7 @@ package tools
 import (
 	"github.com/sqlrush/codexgo/internal/features"
 	"github.com/sqlrush/codexgo/internal/modelsmanager"
+	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/pty"
 )
 
@@ -34,6 +35,21 @@ func ShellCommandBackendForFeatures(f *features.Features) ShellCommandBackendCon
 		return ShellCommandBackendZshFork
 	}
 	return ShellCommandBackendClassic
+}
+
+// RequestUserInputAvailableModes lists the collaboration modes in which the
+// request_user_input tool may be used: the modes that natively allow it (Plan),
+// plus Default when the default_mode_request_user_input feature is enabled.
+// Mirrors Rust `request_user_input_available_modes`.
+func RequestUserInputAvailableModes(f *features.Features) []protocol.ModeKind {
+	modes := make([]protocol.ModeKind, 0, len(protocol.TUIVisibleCollaborationModes))
+	for _, mode := range protocol.TUIVisibleCollaborationModes {
+		if mode.AllowsRequestUserInput() ||
+			(f.Enabled(features.FeatureDefaultModeRequestUserInput) && mode == protocol.ModeKindDefault) {
+			modes = append(modes, mode)
+		}
+	}
+	return modes
 }
 
 // ShellTypeForModelAndFeatures resolves the effective shell tool family for a

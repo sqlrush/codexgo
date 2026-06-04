@@ -93,6 +93,13 @@ type SessionConfiguration struct {
 	// table over the per-feature defaults). Nil means "defaults"; turn
 	// construction resolves through [turnFeatures].
 	Features *features.Features
+	// WebSearchMode is the effective web-search mode (config.web_search_mode).
+	// Empty means the codex default (cached).
+	WebSearchMode protocol.WebSearchMode
+	// ExperimentalRequestUserInput gates the request_user_input tool
+	// (config.experimental_request_user_input_enabled). Nil means the codex
+	// default (enabled).
+	ExperimentalRequestUserInput *bool
 
 	// AppServerClientName / AppServerClientVersion identify the app-server
 	// client, when one is attached.

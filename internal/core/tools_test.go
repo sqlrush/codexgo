@@ -322,21 +322,22 @@ func TestBuiltinToolRouterRegistration(t *testing.T) {
 		{
 			name: "no deps registers dependency-free + apply_patch",
 			deps: BuiltinToolDeps{},
-			// view_image, update_plan always; apply_patch always (nil FS -> OS).
-			wantTools: []string{"apply_patch", "update_plan", "view_image"},
+			// view_image, update_plan always; apply_patch always (nil FS -> OS);
+			// web_search always (hosted spec, provider-executed).
+			wantTools: []string{"apply_patch", "update_plan", "view_image", "web_search"},
 		},
 		{
 			name: "exec dep adds shell_command",
 			deps: BuiltinToolDeps{Exec: &mockExecService{}},
 			wantTools: []string{
-				"apply_patch", "shell_command", "update_plan", "view_image",
+				"apply_patch", "shell_command", "update_plan", "view_image", "web_search",
 			},
 		},
 		{
 			name: "unified-exec dep adds the PTY pair",
 			deps: BuiltinToolDeps{UnifiedExec: unifiedexec.NewExecutor(nil)},
 			wantTools: []string{
-				"apply_patch", "exec_command", "update_plan", "view_image", "write_stdin",
+				"apply_patch", "exec_command", "update_plan", "view_image", "web_search", "write_stdin",
 			},
 		},
 		{
@@ -396,12 +397,12 @@ func TestSpecsForTurn(t *testing.T) {
 		{
 			name:        "unified-exec mode advertises the PTY pair in spec_plan order",
 			unifiedExec: true,
-			wantOrder:   []string{"exec_command", "write_stdin", "update_plan", "apply_patch", "view_image"},
+			wantOrder:   []string{"exec_command", "write_stdin", "update_plan", "apply_patch", "view_image", "web_search"},
 		},
 		{
 			name:        "shell mode advertises shell_command in spec_plan order",
 			unifiedExec: false,
-			wantOrder:   []string{"shell_command", "update_plan", "apply_patch", "view_image"},
+			wantOrder:   []string{"shell_command", "update_plan", "apply_patch", "view_image", "web_search"},
 		},
 	}
 
