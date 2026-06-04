@@ -70,13 +70,24 @@ Automated, credential-free, binary-vs-binary (env-gated on `CODEX_PARITY_BIN`):
 | `exec -o/--output-last-message` | ✅ byte-identical file |
 | `exec --output-schema` request `text` | ✅ byte-identical json_schema block |
 | full `/responses` request body | 🟡 `model`/`tool_choice`/`store`/`stream`/`include`/`service_tier`/`text`/`reasoning`/`parallel_tool_calls`/`instructions` byte-identical; `input` (env-context) + `tools` (full registry) tracked |
+| built-in tool specs | 🟡 `view_image`/`update_plan`/`exec_command`/`apply_patch`(custom grammar) byte-identical (`TestParityToolSpecs`); `write_stdin`/goals/`tool_search`/`web_search` + per-model selection (UnifiedExec) pending |
 | `doctor --json` | 🟡 18 check IDs + container/keys match; per-check `details` shape differs |
 | `completion` | 🟡 functional; not clap-byte-identical |
 
 ## Honest overall
 
 Breadth: all 49 specs build; the headless agent runs and is a verified drop-in for
-the core flows (text + tool turns). Remaining toward a literal 100%: broader
-behavioral differentials (reasoning/multi-step/error paths), TUI pixel-fidelity,
-wiring core's advanced features into the live loop, and the documented long-tail
-deviations. Rough faithful-and-verified completeness: **~60%**.
+the core flows (text + tool turns). The `/responses` REQUEST is now byte-identical
+to codex for every scalar field plus `instructions` and the four advertised tool
+specs. Remaining toward a literal 100%, both large subsystem ports surfaced by the
+request-body differential:
+- **`input` context system** — codex prepends `<permissions instructions>` +
+  `<skills_instructions>` + `<environment_context>` (cwd/sandbox/approval/network).
+  ~1080 lines (`core/src/context/`), and not byte-verifiable cross-env (absolute
+  paths/date/timezone) so it needs structural verification.
+- **`tools` registry** — codex's gpt-5.5 set is the UnifiedExec PTY family
+  (`exec_command` + `write_stdin`) plus goals/`tool_search`/`web_search`; matching
+  it requires those tool *behaviors* (PTY sessions, goal store) + the per-model
+  selection (`shell_type_for_model_and_features`, `spec_plan.rs`).
+Plus TUI pixel-fidelity and the documented long-tail deviations. Rough
+faithful-and-verified completeness: **~67%**.
