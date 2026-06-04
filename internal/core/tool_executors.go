@@ -294,7 +294,10 @@ type applyPatchExecutor struct {
 func (applyPatchExecutor) Name() protocol.ToolName { return protocol.PlainToolName("apply_patch") }
 
 func (applyPatchExecutor) Spec(*TurnContext) (tools.ToolSpec, bool) {
-	return functionSpecStub("apply_patch", "Apply a unified patch to the workspace."), true
+	// codex advertises apply_patch as a FREEFORM (custom) grammar tool, not a
+	// function (create_apply_patch_freeform_tool). The handler already accepts the
+	// custom raw-text payload via extractPatch.
+	return tools.CreateApplyPatchFreeformTool(), true
 }
 
 func (applyPatchExecutor) MatchesPayload(p tools.ToolPayload) bool {

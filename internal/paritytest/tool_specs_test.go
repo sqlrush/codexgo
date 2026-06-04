@@ -46,7 +46,7 @@ func TestParityToolSpecs(t *testing.T) {
 	cgo := toolsByName(t, "codexgo", cgoBin)
 
 	// Tools codexgo advertises today that must match codex byte-for-byte.
-	for _, name := range []string{"view_image", "update_plan", "exec_command"} {
+	for _, name := range []string{"view_image", "update_plan", "exec_command", "apply_patch"} {
 		rv, ok := ref[name]
 		if !ok {
 			t.Fatalf("codex did not advertise %q (got %d tools)", name, len(ref))

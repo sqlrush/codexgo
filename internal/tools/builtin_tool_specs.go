@@ -1,8 +1,30 @@
 package tools
 
 import (
+	_ "embed"
 	"encoding/json"
 )
+
+// applyPatchLarkGrammar is the lark grammar codex serves for the freeform
+// apply_patch tool, embedded byte-for-byte from codex's apply_patch.lark.
+//
+//go:embed apply_patch.lark
+var applyPatchLarkGrammar string
+
+// CreateApplyPatchFreeformTool builds the `apply_patch` ToolSpec as codex does for
+// gpt-5.5: a freeform (custom) grammar tool, not a function. Mirrors Rust
+// `create_apply_patch_freeform_tool(include_environment_id=false)`.
+func CreateApplyPatchFreeformTool() ToolSpec {
+	return FreeformToolSpec(FreeformTool{
+		Name:        "apply_patch",
+		Description: "Use the `apply_patch` tool to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON.",
+		Format: FreeformToolFormat{
+			Type:       "grammar",
+			Syntax:     "lark",
+			Definition: applyPatchLarkGrammar,
+		},
+	})
+}
 
 // This file ports the model-visible specs for the always-available built-in tools
 // view_image and update_plan from codex-core's tools/handlers/view_image_spec.rs
