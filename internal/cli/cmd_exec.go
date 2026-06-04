@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 
 	"github.com/sqlrush/codexgo/internal/exec"
 )
@@ -21,6 +22,17 @@ func runExecSubcommand(ctx context.Context, parsed ParsedCommandLine, streams St
 	if err != nil {
 		fmt.Fprintln(streams.Stderr, "codex exec:", err)
 		return 1
+	}
+
+	// Honor the `-C/--cd` working directory: commands and apply_patch resolve
+	// relative paths against it, matching codex exec. A relative value is resolved
+	// against the process cwd.
+	if cli.Cwd != "" {
+		cwd := cli.Cwd
+		if !filepath.IsAbs(cwd) {
+			cwd = filepath.Join(resolveCwd(), cwd)
+		}
+		defaults.Cwd = cwd
 	}
 
 	env := exec.Environment{

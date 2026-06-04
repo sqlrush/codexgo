@@ -367,6 +367,27 @@ func (r *DefaultToolRouter) DispatchParsed(ctx context.Context, sess *Session, t
 	return r.dispatch(ctx, sess, tc, call.CallID, call.ToolName, call.Payload)
 }
 
+// DispatchWithSession dispatches an invocation while threading the owning
+// session so executors can emit visible events (e.g. exec_command_begin/end,
+// file_change item lifecycle). It is the session-aware counterpart of the
+// [ToolRouter.Dispatch] interface method, satisfying [sessionAwareRouter].
+func (r *DefaultToolRouter) DispatchWithSession(ctx context.Context, sess *Session, tc *TurnContext, inv ToolInvocation, payload tools.ToolPayload) (ToolResult, error) {
+	res, err := r.dispatch(ctx, sess, tc, inv.CallID, inv.Name, payload)
+	if err != nil {
+		return ToolResult{}, err
+	}
+	return res.ToToolResult(), nil
+}
+
+// sessionAwareRouter is implemented by routers that can dispatch with the owning
+// session threaded through. The turn runner prefers this path so built-in
+// executors (shell_command / apply_patch) can emit their lifecycle events; a
+// router that does not implement it falls back to the session-less
+// [ToolRouter.Dispatch].
+type sessionAwareRouter interface {
+	DispatchWithSession(ctx context.Context, sess *Session, tc *TurnContext, inv ToolInvocation, payload tools.ToolPayload) (ToolResult, error)
+}
+
 // rawArgumentsForPayload renders a payload's raw argument bytes for the
 // foundation [ToolInvocation.Arguments] field.
 func rawArgumentsForPayload(p tools.ToolPayload) []byte {

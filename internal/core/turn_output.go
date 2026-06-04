@@ -6,7 +6,20 @@ import (
 	"strings"
 
 	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/internal/tools"
 )
+
+// dispatchToolInvocation routes a tool invocation through the session's
+// [ToolRouter], preferring the session-aware path ([sessionAwareRouter]) so
+// built-in executors can emit their visible lifecycle events (exec_command,
+// file_change). It falls back to the session-less [ToolRouter.Dispatch] for
+// routers that do not implement the session-aware interface.
+func dispatchToolInvocation(ctx context.Context, sess *Session, tc *TurnContext, inv ToolInvocation, payload tools.ToolPayload) (ToolResult, error) {
+	if aware, ok := sess.services.ToolRouter.(sessionAwareRouter); ok {
+		return aware.DispatchWithSession(ctx, sess, tc, inv, payload)
+	}
+	return sess.services.ToolRouter.Dispatch(ctx, tc, inv)
+}
 
 // handleOutputItemDone processes a completed output item from the model stream.
 // Assistant messages and reasoning are recorded into history and surfaced via
@@ -72,7 +85,7 @@ func dispatchFunctionCall(ctx context.Context, sess *Session, tc *TurnContext, i
 		at.State.IncToolCalls()
 	}
 
-	result, err := sess.services.ToolRouter.Dispatch(ctx, tc, inv)
+	result, err := dispatchToolInvocation(ctx, sess, tc, inv, tools.FunctionPayload(item.Arguments))
 	if err != nil {
 		// A dispatch error becomes a failed tool output so the model can recover,
 		// matching the Rust behavior of surfacing tool errors back to the model.
@@ -99,7 +112,7 @@ func dispatchCustomToolCall(ctx context.Context, sess *Session, tc *TurnContext,
 		at.State.IncToolCalls()
 	}
 
-	result, err := sess.services.ToolRouter.Dispatch(ctx, tc, inv)
+	result, err := dispatchToolInvocation(ctx, sess, tc, inv, tools.CustomPayload(item.Input))
 	if err != nil {
 		result = ToolResult{Output: fmt.Sprintf("tool dispatch error: %v", err), Success: false}
 	}

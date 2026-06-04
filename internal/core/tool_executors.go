@@ -91,8 +91,15 @@ func builtinExecutors(deps BuiltinToolDeps) []toolExecutor {
 	execs = append(execs, viewImageExecutor{}, planExecutor{})
 
 	if deps.Exec != nil {
-		execs = append(execs, execCommandExecutor{exec: deps.Exec})
+		// shell_command is the gpt-5.5 default shell tool: it takes a `command`
+		// STRING, wraps it in the user's shell, and intercepts apply_patch heredocs.
+		execs = append(execs, newShellCommandExecutor(deps.Exec, deps.PatchFS))
+		// exec_command is the PTY-oriented variant (takes a `cmd` STRING) kept for
+		// models that use it; it shares the shell_command execution path.
+		execs = append(execs, newExecCommandStringExecutor(deps.Exec, deps.PatchFS))
 	}
+	// apply_patch remains available as a standalone tool for the direct (non-shell)
+	// invocation form some models use.
 	execs = append(execs, applyPatchExecutor{fs: deps.PatchFS})
 	if deps.UserInput != nil {
 		execs = append(execs, requestUserInputExecutor{req: deps.UserInput})
@@ -267,111 +274,13 @@ func (planExecutor) Handle(_ context.Context, h *toolHandlerContext) (tools.Tool
 }
 
 // ----------------------------------------------------------------------------
-// exec_command (shell)
+// exec_command / shell_command (shell)
+//
+// The shell tool executors live in shell_command_executor.go. The gpt-5.5
+// `shell_command` tool (a `command` STRING) and the PTY-oriented `exec_command`
+// tool (a `cmd` STRING) both wrap their command string in the user's shell, run
+// it through the ExecService, and intercept apply_patch heredocs.
 // ----------------------------------------------------------------------------
-
-type execCommandExecutor struct {
-	exec ExecService
-}
-
-func (execCommandExecutor) Name() protocol.ToolName { return protocol.PlainToolName("exec_command") }
-
-func (execCommandExecutor) Spec(*TurnContext) (tools.ToolSpec, bool) {
-	// STUB: the real shell spec is environment/permission aware; expose a
-	// minimal function spec for routing.
-	return functionSpecStub("exec_command", "Run a shell command."), true
-}
-
-func (execCommandExecutor) MatchesPayload(p tools.ToolPayload) bool {
-	return p.Kind == tools.ToolPayloadKindFunction || p.Kind == tools.ToolPayloadKindCustom
-}
-
-// execCommandArgs is the reduced shell argument shape. The real
-// ShellCommandToolCallParams carries timeout/justification/permissions; those
-// are STUB-deferred to the sandbox/permissions area.
-type execCommandArgs struct {
-	Command []string `json:"command"`
-	Cwd     string   `json:"workdir"`
-}
-
-func (e execCommandExecutor) Handle(ctx context.Context, h *toolHandlerContext) (tools.ToolOutput, error) {
-	raw, err := payloadArguments(h.Payload)
-	if err != nil {
-		return nil, err
-	}
-	var parsed execCommandArgs
-	if perr := json.Unmarshal([]byte(raw), &parsed); perr != nil {
-		return nil, tools.RespondToModelError(fmt.Sprintf("failed to parse function arguments: %v", perr))
-	}
-	if len(parsed.Command) == 0 {
-		return nil, tools.RespondToModelError("exec_command requires a non-empty command")
-	}
-	cwd := parsed.Cwd
-	if cwd == "" {
-		cwd = h.Turn.Cwd
-	}
-
-	// Emit the visible begin event so the UI shows the running command.
-	if h.Session != nil {
-		h.Session.SendEvent(h.Turn.SubID, protocol.EventMsg{
-			Type: protocol.EventMsgKindExecCommandBegin,
-			ExecCommandBegin: &protocol.ExecCommandBeginEvent{
-				CallID:  h.CallID,
-				TurnID:  h.Turn.SubID,
-				Command: parsed.Command,
-				Cwd:     protocol.AbsolutePath(cwd),
-				Source:  protocol.ExecCommandSourceAgent,
-			},
-		})
-	}
-
-	res, runErr := e.exec.Run(ctx, ExecRequest{Command: parsed.Command, Cwd: cwd})
-	if runErr != nil {
-		return nil, tools.RespondToModelError(fmt.Sprintf("exec failed: %v", runErr))
-	}
-
-	status := protocol.ExecCommandStatusCompleted
-	if res.ExitCode != 0 {
-		status = protocol.ExecCommandStatusFailed
-	}
-	formatted := formatExecOutput(res)
-	if h.Session != nil {
-		h.Session.SendEvent(h.Turn.SubID, protocol.EventMsg{
-			Type: protocol.EventMsgKindExecCommandEnd,
-			ExecCommandEnd: &protocol.ExecCommandEndEvent{
-				CallID:           h.CallID,
-				TurnID:           h.Turn.SubID,
-				Command:          parsed.Command,
-				Cwd:              protocol.AbsolutePath(cwd),
-				Source:           protocol.ExecCommandSourceAgent,
-				Stdout:           res.Stdout,
-				Stderr:           res.Stderr,
-				AggregatedOutput: res.Stdout + res.Stderr,
-				ExitCode:         res.ExitCode,
-				FormattedOutput:  formatted,
-				Status:           status,
-			},
-		})
-	}
-
-	return newTextToolOutput(formatted, boolPtr(true)), nil
-}
-
-// formatExecOutput renders an exec result for the model, mirroring the Rust
-// `format_exec_output_for_model` (reduced: no truncation/duration here).
-func formatExecOutput(res ExecResult) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "Exit code: %d\n", res.ExitCode)
-	b.WriteString("Output:\n")
-	b.WriteString(res.Stdout)
-	if res.Stderr != "" {
-		if res.Stdout != "" {
-			b.WriteString("\n")
-		}
-		b.WriteString(res.Stderr)
-	}
-	return b.String()
-}
 
 // ----------------------------------------------------------------------------
 // apply_patch

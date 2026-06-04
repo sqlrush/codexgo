@@ -137,21 +137,27 @@ func patchChangeKindFromRaw(raw json.RawMessage) PatchChangeKind {
 }
 
 // patchApplyStatusFromRaw maps a raw engine patch-apply status to the exec
-// status, collapsing failed and declined into failed (matching the Rust
-// mapping). An absent status defaults to completed.
+// status. The engine FileChange item carries Option<PatchApplyStatus>
+// (completed/failed/declined, or None); the app-server v2 conversion fills an
+// absent status with in_progress (the started item), so an absent/None status
+// maps to in_progress here, failed/declined collapse to failed, and completed
+// passes through. Mirrors the Rust v2 `From<CoreTurnItem::FileChange>` mapping
+// (`status.map(...).unwrap_or(InProgress)`).
 func patchApplyStatusFromRaw(raw json.RawMessage) PatchApplyStatus {
-	if len(raw) == 0 {
-		return PatchApplyStatusCompleted
+	if len(raw) == 0 || string(raw) == "null" {
+		return PatchApplyStatusInProgress
 	}
 	var status protocol.PatchApplyStatus
 	if err := json.Unmarshal(raw, &status); err != nil {
-		return PatchApplyStatusCompleted
+		return PatchApplyStatusInProgress
 	}
 	switch status {
 	case protocol.PatchApplyStatusFailed, protocol.PatchApplyStatusDeclined:
 		return PatchApplyStatusFailed
-	default:
+	case protocol.PatchApplyStatusCompleted:
 		return PatchApplyStatusCompleted
+	default:
+		return PatchApplyStatusInProgress
 	}
 }
 

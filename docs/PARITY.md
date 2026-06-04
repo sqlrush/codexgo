@@ -32,8 +32,8 @@ Living record of differential validation of `codexgo` against the reference
 | Surface | Command | Result |
 |---|---|---|
 | `exec --json` turn lifecycle | `codex exec --json "hello"` vs codexgo | ✅ **Pass** — see `TestParityTurnExec`. **Both binaries** are pointed at the **same fake `/v1/responses` SSE endpoint** via the **same drop-in `config.toml`** (`[model_providers.parity]`, `env_key`), and produce a **byte-identical normalized JSONL stream**: same event-type sequence, same final agent message, same usage. The codexgo binary now honors the custom `model_provider` selection, its `base_url`, and its `env_key` directly — no in-process harness. No real OpenAI credentials required. |
-| `exec --json` tool-call turn (shell) | `codex exec --json` w/ `shell_command` call vs codexgo | ❌ **DIVERGENCE** — see `TestParityTurnExecCommand`. Multi-request agent loop (tool call → tool output → final message) at the same fake server. **Real codex** runs `echo parity-tool-ok` non-interactively (`approval_policy = "never"`, `sandbox_mode = "danger-full-access"`) and emits the `command_execution` lifecycle item (begin+end) then the final message. **codexgo binary** rejects the call with `tool dispatch error: unsupported call: shell_command` — it executes **no** tool. Root cause below. Test asserts the codex contract, then **skips** with the documented gap (suite stays green). |
-| `exec --json` tool-call turn (apply_patch) | `codex exec --json` w/ apply_patch heredoc vs codexgo | ❌ **DIVERGENCE** — see `TestParityTurnApplyPatch`. Same loop; the model sends `shell_command` whose script is an `apply_patch <<'EOF' … EOF` heredoc (how codex 0.136.0 delivers apply_patch for gpt-5.5). **Real codex** intercepts it, writes the file, and emits the `file_change` lifecycle item. **codexgo binary** again rejects with `unsupported call: shell_command` and writes **no** file. Same root cause. |
+| `exec --json` tool-call turn (shell) | `codex exec --json` w/ `shell_command` call vs codexgo | ✅ **Pass** — see `TestParityTurnExecCommand`. Multi-request agent loop (tool call → tool output → final message) at the same fake server. Both binaries register `shell_command` (string `command`), wrap it in the user shell (`/bin/zsh -lc 'echo parity-tool-ok'`), run it non-interactively (`approval_policy = "never"`, `sandbox_mode = "danger-full-access"`), and emit the **byte-identical** `command_execution` lifecycle item (begin `in_progress` + end `completed`, same `command`, `aggregated_output`, `exit_code`) then the same final message and usage. codexgo wires the builtin tool router (`core.BuiltinToolRouter`) into the exec assembly and threads the session into dispatch so the executor emits the lifecycle events. |
+| `exec --json` tool-call turn (apply_patch) | `codex exec --json` w/ apply_patch heredoc vs codexgo | ✅ **Pass** — see `TestParityTurnApplyPatch`. Same loop; the model sends `shell_command` whose script is an `apply_patch <<'EOF' … EOF` heredoc (how codex 0.136.0 delivers apply_patch for gpt-5.5). Both binaries intercept the heredoc (`shellcmd.ExtractApplyPatchHeredoc`, a mvdan.cc/sh port of codex's tree-sitter detection), route it to `internal/applypatch`, write the file, and emit the **byte-identical** `file_change` lifecycle item (begin `in_progress` + end `completed`, same `changes` path/kind). The resulting file content is byte-identical to real codex (`hello from apply_patch parity\n`). The `-C/--cd` workdir is now honored by `codex exec` so the file lands in the run cwd. |
 
 ### `TestParityTurnExec` — the turn-level differential
 
@@ -127,11 +127,12 @@ JSONL stream is byte-identical to the real codex binary's — proving the binary
 itself is a behavioral drop-in for a custom provider. The OpenAI-provider path
 (`OPENAI_API_KEY` + default base_url) is wired through the same code.
 
-### `TestParityTurnExecCommand` / `TestParityTurnApplyPatch` — tool-call turns (DIVERGENCE found)
+### `TestParityTurnExecCommand` / `TestParityTurnApplyPatch` — tool-call turns (✅ PASS, binary-vs-binary)
 
 These extend the turn-level proof from a single message turn to a **multi-request
 agent loop** (the tool-execution path), again with **no OpenAI credentials**. They
 are the credential-free analogue of "run a command / edit a file under sandbox".
+Both now **pass binary-vs-binary** with byte-identical normalized JSONL.
 
 **How they work**
 
@@ -152,7 +153,7 @@ are the credential-free analogue of "run a command / edit a file under sandbox".
   is delivered as a `shell_command` whose script is an `apply_patch <<'EOF' … EOF`
   heredoc, which codex intercepts (`intercept_apply_patch`).
 
-**What the real codex emits (the reference contract these tests assert)**
+**What both binaries emit (byte-identical after normalization)**
 
 ```
 # exec command turn
@@ -166,74 +167,54 @@ are the credential-free analogue of "run a command / edit a file under sandbox".
 # apply_patch turn
 {"type":"item.started","item":{"id":"item_0","type":"file_change","changes":[{"path":"<WORKDIR>/parity_patch.txt","kind":"add"}],"status":"in_progress"}}
 {"type":"item.completed","item":{"id":"item_0","type":"file_change","changes":[{"path":"<WORKDIR>/parity_patch.txt","kind":"add"}],"status":"completed"}}
-…  # file written: "hello from apply_patch parity\n"
+…  # file written: "hello from apply_patch parity\n"  (byte-identical to real codex)
 ```
 
-**What the codexgo binary does (the divergence)**
+**How codexgo achieves parity (the implementation)**
 
-The codexgo binary executes **no** tool. The function-call output it feeds back on
-the follow-up request is:
+1. **`shell_command` tool spec** (`internal/tools/shell_command_spec.go`):
+   `CreateShellCommandTool` ports codex's `create_shell_command_tool` byte-faithfully
+   — a single required `command` string plus optional `workdir` / `timeout_ms` /
+   `login` / approval params, `strict:false`, `additionalProperties:false`, properties
+   in sorted-key order (matching the Rust `BTreeMap`). `CreateExecCommandTool` keeps
+   the PTY-oriented `exec_command` (a `cmd` string) for models that use it.
+   `ShellCommandToolCallParams` decodes the call arguments (with the `timeout` alias).
+2. **`shell_command` executor** (`internal/core/shell_command_executor.go`):
+   `shellCommandExecutor` wraps the `command` string in the user's default shell
+   (`shellcmd.DefaultUserShell().DeriveExecArgs(cmd, login)` →
+   `[/bin/zsh, -lc, <cmd>]`), runs it through the injected `ExecService`, and emits
+   the `ExecCommandBegin`/`ExecCommandEnd` events the exec JSONL processor renders as
+   the `command_execution` lifecycle item. Both `shell_command` (key `command`) and
+   `exec_command` (key `cmd`) share this path.
+3. **apply_patch heredoc interception** (`internal/shellcmd/apply_patch_heredoc.go`):
+   `ExtractApplyPatchHeredoc` ports codex's `extract_apply_patch_from_bash` /
+   `maybe_parse_apply_patch` using `mvdan.cc/sh` (the Go analogue of tree-sitter-bash
+   the rest of `internal/shellcmd` already uses). It recognizes the conservative
+   single-statement forms `apply_patch <<'EOF' … EOF` and
+   `cd <path> && apply_patch <<'EOF' … EOF`. When matched, the executor routes the
+   patch body to `internal/applypatch` and emits the `file_change` item lifecycle
+   (begin with absent status → `in_progress`, end → `completed`) instead of spawning
+   the shell.
+4. **Router wiring + session threading** (`internal/cli/assembly.go`,
+   `internal/core/turn_output.go`, `internal/core/tools.go`): the exec assembly wires
+   `core.BuiltinToolRouter(core.BuiltinToolDeps{Exec: newLocalExecService()})`, and
+   the turn runner dispatches through the session-aware path
+   (`DefaultToolRouter.DispatchWithSession`) so the executor's events reach the exec
+   JSONL stream.
+5. **`-C/--cd` workdir** (`internal/exec/cli.go`, `internal/cli/cmd_exec.go`):
+   `codex exec` now parses `-C/--cd` and overrides the run cwd, so commands and
+   apply_patch resolve relative paths against the same directory real codex uses.
+6. **`file_change` status mapping** (`internal/exec/item_mapping.go`): an absent
+   engine patch-apply status maps to `in_progress` (matching codex's v2
+   `status.map(...).unwrap_or(InProgress)`), so the started item reports
+   `in_progress` and the completed item reports `completed`.
 
-```
-shell_command  → output: "tool dispatch error: unsupported call: shell_command"
-exec_command   → output: "tool dispatch error: unsupported call: exec_command"
-apply_patch    → output: "tool dispatch error: unsupported call: apply_patch"
-```
-
-So no `command_execution` / `file_change` item is emitted and no file is written
-(`apply_patch` workdir stays empty); the stream jumps straight to the final
-`agent_message`.
-
-**Root cause (a real codexgo bug, in a package outside this task's edit scope)**
-
-The codexgo *binary*'s exec/run/TUI assembly builds an **empty** tool router and
-injects **no** `ExecService`:
-
-- `internal/cli/assembly.go` → `assembleResult` calls `appserver.Assemble(...)`
-  **without** setting `AssemblyConfig.ToolRouterFactory` **or**
-  `AssemblyConfig.ExecService`.
-- `internal/appserver/assembly.go` then defaults the router factory to
-  `core.NewDefaultToolRouter()` — **zero executors** — and leaves `ExecService` nil.
-- At dispatch, `internal/core/tools.go` returns `unsupported call: <name>` for every
-  function call (`fmt.Sprintf("unsupported call: %s", name)`), which the turn loop
-  serializes as the `function_call_output`.
-
-The machinery to do this correctly **already exists** in `internal/core` but is
-never wired into the binary:
-
-- `core.BuiltinToolRouter(core.BuiltinToolDeps{...})` (`internal/core/tools.go`)
-  builds a router with the built-in executors.
-- `execCommandExecutor` and `applyPatchExecutor` (`internal/core/tool_executors.go`)
-  implement the `exec_command` and `apply_patch` tools, including emitting
-  `ExecCommandBegin`/`ExecCommandEnd` events.
-
-**Two secondary divergences observed while probing (would surface after wiring):**
-
-1. **Tool name.** codexgo registers `exec_command` (+ `apply_patch`) but **not**
-   `shell_command`. The reference dispatches `shell_command` (string `command`) and
-   `exec_command` (unified exec, string **`cmd`**); for gpt-5.5 the model-visible
-   tool is `shell_command`. So even with the router wired, codexgo would reject a
-   `shell_command` call until it registers that name (or an alias).
-2. **`exec_command` argument schema.** codexgo's `execCommandExecutor` parses
-   `{"command": ["echo","…"]}` (a **string array**) + `workdir`. The reference's
-   `exec_command` (unified exec) parses `{"cmd": "echo …"}` (a **string**) — probing
-   the reference with the array form yields `failed to parse function arguments:
-   missing field 'cmd'`. The two `exec_command` tools are **not** wire-compatible.
-3. **apply_patch is not a model-visible function tool for gpt-5.5.** Sending a
-   top-level `apply_patch` function call to the reference returns `output: "aborted"`
-   (it is delivered via `shell_command` heredoc instead). codexgo registers a
-   top-level `apply_patch` tool, but it is also unreachable in the binary today (same
-   empty-router root cause).
-
-**Fix sketch (not applied — lives outside `internal/tools` / `internal/core`, and
-this task may only edit `internal/paritytest/` + this file):** thread a
-`ToolRouterFactory` and `ExecService` into `appserver.AssemblyConfig` from
-`internal/cli/assembly.go`, building the router via `core.BuiltinToolRouter` with a
-real `ExecService` (and register a `shell_command` name / accept the reference's
-`cmd`-string `exec_command` schema). Once wired, `TestParityTurnExecCommand` and
-`TestParityTurnApplyPatch` stop skipping and assert full normalized parity +
-byte-identical patched-file contents automatically (the assertions are already
-written and run on the codex side every invocation).
+**Residual byte-level divergences:** none observed for these two turns — the
+normalized JSONL streams compare byte-for-byte and the apply_patch file content is
+identical. (The `command_execution` item's `command` field is the user's resolved
+shell, e.g. `/bin/zsh -lc '…'`; both binaries resolve the same account shell on the
+same host, so it matches. On a host where the two binaries would resolve different
+default shells the rendered `command` could differ — not observed here.)
 
 ## Pending (need a one-time authenticated recording — maintainer)
 
@@ -271,9 +252,9 @@ further offline differentials:
   CODEX_PARITY_BIN=/path/to/codex go test ./internal/paritytest/ -run TestParityTurn -v
   ```
   Current status with codex 0.136.0: **3/3 no-auth + 1/1 single-message
-  turn-level pass**; the **2 tool-call turns assert the codex contract and skip on
-  the documented codexgo unwired-tools divergence** (binary builds an empty tool
-  router / no `ExecService`).
+  turn-level pass + 2/2 tool-call turns pass** (`TestParityTurnExecCommand` /
+  `TestParityTurnApplyPatch` now run binary-vs-binary with byte-identical
+  normalized JSONL and identical apply_patch file content).
 - Per-spec golden tests run in CI against committed fixtures where the fixture
   contains no OpenAI content; codex-output fixtures are env-gated and regenerated
   locally.
@@ -290,17 +271,15 @@ normalized JSONL streams are byte-identical (same event sequence, message text,
 and usage). The codexgo binary now honors a custom provider's `model_provider`
 selection, `base_url`, and `env_key` (previous in-process workaround removed).
 
-The **tool-call path is now characterized credential-free** and revealed a **real
-codexgo binary gap, not just a missing recording**: `TestParityTurnExecCommand` and
-`TestParityTurnApplyPatch` drive the multi-request agent loop through both binaries.
-The real codex runs the shell command / applies the patch and emits the
-`command_execution` / `file_change` lifecycle items; the **codexgo binary executes
-no tool at all** (`tool dispatch error: unsupported call: …`) because its
-exec/run/TUI assembly wires an empty tool router and no `ExecService` — the builtin
-executors + `BuiltinToolRouter` exist in `internal/core` but are never connected
-(see the divergence section above for the exact files, plus the secondary tool-name
-and `exec_command` schema divergences). The fix lives outside this task's edit
-scope (`internal/cli` / `internal/appserver`), so it is documented here rather than
-applied; the tests assert the codex contract every run and skip on the codexgo gap,
-so they begin enforcing full parity automatically once the wiring lands. The
-remaining honest caveats are compaction and app-server wire-stream differentials.
+The **tool-call path is now a verified binary-vs-binary drop-in**:
+`TestParityTurnExecCommand` and `TestParityTurnApplyPatch` drive the multi-request
+agent loop through both binaries. Both register `shell_command` (with codex's exact
+`{command: string, …}` schema), wrap the command in the user shell, run it through
+the `ExecService`, and emit the `command_execution` lifecycle item; for an
+`apply_patch <<'EOF' … EOF` heredoc both intercept it (`mvdan.cc/sh` port of codex's
+tree-sitter detection), route it to `internal/applypatch`, write the file, and emit
+the `file_change` lifecycle item. The normalized JSONL streams compare byte-for-byte
+and the apply_patch file content is identical to real codex. The wiring (builtin
+tool router + `ExecService` into the exec assembly, session-aware dispatch, `-C/--cd`
+workdir) is in place. The remaining honest caveats are compaction and app-server
+wire-stream differentials.

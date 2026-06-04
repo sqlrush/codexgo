@@ -31,7 +31,7 @@ func ShlexJoin(tokens []string) string {
 // shlexQuote returns a POSIX-shell-safe rendering of a single token, matching
 // the shlex crate's try_quote:
 //
-//   - An empty token becomes "''".
+//   - An empty token becomes "”".
 //   - A token containing a NUL byte is rejected.
 //   - A token of only "safe" bytes (ASCII alphanumerics plus shlexSafePunct) is
 //     returned verbatim.

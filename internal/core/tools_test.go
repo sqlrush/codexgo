@@ -323,10 +323,10 @@ func TestBuiltinToolRouterRegistration(t *testing.T) {
 			wantTools: []string{"apply_patch", "update_plan", "view_image"},
 		},
 		{
-			name: "exec dep adds exec_command",
+			name: "exec dep adds shell_command + exec_command",
 			deps: BuiltinToolDeps{Exec: &mockExecService{}},
 			wantTools: []string{
-				"apply_patch", "exec_command", "update_plan", "view_image",
+				"apply_patch", "exec_command", "shell_command", "update_plan", "view_image",
 			},
 		},
 		{
@@ -341,7 +341,7 @@ func TestBuiltinToolRouterRegistration(t *testing.T) {
 			},
 			wantTools: []string{
 				"apply_patch", "exec_command", "request_permissions",
-				"request_user_input", "srv__tool", "update_plan",
+				"request_user_input", "shell_command", "srv__tool", "update_plan",
 				"view_image", "web_search",
 			},
 		},
@@ -377,7 +377,7 @@ func TestSpecsForTurn(t *testing.T) {
 	for _, s := range specs {
 		names[s.Name()] = true
 	}
-	for _, want := range []string{"view_image", "update_plan", "apply_patch", "exec_command"} {
+	for _, want := range []string{"view_image", "update_plan", "apply_patch", "exec_command", "shell_command"} {
 		if !names[want] {
 			t.Errorf("missing spec %q in %v", want, names)
 		}
@@ -572,47 +572,72 @@ func TestPlanExecutorSuccess(t *testing.T) {
 	}
 }
 
-func TestExecCommandExecutor(t *testing.T) {
+// TestShellCommandExecutor exercises the shell_command tool: it wraps the
+// `command` STRING in the user's shell, runs it through the ExecService, and
+// emits the exec_command_begin/end events. The exec_command executor shares the
+// same path with the `cmd` argument key.
+func TestShellCommandExecutor(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name      string
-		args      string
-		exec      *mockExecService
-		wantErr   bool
-		wantInCmd []string
-		wantCwd   string
+		name        string
+		toolName    string
+		args        string
+		exec        *mockExecService
+		wantErr     bool
+		wantCommand string // the command STRING that must be the last argv token
+		wantCwd     string
 	}{
 		{
-			name:      "runs command with explicit workdir",
-			args:      `{"command":["echo","hi"],"workdir":"/work"}`,
-			exec:      &mockExecService{res: ExecResult{ExitCode: 0, Stdout: "hi\n"}},
-			wantInCmd: []string{"echo", "hi"},
-			wantCwd:   "/work",
+			name:        "shell_command runs command with explicit workdir",
+			toolName:    "shell_command",
+			args:        `{"command":"echo hi","workdir":"/work"}`,
+			exec:        &mockExecService{res: ExecResult{ExitCode: 0, Stdout: "hi\n"}},
+			wantCommand: "echo hi",
+			wantCwd:     "/work",
 		},
 		{
-			name:      "defaults workdir to turn cwd",
-			args:      `{"command":["pwd"]}`,
-			exec:      &mockExecService{res: ExecResult{ExitCode: 0, Stdout: "/tmp\n"}},
-			wantInCmd: []string{"pwd"},
-			wantCwd:   "/tmp",
+			name:        "shell_command defaults workdir to turn cwd",
+			toolName:    "shell_command",
+			args:        `{"command":"pwd"}`,
+			exec:        &mockExecService{res: ExecResult{ExitCode: 0, Stdout: "/tmp\n"}},
+			wantCommand: "pwd",
+			wantCwd:     "/tmp",
 		},
 		{
-			name:    "empty command errors",
-			args:    `{"command":[]}`,
-			exec:    &mockExecService{},
-			wantErr: true,
+			name:        "exec_command uses the cmd key",
+			toolName:    "exec_command",
+			args:        `{"cmd":"ls -a"}`,
+			exec:        &mockExecService{res: ExecResult{ExitCode: 0, Stdout: ""}},
+			wantCommand: "ls -a",
+			wantCwd:     "/tmp",
 		},
 		{
-			name:    "exec error surfaces to model",
-			args:    `{"command":["x"]}`,
-			exec:    &mockExecService{err: errors.New("boom")},
-			wantErr: true,
+			name:     "empty command errors",
+			toolName: "shell_command",
+			args:     `{"command":""}`,
+			exec:     &mockExecService{},
+			wantErr:  true,
 		},
 		{
-			name:    "malformed json errors",
-			args:    `{`,
-			exec:    &mockExecService{},
-			wantErr: true,
+			name:     "missing command key errors",
+			toolName: "shell_command",
+			args:     `{}`,
+			exec:     &mockExecService{},
+			wantErr:  true,
+		},
+		{
+			name:     "exec error surfaces to model",
+			toolName: "shell_command",
+			args:     `{"command":"x"}`,
+			exec:     &mockExecService{err: errors.New("boom")},
+			wantErr:  true,
+		},
+		{
+			name:     "malformed json errors",
+			toolName: "shell_command",
+			args:     `{`,
+			exec:     &mockExecService{},
+			wantErr:  true,
 		},
 	}
 	for _, tt := range tests {
@@ -620,7 +645,12 @@ func TestExecCommandExecutor(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			sess, events := newTestSession(t)
-			ex := execCommandExecutor{exec: tt.exec}
+			var ex shellCommandExecutor
+			if tt.toolName == "exec_command" {
+				ex = newExecCommandStringExecutor(tt.exec, nil)
+			} else {
+				ex = newShellCommandExecutor(tt.exec, nil)
+			}
 			out, err := ex.Handle(context.Background(), &toolHandlerContext{
 				Session: sess, Turn: newTestTurn("/tmp"), CallID: "c1",
 				ToolName: ex.Name(), Payload: tools.FunctionPayload(tt.args),
@@ -637,8 +667,9 @@ func TestExecCommandExecutor(t *testing.T) {
 			if out == nil {
 				t.Fatal("want output, got nil")
 			}
-			if strings.Join(tt.exec.gotReq.Command, " ") != strings.Join(tt.wantInCmd, " ") {
-				t.Errorf("exec command = %v, want %v", tt.exec.gotReq.Command, tt.wantInCmd)
+			gotArgv := tt.exec.gotReq.Command
+			if len(gotArgv) == 0 || gotArgv[len(gotArgv)-1] != tt.wantCommand {
+				t.Errorf("exec argv = %v, want last token %q", gotArgv, tt.wantCommand)
 			}
 			if tt.exec.gotReq.Cwd != tt.wantCwd {
 				t.Errorf("exec cwd = %q, want %q", tt.exec.gotReq.Cwd, tt.wantCwd)
@@ -724,6 +755,55 @@ func TestApplyPatchExecutorErrors(t *testing.T) {
 				t.Fatalf("want FunctionCallError, got %v", err)
 			}
 		})
+	}
+}
+
+// TestShellCommandApplyPatchHeredoc exercises the apply_patch heredoc
+// interception: a shell_command whose `command` is `apply_patch <<'EOF' ... EOF`
+// is routed to the patch applier (writing the file) and emits the file_change
+// item lifecycle (item_started + item_completed) rather than running the shell.
+func TestShellCommandApplyPatchHeredoc(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	patch := "*** Begin Patch\n*** Add File: created.txt\n+hello heredoc\n*** End Patch"
+	heredoc := "apply_patch <<'EOF'\n" + patch + "\nEOF\n"
+	args := mustMarshal(t, map[string]string{"command": heredoc})
+
+	// A non-nil exec service that would fail the test if the heredoc were run as a
+	// shell command instead of intercepted.
+	exec := &mockExecService{err: errors.New("apply_patch must be intercepted, not executed")}
+	ex := newShellCommandExecutor(exec, nil)
+
+	sess, events := newTestSession(t)
+	out, err := ex.Handle(context.Background(), &toolHandlerContext{
+		Session: sess, Turn: newTestTurn(dir), CallID: "c1",
+		ToolName: ex.Name(), Payload: tools.FunctionPayload(args),
+	})
+	if err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if out == nil {
+		t.Fatal("want output, got nil")
+	}
+
+	got, rerr := os.ReadFile(filepath.Join(dir, "created.txt"))
+	if rerr != nil {
+		t.Fatalf("read patched file: %v", rerr)
+	}
+	if string(got) != "hello heredoc\n" {
+		t.Errorf("applied content = %q, want %q", string(got), "hello heredoc\n")
+	}
+
+	kinds := drainEventKinds(events)
+	if !hasEventKind(kinds, protocol.EventMsgKindItemStarted) {
+		t.Errorf("missing item_started (file_change begin), got %v", kinds)
+	}
+	if !hasEventKind(kinds, protocol.EventMsgKindItemCompleted) {
+		t.Errorf("missing item_completed (file_change end), got %v", kinds)
+	}
+	// The heredoc must NOT reach the exec service.
+	if exec.gotReq.Command != nil {
+		t.Errorf("exec service was invoked with %v; the heredoc should be intercepted", exec.gotReq.Command)
 	}
 }
 
@@ -1039,9 +1119,9 @@ func TestDispatchEndToEnd(t *testing.T) {
 		t.Fatalf("BuiltinToolRouter: %v", err)
 	}
 	call := ParsedToolCall{
-		ToolName: protocol.PlainToolName("exec_command"),
+		ToolName: protocol.PlainToolName("shell_command"),
 		CallID:   "c1",
-		Payload:  tools.FunctionPayload(`{"command":["echo","hi"]}`),
+		Payload:  tools.FunctionPayload(`{"command":"echo hi"}`),
 	}
 	res, err := r.DispatchParsed(context.Background(), sess, newTestTurn("/tmp"), call)
 	if err != nil {

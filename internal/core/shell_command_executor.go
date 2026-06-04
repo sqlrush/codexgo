@@ -1,0 +1,314 @@
+package core
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+
+	"github.com/sqlrush/codexgo/internal/applypatch"
+	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/internal/shellcmd"
+	"github.com/sqlrush/codexgo/internal/tools"
+	"github.com/sqlrush/codexgo/internal/utils/abspath"
+)
+
+// This file ports codex-core's shell tool handler (tools/handlers/shell.rs +
+// shell/shell_command.rs). gpt-5.5 calls the `shell_command` tool with a single
+// `command` STRING argument; codex wraps that string in the user's default shell
+// (`/bin/zsh -lc <command>`), runs it through the sandbox/exec path, and emits a
+// command_execution lifecycle item -- UNLESS the command is an `apply_patch
+// <<'EOF' ... EOF` heredoc, in which case it is intercepted and routed to the
+// patch applier (emitting a file_change item) instead of literally spawning
+// apply_patch (codex's intercept_apply_patch).
+//
+// The exec_command tool (which takes a `cmd` string and runs in a PTY) is also
+// registered for models that use it, sharing the same execution path.
+
+// shellCommandExecutor is the model-visible `shell_command` tool. It runs the
+// `command` string through the user's shell via the injected [ExecService],
+// intercepting apply_patch heredocs and routing them to internal/applypatch.
+type shellCommandExecutor struct {
+	exec ExecService
+	// fs is the filesystem apply_patch writes to; nil uses the real OS FS.
+	fs applypatch.FileSystem
+	// toolName is the registry key (shell_command or exec_command). Both share the
+	// same execution semantics; only the argument key differs.
+	toolName string
+	// argKey is the JSON argument carrying the command STRING ("command" for
+	// shell_command, "cmd" for exec_command).
+	argKey string
+}
+
+// newShellCommandExecutor builds the shell_command executor.
+func newShellCommandExecutor(exec ExecService, fs applypatch.FileSystem) shellCommandExecutor {
+	return shellCommandExecutor{exec: exec, fs: fs, toolName: "shell_command", argKey: "command"}
+}
+
+// newExecCommandStringExecutor builds the exec_command executor (a `cmd`-string
+// variant of the shell tool) sharing the shell_command execution path.
+func newExecCommandStringExecutor(exec ExecService, fs applypatch.FileSystem) shellCommandExecutor {
+	return shellCommandExecutor{exec: exec, fs: fs, toolName: "exec_command", argKey: "cmd"}
+}
+
+func (e shellCommandExecutor) Name() protocol.ToolName { return protocol.PlainToolName(e.toolName) }
+
+func (e shellCommandExecutor) Spec(*TurnContext) (tools.ToolSpec, bool) {
+	opts := tools.CommandToolOptions{}
+	if e.toolName == "exec_command" {
+		return tools.CreateExecCommandTool(opts), true
+	}
+	return tools.CreateShellCommandTool(opts), true
+}
+
+func (shellCommandExecutor) MatchesPayload(p tools.ToolPayload) bool {
+	return p.Kind == tools.ToolPayloadKindFunction || p.Kind == tools.ToolPayloadKindCustom
+}
+
+// Handle parses the command string, intercepts apply_patch heredocs, and
+// otherwise runs the command through the user's shell.
+func (e shellCommandExecutor) Handle(ctx context.Context, h *toolHandlerContext) (tools.ToolOutput, error) {
+	command, workdirArg, useLoginShell, err := e.parseArgs(h.Payload)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(command) == "" {
+		return nil, tools.RespondToModelError(fmt.Sprintf("%s requires a non-empty command", e.toolName))
+	}
+
+	cwd := h.Turn.Cwd
+	if workdirArg != "" {
+		cwd = resolveWorkdir(h.Turn.Cwd, workdirArg)
+	}
+
+	shell := shellcmd.DefaultUserShell()
+	argv := shell.DeriveExecArgs(command, useLoginShell)
+
+	// Intercept an apply_patch heredoc and route it to the patch applier.
+	if hd, ok := shellcmd.ExtractApplyPatchHeredoc(argv); ok {
+		return e.applyHeredocPatch(h, cwd, hd)
+	}
+
+	return e.runShellCommand(ctx, h, argv, cwd)
+}
+
+// parseArgs decodes the command string, workdir, and login flag from the call
+// payload, honoring the executor's argument key (command vs cmd). The login flag
+// defaults to true (login shell semantics), matching codex's resolve_use_login_shell
+// when login shells are allowed.
+func (e shellCommandExecutor) parseArgs(p tools.ToolPayload) (command, workdir string, useLoginShell bool, err error) {
+	raw, perr := payloadArguments(p)
+	if perr != nil {
+		return "", "", false, perr
+	}
+	// Decode into a generic map so the same code serves both the shell_command
+	// (command) and exec_command (cmd) argument keys.
+	var generic map[string]json.RawMessage
+	if uerr := json.Unmarshal([]byte(raw), &generic); uerr != nil {
+		return "", "", false, tools.RespondToModelError(fmt.Sprintf("failed to parse function arguments: %v", uerr))
+	}
+
+	commandRaw, ok := generic[e.argKey]
+	if !ok {
+		return "", "", false, tools.RespondToModelError(fmt.Sprintf("%s requires a %q argument", e.toolName, e.argKey))
+	}
+	if uerr := json.Unmarshal(commandRaw, &command); uerr != nil {
+		return "", "", false, tools.RespondToModelError(fmt.Sprintf("%s %q must be a string", e.toolName, e.argKey))
+	}
+
+	if wd, present := generic["workdir"]; present {
+		if uerr := json.Unmarshal(wd, &workdir); uerr != nil {
+			return "", "", false, tools.RespondToModelError(fmt.Sprintf("%s workdir must be a string", e.toolName))
+		}
+	}
+
+	useLoginShell = true
+	if loginRaw, present := generic["login"]; present {
+		var login bool
+		if uerr := json.Unmarshal(loginRaw, &login); uerr != nil {
+			return "", "", false, tools.RespondToModelError(fmt.Sprintf("%s login must be a boolean", e.toolName))
+		}
+		useLoginShell = login
+	}
+	return command, workdir, useLoginShell, nil
+}
+
+// runShellCommand executes argv (already wrapped in the user's shell) through the
+// ExecService, emitting the exec_command_begin / exec_command_end events that the
+// exec JSONL processor renders as the command_execution lifecycle item.
+func (e shellCommandExecutor) runShellCommand(ctx context.Context, h *toolHandlerContext, argv []string, cwd string) (tools.ToolOutput, error) {
+	if h.Session != nil {
+		h.Session.SendEvent(h.Turn.SubID, protocol.EventMsg{
+			Type: protocol.EventMsgKindExecCommandBegin,
+			ExecCommandBegin: &protocol.ExecCommandBeginEvent{
+				CallID:  h.CallID,
+				TurnID:  h.Turn.SubID,
+				Command: argv,
+				Cwd:     protocol.AbsolutePath(cwd),
+				Source:  protocol.ExecCommandSourceAgent,
+			},
+		})
+	}
+
+	res, runErr := e.exec.Run(ctx, ExecRequest{Command: argv, Cwd: cwd})
+	if runErr != nil {
+		return nil, tools.RespondToModelError(fmt.Sprintf("exec failed: %v", runErr))
+	}
+
+	status := protocol.ExecCommandStatusCompleted
+	if res.ExitCode != 0 {
+		status = protocol.ExecCommandStatusFailed
+	}
+	aggregated := res.Stdout + res.Stderr
+	if h.Session != nil {
+		h.Session.SendEvent(h.Turn.SubID, protocol.EventMsg{
+			Type: protocol.EventMsgKindExecCommandEnd,
+			ExecCommandEnd: &protocol.ExecCommandEndEvent{
+				CallID:           h.CallID,
+				TurnID:           h.Turn.SubID,
+				Command:          argv,
+				Cwd:              protocol.AbsolutePath(cwd),
+				Source:           protocol.ExecCommandSourceAgent,
+				Stdout:           res.Stdout,
+				Stderr:           res.Stderr,
+				AggregatedOutput: aggregated,
+				ExitCode:         res.ExitCode,
+				FormattedOutput:  formatShellToolOutput(res),
+				Status:           status,
+			},
+		})
+	}
+
+	return newTextToolOutput(formatShellToolOutput(res), boolPtr(res.ExitCode == 0)), nil
+}
+
+// applyHeredocPatch applies an intercepted apply_patch heredoc through
+// internal/applypatch, emitting the file_change item lifecycle (item.started /
+// item.completed) so the JSONL stream matches codex's intercept_apply_patch path.
+func (e shellCommandExecutor) applyHeredocPatch(h *toolHandlerContext, cwd string, hd shellcmd.ApplyPatchHeredoc) (tools.ToolOutput, error) {
+	effectiveCwd := cwd
+	if hd.Workdir != "" {
+		effectiveCwd = resolveWorkdir(cwd, hd.Workdir)
+	}
+
+	parsed, perr := applypatch.ParsePatch(hd.Body)
+	if perr != nil {
+		return nil, tools.RespondToModelError(fmt.Sprintf("apply_patch failed to parse: %v", perr))
+	}
+
+	cwdAbs, cerr := abspath.FromAbsolutePath(effectiveCwd)
+	if cerr != nil {
+		return nil, tools.RespondToModelError(fmt.Sprintf("invalid cwd for apply_patch: %v", cerr))
+	}
+	fsys := e.fs
+	if fsys == nil {
+		fsys = applypatch.OSFileSystem{}
+	}
+
+	// Build the file_change item up front so begin/complete reuse the same id and
+	// the change set is derived from the parsed hunks (codex emits the begin item
+	// before writing). The change set is the same regardless of apply success.
+	changes := fileChangesFromHunks(parsed.Hunks, cwdAbs)
+	itemID := h.CallID
+
+	// The started (begin) item carries no status: the exec mapping fills an
+	// absent status with in_progress, matching codex's v2 conversion
+	// (`status.map(...).unwrap_or(InProgress)`). The completed item carries the
+	// final status.
+	if h.Session != nil {
+		emitTurnItemStarted(h.Session, h.Turn, fileChangeTurnItem(itemID, changes, nil))
+	}
+
+	var stdout, stderr bytes.Buffer
+	_, applyErr := applypatch.ApplyHunks(parsed.Hunks, cwdAbs, &stdout, &stderr, fsys)
+	if applyErr != nil {
+		if h.Session != nil {
+			failed := protocol.PatchApplyStatusFailed
+			emitTurnItemCompleted(h.Session, h.Turn, fileChangeTurnItem(itemID, changes, &failed))
+		}
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = applyErr.Error()
+		}
+		return nil, tools.RespondToModelError(msg)
+	}
+
+	if h.Session != nil {
+		completed := protocol.PatchApplyStatusCompleted
+		emitTurnItemCompleted(h.Session, h.Turn, fileChangeTurnItem(itemID, changes, &completed))
+	}
+
+	out := strings.TrimSpace(stdout.String())
+	if out == "" {
+		out = "Success. Updated the following files:"
+	}
+	return applyPatchToolOutput{text: out}, nil
+}
+
+// fileChangeTurnItem builds a FileChange turn item with the given id, change set,
+// and optional status. A nil status leaves the item's status absent (the started
+// item), which the exec mapping renders as in_progress.
+func fileChangeTurnItem(id string, changes map[string]protocol.FileChange, status *protocol.PatchApplyStatus) protocol.TurnItem {
+	raw := make(map[string]json.RawMessage, len(changes))
+	for path, change := range changes {
+		b, err := json.Marshal(change)
+		if err != nil {
+			continue
+		}
+		raw[path] = b
+	}
+	item := &protocol.FileChangeItem{ID: id, Changes: raw}
+	if status != nil {
+		if sb, err := json.Marshal(*status); err == nil {
+			item.Status = sb
+		}
+	}
+	return protocol.TurnItem{Type: protocol.TurnItemKindFileChange, FileChange: item}
+}
+
+// fileChangesFromHunks derives the path->FileChange map for a parsed patch's
+// hunks, resolving each path against the effective cwd. Only the change KIND is
+// surfaced to the file_change item, but the content/diff fields are populated so
+// the wire shape matches codex's FileChange.
+func fileChangesFromHunks(hunks []applypatch.Hunk, cwd abspath.AbsolutePathBuf) map[string]protocol.FileChange {
+	changes := make(map[string]protocol.FileChange, len(hunks))
+	for _, hunk := range hunks {
+		pathAbs := hunk.ResolvePath(cwd).Path()
+		switch hunk.Kind {
+		case applypatch.HunkAddFile:
+			changes[pathAbs] = protocol.FileChange{Kind: protocol.FileChangeKindAdd, Content: hunk.Contents}
+		case applypatch.HunkDeleteFile:
+			changes[pathAbs] = protocol.FileChange{Kind: protocol.FileChangeKindDelete}
+		case applypatch.HunkUpdateFile:
+			fc := protocol.FileChange{Kind: protocol.FileChangeKindUpdate}
+			if hunk.HasMovePath {
+				dest := abspath.ResolvePathAgainstBase(hunk.MovePath, cwd.Path()).Path()
+				fc.MovePath = &dest
+			}
+			changes[pathAbs] = fc
+		}
+	}
+	return changes
+}
+
+// resolveWorkdir resolves a (possibly relative) workdir against the turn cwd,
+// mirroring codex's TurnContext::resolve_path. An absolute workdir is used as-is.
+func resolveWorkdir(cwd, workdir string) string {
+	return abspath.ResolvePathAgainstBase(workdir, cwd).Path()
+}
+
+// formatShellToolOutput renders an exec result for the model in codex's shell
+// tool format ("Exit code: N\nWall time: 0 seconds\nOutput:\n<output>"),
+// matching format_exec_output_str for the ShellTool capture policy.
+func formatShellToolOutput(res ExecResult) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Exit code: %d\n", res.ExitCode)
+	b.WriteString("Wall time: 0 seconds\n")
+	b.WriteString("Output:\n")
+	b.WriteString(res.Stdout)
+	if res.Stderr != "" {
+		b.WriteString(res.Stderr)
+	}
+	return b.String()
+}

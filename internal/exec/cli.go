@@ -38,6 +38,10 @@ type CLI struct {
 	Prompt *string
 	// Images are local image paths attached to the prompt (--image/-i).
 	Images []string
+	// Cwd is the working directory for the run (-C/--cd), empty when unset. The
+	// turn's commands and apply_patch resolve relative paths against it, matching
+	// codex exec's `-C` flag.
+	Cwd string
 
 	// Resume fields (only meaningful for SubcommandResume).
 	ResumeSessionID string
@@ -116,6 +120,15 @@ func ParseArgs(args []string) (CLI, error) {
 			i = ni
 		case strings.HasPrefix(arg, "--image="):
 			cli.Images = append(cli.Images, splitCSV(strings.TrimPrefix(arg, "--image="))...)
+			i++
+		case arg == "-C" || arg == "--cd":
+			v, ni, err := flagValue(rest, i, arg)
+			if err != nil {
+				return CLI{}, err
+			}
+			cli.Cwd, i = v, ni
+		case strings.HasPrefix(arg, "--cd="):
+			cli.Cwd = strings.TrimPrefix(arg, "--cd=")
 			i++
 		case arg == "--base":
 			v, ni, err := flagValue(rest, i, arg)
