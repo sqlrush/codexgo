@@ -55,7 +55,10 @@ func newExecCommandStringExecutor(exec ExecService, fs applypatch.FileSystem) sh
 func (e shellCommandExecutor) Name() protocol.ToolName { return protocol.PlainToolName(e.toolName) }
 
 func (e shellCommandExecutor) Spec(*TurnContext) (tools.ToolSpec, bool) {
-	opts := tools.CommandToolOptions{}
+	// codex derives the `login` parameter from config.permissions.allow_login_shell,
+	// which defaults to true (config/mod.rs). Mirror that default so the advertised
+	// exec_command/shell_command spec carries `login` like the reference binary.
+	opts := tools.CommandToolOptions{AllowLoginShell: true}
 	if e.toolName == "exec_command" {
 		return tools.CreateExecCommandTool(opts), true
 	}

@@ -196,9 +196,10 @@ type viewImageExecutor struct{}
 func (viewImageExecutor) Name() protocol.ToolName { return protocol.PlainToolName("view_image") }
 
 func (viewImageExecutor) Spec(*TurnContext) (tools.ToolSpec, bool) {
-	// STUB: the real spec (create_view_image_tool) carries detail/environment
-	// options; expose a minimal function spec so the tool is routable.
-	return functionSpecStub("view_image", "Attach a local image to the conversation."), true
+	// Every model in the bundled 0.136.0 catalog sets
+	// supports_image_detail_original = true, so the `detail` enum is always
+	// offered (matching create_view_image_tool for the supported models).
+	return tools.CreateViewImageTool(tools.ViewImageToolOptions{CanRequestOriginalImageDetail: true}), true
 }
 
 func (viewImageExecutor) MatchesPayload(p tools.ToolPayload) bool {
@@ -245,7 +246,7 @@ const planUpdatedMessage = "Plan updated"
 func (planExecutor) Name() protocol.ToolName { return protocol.PlainToolName("update_plan") }
 
 func (planExecutor) Spec(*TurnContext) (tools.ToolSpec, bool) {
-	return functionSpecStub("update_plan", "Update the task plan (TODO checklist)."), true
+	return tools.CreateUpdatePlanTool(), true
 }
 
 func (planExecutor) MatchesPayload(p tools.ToolPayload) bool {
