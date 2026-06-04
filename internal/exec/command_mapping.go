@@ -1,9 +1,8 @@
 package exec
 
 import (
-	"strings"
-
 	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/internal/shellcmd"
 )
 
 // Command executions are not modeled as engine v1 TurnItems; the engine reports
@@ -64,10 +63,13 @@ func (p *JSONLProcessor) collectExecCommandEnd(n *protocol.ExecCommandEndEvent) 
 	}
 }
 
-// joinCommand renders an argv slice as a single space-joined command string,
-// matching the command field the v2 CommandExecution item exposes.
+// joinCommand renders an argv slice as a single POSIX-shell-quoted command
+// string, matching the command field the v2 CommandExecution item exposes. The
+// app-server renders this field with codex_shell_command::shlex_join, which
+// quotes tokens containing shell-special characters (e.g. a script argument with
+// spaces), so a plain space-join would diverge.
 func joinCommand(argv []string) string {
-	return strings.Join(argv, " ")
+	return shellcmd.ShlexJoin(argv)
 }
 
 // commandStatus maps the engine exec status to the exec command status.

@@ -110,6 +110,13 @@ func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultMode
 		ModelClientFactory: factory,
 		CodexHome:          codexHome,
 		DefaultModel:       model,
+		// Wire the real built-in tool router so the binary actually executes tools
+		// (exec_command / shell_command, apply_patch, view_image, update_plan).
+		// Without this the assembly defaults to an empty router and every tool call
+		// is rejected with "unsupported call".
+		ToolRouterFactory: func() (core.ToolRouter, error) {
+			return core.BuiltinToolRouter(core.BuiltinToolDeps{Exec: newLocalExecService()})
+		},
 	})
 	if err != nil {
 		return nil, appserver.Defaults{}, err
