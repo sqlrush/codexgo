@@ -32,6 +32,8 @@ Categories: `format` (on-disk), `protocol` (wire), `behavioral`, `cosmetic`.
 | 04 config | behavioral | layer-state/fingerprint/origins, macOS MDM managed prefs, cloud-requirements, git-trust project loading, keymap parsing carried as opaque TOML trees / omitted | large peripheral surface; load/merge/validate + typed schema are faithful | accepted |
 | 32 app-server-protocol | behavioral | ts-rs/schemars schema-export generator deferred; a few cross-area fields carried as `json.RawMessage` | the runtime types/methods are faithful; the codegen tool is non-runtime | accepted |
 
+| 34 exec | behavioral | On an API error, the error *message* text differs: codex surfaces the clean upstream error body; codexgo leaks internal wrapping (`core: model stream failed: …`). The event shape, exit code, and terminal `turn.failed` event all match (verified by `TestParityTurnError`). | error-message cleanup needs threading the upstream API error through core without the `%w` chain prefix; tracked | review |
+
 > Entries are appended as each spec lands and reports its deviations.
 > **`review (must finish)`** items are genuine gaps to close before claiming the
 > corresponding spec complete — they are not permanent accepted deviations.

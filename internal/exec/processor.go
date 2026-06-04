@@ -309,6 +309,15 @@ func (p *JSONLProcessor) collectTurnComplete(n *protocol.TurnCompleteEvent) Coll
 		p.finalMessage = &msg
 	}
 	p.emitFinalOnExit = true
+	// When a critical error occurred during the turn, codex emits a terminal
+	// turn.failed (carrying the error) rather than turn.completed. Mirror that.
+	if p.lastCritical != nil {
+		events = append(events, ThreadEvent{
+			Kind:       ThreadEventKindTurnFailed,
+			TurnFailed: &TurnFailedEvent{Error: *p.lastCritical},
+		})
+		return CollectedThreadEvents{Events: events, Status: StatusInitiateShutdown}
+	}
 	events = append(events, ThreadEvent{
 		Kind:          ThreadEventKindTurnCompleted,
 		TurnCompleted: &TurnCompletedEvent{Usage: p.usageFromLastTotal()},
