@@ -152,19 +152,28 @@ func buildResponsesClientConfig(
 	apiProvider := provider.ToAPIProvider(resolved.AuthMode)
 
 	clientCfg := core.ModelClientConfig{
-		SessionID:        threadID.ToSessionID(),
-		ThreadID:         threadID,
-		InstallationID:   cfg.InstallationID,
-		Provider:         apiProvider,
-		Auth:             resolved.AuthProvider,
-		Transport:        cfg.Transport,
-		ModelInfo:        modelInfo,
-		ReasoningSummary: protocol.ReasoningSummaryAuto,
+		SessionID:      threadID.ToSessionID(),
+		ThreadID:       threadID,
+		InstallationID: cfg.InstallationID,
+		Provider:       apiProvider,
+		Auth:           resolved.AuthProvider,
+		Transport:      cfg.Transport,
+		ModelInfo:      modelInfo,
+		// codex resolves the reasoning summary as
+		// config.model_reasoning_summary.unwrap_or(model_info.default_reasoning_summary)
+		// (turn_context.rs). Default to the model's value (gpt-5.5 = "none", so no
+		// summary is sent) and let an explicit session override win below.
+		ReasoningSummary: modelInfo.DefaultReasoningSummary,
 		ServiceTier:      modelInfo.ServiceTierForRequest(sessionCfg.ServiceTier),
 		// Mirror the Rust Prompt default (output_schema_strict: true). codex exec
 		// exposes no flag to change it, so an --output-schema request must send
 		// "strict": true to match the reference binary's text.format block.
 		OutputSchemaStrict: true,
+		// codex derives parallel_tool_calls from the model capability
+		// (compact_remote.rs: prompt.parallel_tool_calls =
+		// turn_context.model_info.supports_parallel_tool_calls). gpt-5.5 sets it
+		// true; without this the request always sent false.
+		ParallelToolCalls: modelInfo.SupportsParallelToolCalls,
 	}
 
 	if effort := reasoningEffortFor(sessionCfg); effort != nil {
