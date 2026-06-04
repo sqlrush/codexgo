@@ -83,6 +83,8 @@ func statusLabel(s checkStatus) string {
 		return "[WARN]"
 	case statusFail:
 		return "[FAIL]"
+	case statusSkipped:
+		return "[SKIP]"
 	default:
 		return "[????]"
 	}

@@ -1,6 +1,9 @@
 package cli
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // doctorSchemaVersion is the schema version of the doctor JSON report. Bumped
 // when the report shape changes; mirrors DoctorReport.schema_version.
@@ -14,9 +17,14 @@ const (
 	statusOK      checkStatus = "ok"
 	statusWarning checkStatus = "warning"
 	statusFail    checkStatus = "fail"
+	// statusSkipped marks a check that was intentionally not run (for example a
+	// network probe when CODEX_DOCTOR_SKIP_NETWORK is set). Skipped checks never
+	// affect the overall status.
+	statusSkipped checkStatus = "skipped"
 )
 
-// rank orders statuses so the overall status is the worst of all checks.
+// rank orders statuses so the overall status is the worst of all checks. Skipped
+// checks rank as low as OK so they cannot degrade the overall status.
 func (s checkStatus) rank() int {
 	switch s {
 	case statusFail:
@@ -36,6 +44,24 @@ type doctorReport struct {
 	OverallStatus checkStatus   `json:"overallStatus"`
 	CodexVersion  string        `json:"codexVersion"`
 	Checks        []doctorCheck `json:"checks"`
+}
+
+// MarshalJSON renders the report with `checks` as a JSON object keyed by check
+// id, matching codex 0.136.0 (whose checks map serializes in sorted-key order,
+// which Go's encoding/json reproduces for map[string]). The internal slice is
+// retained for ordered human rendering and overall-status computation.
+func (r doctorReport) MarshalJSON() ([]byte, error) {
+	byID := make(map[string]doctorCheck, len(r.Checks))
+	for _, c := range r.Checks {
+		byID[c.ID] = c
+	}
+	return json.Marshal(struct {
+		SchemaVersion uint32                 `json:"schemaVersion"`
+		GeneratedAt   string                 `json:"generatedAt"`
+		OverallStatus checkStatus            `json:"overallStatus"`
+		CodexVersion  string                 `json:"codexVersion"`
+		Checks        map[string]doctorCheck `json:"checks"`
+	}{r.SchemaVersion, r.GeneratedAt, r.OverallStatus, r.CodexVersion, byID})
 }
 
 // doctorCheck is one diagnostic result. It mirrors the camelCase DoctorCheck
@@ -102,6 +128,14 @@ func (b *checkBuilder) warn(summary string) *checkBuilder {
 // fail sets the check to fail with the given summary.
 func (b *checkBuilder) fail(summary string) *checkBuilder {
 	b.status = statusFail
+	b.summary = summary
+	return b
+}
+
+// skipped sets the check to skipped with the given summary. Skipped checks are
+// used when a probe is intentionally not run (for example offline runs).
+func (b *checkBuilder) skipped(summary string) *checkBuilder {
+	b.status = statusSkipped
 	b.summary = summary
 	return b
 }
