@@ -4,9 +4,42 @@ A ground-up reimplementation of the [OpenAI Codex](https://github.com/openai/cod
 coding agent in **Go**, targeting **100% feature parity** with — and **drop-in
 compatibility** for — the latest Codex release.
 
-> **Status:** 📐 Planning / roadmap stage. No implementation code yet.
-> This repository currently contains the **roadmap and implementation specs**
-> that decompose the full port into executable, independently verifiable units.
+> **Status:** 🛠️ Under active implementation — a runnable, parity-validated agent.
+> ~155K lines of Go across ~90 packages; CI green on linux/macOS/windows ×
+> amd64/arm64. All 49 specs have a building implementation; the headless agent
+> runs end-to-end. **Drop-in compatibility is verified by automated differential
+> tests against the real codex 0.136.0 binary** (see [`docs/PARITY.md`](docs/PARITY.md)):
+> the model catalog, full subcommand set, `apply_patch`, and — driven through a
+> credential-free fake `/v1/responses` endpoint with the same `config.toml` —
+> the `exec --json` **text turn, shell-command tool turn, and apply_patch tool
+> turn** all produce **byte-identical (normalized) output** to codex.
+>
+> Honest scope: this is not yet a literal 100% faithful port of all ~935K lines.
+> The full breadth is in place but the long tail (TUI pixel-fidelity, every
+> advanced core behavior, full method surfaces) and broader behavioral
+> differentials are ongoing — tracked transparently in
+> [`DEVIATIONS.md`](DEVIATIONS.md) and [`docs/PARITY.md`](docs/PARITY.md).
+
+## What works today
+
+- **`codexgo exec --json "…"`** — headless agent turn (drop-in JSONL), runs shell
+  commands and applies patches via the model loop, under a native sandbox
+  (macOS seatbelt; Linux landlock+seccomp; Windows restricted-token).
+- **`codex`** (no subcommand) — interactive TUI (bubbletea); full subcommand
+  surface matching codex (`exec`, `login`, `mcp`, `apply`, `resume`, `doctor`, …).
+- Reads/writes the real `~/.codex` formats: `config.toml`, `auth.json`, rollout
+  JSONL sessions, `history.jsonl`, the SQLite state DB; speaks the app-server
+  JSON-RPC + MCP protocols.
+
+## Build & run
+
+```sh
+go build ./...                      # whole tree (cgo-free)
+go run ./cmd/codex exec --json "hello"   # headless turn (mock model offline)
+go run ./cmd/codex doctor --json    # environment diagnostics
+# Drop-in differential vs a real codex binary:
+CODEX_PARITY_BIN=/path/to/codex go test ./internal/paritytest/ -run Parity -v
+```
 
 ---
 
