@@ -149,6 +149,15 @@ func buildResponsesClientConfig(
 	slug := sessionCfg.Model()
 	modelInfo := resolveModelInfo(slug, cfg.ModelCatalog)
 
+	// Render the base instructions for the effective personality. codex resolves
+	// it as cli.or(config.personality).or(Pragmatic) when the Personality feature
+	// is enabled — and it is on by default (config/mod.rs) — then derives the
+	// session base instructions via model_info.get_model_instructions(personality)
+	// (session/mod.rs). gpt-5.5's models.json `base_instructions` bakes the
+	// "friendly" personality, so sending that field verbatim diverged from codex,
+	// which renders the template with the resolved (default Pragmatic) personality.
+	modelInfo.BaseInstructions = modelInfo.GetModelInstructions(resolvePersonality(sessionCfg.Personality))
+
 	apiProvider := provider.ToAPIProvider(resolved.AuthMode)
 
 	clientCfg := core.ModelClientConfig{
@@ -199,6 +208,20 @@ func resolveModelInfo(slug string, catalog []modelsmanager.ModelInfo) modelsmana
 		}
 	}
 	return modelsmanager.ModelInfoFromSlug(slug)
+}
+
+// resolvePersonality returns the effective model personality, mirroring codex's
+// cli.or(config.personality).or(Pragmatic) resolution (config/mod.rs): an explicit
+// session personality wins; otherwise it defaults to Pragmatic (the Personality
+// feature is enabled by default in codex 0.136.0). The returned pointer is safe to
+// pass to GetModelInstructions, which falls back to base instructions for models
+// without a personality template.
+func resolvePersonality(p *protocol.Personality) *protocol.Personality {
+	if p != nil {
+		return p
+	}
+	pragmatic := protocol.PersonalityPragmatic
+	return &pragmatic
 }
 
 // reasoningEffortFor extracts the per-turn reasoning effort from the session

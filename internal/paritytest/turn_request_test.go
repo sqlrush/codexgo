@@ -80,19 +80,20 @@ var volatileRequestFields = map[string]bool{
 // stays a green characterization of the fields that already match while precisely
 // enumerating the remaining work toward request-level drop-in:
 //
-//   - instructions: codex injects a model-specific PERSONALITY into the base
-//     prompt (gpt-5.5 → "pragmatic"); codexgo's embedded prompt carries a
-//     different personality. Port: personality selection + the gpt-5.5 base text.
 //   - input: codex prepends an environment-context user message
 //     (<permissions instructions> + cwd/sandbox/approval/network); codexgo sends
 //     only the bare user turn. Port: turn-context / environment_context rendering.
 //   - tools: codex advertises the full gpt-5.5 tool registry (exec_command PTY +
 //     more) in a fixed order; codexgo advertises a minimal set. Port: the tool
 //     registry + per-model tool selection.
+//
+// NOTE: `instructions` USED to be a gap (codexgo sent gpt-5.5's "friendly"-baked
+// base prompt; codex renders the template with the resolved Pragmatic personality)
+// and is now byte-identical — it is intentionally NOT in this allowlist, so a
+// regression of the personality rendering fails the test loudly.
 var documentedGapFields = map[string]bool{
-	"instructions": true,
-	"input":        true,
-	"tools":        true,
+	"input": true,
+	"tools": true,
 }
 
 // TestParityRequestBody asserts codexgo sends a /responses request whose
