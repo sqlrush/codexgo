@@ -35,19 +35,18 @@ package paritytest
 //     heredoc, which codex intercepts (intercept_apply_patch) and turns into a
 //     `file_change` lifecycle item that writes the file.
 //
-// DIVERGENCE (documented in docs/PARITY.md): the codexgo *binary*'s exec/run/TUI
-// assembly (internal/cli/assembly.go -> appserver.Assemble) wires an EMPTY tool
-// router and no ExecService, so it dispatches NO tool calls -- every function call
-// is rejected with `tool dispatch error: unsupported call: <name>`. The built-in
-// executors (internal/core: exec_command / apply_patch) and BuiltinToolRouter
-// exist but are never wired into the binary. These tests therefore assert the full
-// drop-in contract against the real codex (proving the harness and the reference
-// behavior), then -- if codexgo exhibits the known unwired-tools gap -- SKIP with a
-// precise message that points at docs/PARITY.md, so the suite stays green and
-// self-documenting until the wiring is fixed (which lives outside internal/tools /
-// internal/core, so it is not fixed here per task scope). Once the binary wires the
-// builtin router, codexgo will emit the same lifecycle items and these tests assert
-// full normalized parity automatically.
+// STATUS (docs/PARITY.md): the codexgo binary now WIRES the builtin tool router
+// (core.BuiltinToolRouter{Exec: newLocalExecService()}) and session-aware dispatch
+// into its exec assembly (internal/cli/assembly.go), so it executes shell_command
+// and apply_patch tool calls and emits the same command_execution / file_change
+// lifecycle items as real codex. Both tests below PASS binary-vs-binary with
+// byte-identical normalized JSONL and identical apply_patch file content.
+//
+// The codexgoToolsUnwired/Skipf guard in assertToolCallParity is RETAINED as a
+// safety net: if a future change ever un-wires the router, the tool call would be
+// rejected with `tool dispatch error: unsupported call: <name>` and the test would
+// SKIP with a precise message pointing here, rather than fail confusingly. Under
+// the current (wired) binary it is never taken.
 
 import (
 	"bytes"

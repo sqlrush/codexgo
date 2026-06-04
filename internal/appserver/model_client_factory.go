@@ -161,6 +161,10 @@ func buildResponsesClientConfig(
 		ModelInfo:        modelInfo,
 		ReasoningSummary: protocol.ReasoningSummaryAuto,
 		ServiceTier:      modelInfo.ServiceTierForRequest(sessionCfg.ServiceTier),
+		// Mirror the Rust Prompt default (output_schema_strict: true). codex exec
+		// exposes no flag to change it, so an --output-schema request must send
+		// "strict": true to match the reference binary's text.format block.
+		OutputSchemaStrict: true,
 	}
 
 	if effort := reasoningEffortFor(sessionCfg); effort != nil {

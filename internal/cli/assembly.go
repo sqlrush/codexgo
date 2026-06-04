@@ -9,6 +9,7 @@ import (
 	"github.com/sqlrush/codexgo/internal/appserver"
 	"github.com/sqlrush/codexgo/internal/config"
 	"github.com/sqlrush/codexgo/internal/core"
+	"github.com/sqlrush/codexgo/internal/modelsmanager"
 	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
@@ -66,6 +67,12 @@ func buildAssemblyWithDefaults() (*appserver.Assembly, appserver.Defaults, error
 		Provider:       selected.Info,
 		InstallationID: resolveInstallationID(),
 		Fallback:       fallback,
+		// Resolve full per-model metadata (verbosity support + default, reasoning
+		// support/level, context window, service tier) from the bundled catalog so
+		// the request matches the reference binary. Without this, every model
+		// resolves to minimal slug-derived defaults and request fields such as
+		// text.verbosity diverge from codex.
+		ModelCatalog: bundledModelCatalog(),
 	})
 	if err != nil {
 		return nil, appserver.Defaults{}, fmt.Errorf("cli: build model client factory: %w", err)
@@ -128,6 +135,18 @@ func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultMode
 		UserAgent:  "codex-cli-go",
 	}
 	return asm, defaults, nil
+}
+
+// bundledModelCatalog returns the model catalog shipped with the binary, used to
+// resolve full per-model metadata for the model client. It returns nil when the
+// bundle cannot be decoded (the factory then falls back to slug-derived defaults),
+// so a corrupt bundle degrades gracefully rather than breaking the assembly.
+func bundledModelCatalog() []modelsmanager.ModelInfo {
+	resp, err := modelsmanager.BundledModelsResponse()
+	if err != nil {
+		return nil
+	}
+	return resp.Models
 }
 
 // mockClientFactory builds the scripted-mock ModelClientFactory used as the
