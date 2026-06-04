@@ -23,8 +23,9 @@ Living record of differential validation of `codexgo` against the reference
 | Version | `codex --version` | ✅ both report `0.136.0` (codex prints `codex-cli 0.136.0`). |
 | Top-level subcommand set | `codex --help` | ✅ **Pass** — exact match (24 subcommands + aliases `e`/`a`/`cloud-tasks`). The earlier gap (missing `app`/`cloud`/`exec-server`/`help`/`plugin`/`remote-control`/`review`/`update`) is closed; `review`/`cloud list`/`plugin list`/`exec-server` stdio/`help` are wired, `app`/`update`/`remote-control` are clear notices. |
 | Shell completion | `codex completion bash` | ⚠️ **Deviation**: codex emits a 5,924-line clap-generated script; codexgo's hand-rolled CLI emits a functional but not byte-identical script. Enumerates all subcommands/flags but not clap's exact format. |
-| `apply_patch` envelope | upstream test corpus | ✅ ported from codex's own `#[cfg(test)]` cases (internal/applypatch). Standalone arg0 differential pending. |
-| execpolicy decisions | `codex execpolicy check` | ⏳ pending (wire the differential). |
+| `apply_patch` envelope | `apply_patch "<patch>"` (arg0) | ✅ **Pass** — byte-level differential: real codex and codexgo applied the same multi-op patch (update + add) to identical workdirs with **byte-identical resulting files** and the **same success message** (`Success. Updated the following files: / A baz.txt / M foo.txt`). Plus codex's own `#[cfg(test)]` corpus ported in internal/applypatch. |
+| `doctor --json` | `codex doctor --json` | ⚠️ **Partial** — top-level schema matches exactly (`schemaVersion`/`generatedAt`/`overallStatus`/`codexVersion`/`checks`), but codexgo emits 8 coarse checks vs codex's 18 granular check IDs (e.g. `network.websocket_reachability`, `state.rollout_db_parity`, `runtime.provenance`). Functional but not check-for-check identical. |
+| execpolicy decisions | (internal) | ⏳ codex exposes no `execpolicy` subcommand; validated via ported upstream tests in internal/execpolicy. |
 
 ## Pending (need a one-time authenticated recording — maintainer)
 

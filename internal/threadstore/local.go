@@ -173,9 +173,15 @@ func (s *LocalThreadStore) ResumeThread(ctx context.Context, params ResumeThread
 		return invalidRequestError("local thread store requires a cwd")
 	}
 	if params.RolloutPath == nil {
-		// Resolving a rollout path from the state DB / rollout scan is part of the
-		// read path, which is not supported in this port.
-		return unsupportedError("resume_thread without rollout_path")
+		// Resolve the rollout path from the live writer / state DB / sessions scan.
+		path, err := s.resolveRolloutPath(ctx, params.ThreadID, true)
+		if err != nil {
+			return err
+		}
+		if path == "" {
+			return invalidRequestError("no rollout found for thread id %s", params.ThreadID)
+		}
+		params.RolloutPath = &path
 	}
 	recorder, err := rollout.NewRecorderForResume(ctx, *params.RolloutPath)
 	if err != nil {
@@ -252,15 +258,15 @@ func (s *LocalThreadStore) LoadHistory(_ context.Context, _ LoadThreadHistoryPar
 	return StoredThreadHistory{}, unsupportedError("load_history")
 }
 
-// ReadThread is part of the read path, which is not supported in this port.
-func (s *LocalThreadStore) ReadThread(_ context.Context, _ ReadThreadParams) (StoredThread, error) {
-	return StoredThread{}, unsupportedError("read_thread")
+// ReadThread loads a stored thread summary (and optional history) by id,
+// preferring state-DB metadata and falling back to a sessions-tree scan.
+func (s *LocalThreadStore) ReadThread(ctx context.Context, params ReadThreadParams) (StoredThread, error) {
+	return s.readThread(ctx, params)
 }
 
-// ReadThreadByRolloutPath is part of the read path, which is not supported in
-// this port.
-func (s *LocalThreadStore) ReadThreadByRolloutPath(_ context.Context, _ ReadThreadByRolloutPathParams) (StoredThread, error) {
-	return StoredThread{}, unsupportedError("read_thread_by_rollout_path")
+// ReadThreadByRolloutPath loads a stored thread summary by rollout path.
+func (s *LocalThreadStore) ReadThreadByRolloutPath(ctx context.Context, params ReadThreadByRolloutPathParams) (StoredThread, error) {
+	return s.readThreadByRolloutPath(ctx, params)
 }
 
 // ListThreads is part of the read path, which is not supported in this port.

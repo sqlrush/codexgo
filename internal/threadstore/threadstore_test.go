@@ -558,10 +558,6 @@ func TestLocalReadPathsUnsupported(t *testing.T) {
 			_, err := store.LoadHistory(ctx, LoadThreadHistoryParams{ThreadID: tid("x")})
 			return err
 		}},
-		{"read_thread", func() error {
-			_, err := store.ReadThread(ctx, ReadThreadParams{ThreadID: tid("x")})
-			return err
-		}},
 		{"list_threads", func() error {
 			_, err := store.ListThreads(ctx, ListThreadsParams{})
 			return err
