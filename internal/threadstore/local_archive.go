@@ -1,0 +1,295 @@
+package threadstore
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/internal/rollout"
+	"github.com/sqlrush/codexgo/internal/state"
+)
+
+// loadHistory resolves the rollout path for the thread and returns its persisted
+// rollout items, mirroring the Rust `load_history`.
+func (s *LocalThreadStore) loadHistory(ctx context.Context, params LoadThreadHistoryParams) (StoredThreadHistory, error) {
+	path, err := s.resolveRolloutPath(ctx, params.ThreadID, params.IncludeArchived)
+	if err != nil {
+		return StoredThreadHistory{}, err
+	}
+	if path == "" {
+		return StoredThreadHistory{}, invalidRequestError("no rollout found for thread id %s", params.ThreadID)
+	}
+	items, err := loadHistoryItems(path)
+	if err != nil {
+		return StoredThreadHistory{}, err
+	}
+	return StoredThreadHistory{ThreadID: params.ThreadID, Items: items}, nil
+}
+
+// archiveThread moves the thread's rollout file from the active sessions tree to
+// the archived-sessions tree and, when a state DB is present, flips the archived
+// flag/timestamp, mirroring the Rust `archive_thread`.
+func (s *LocalThreadStore) archiveThread(ctx context.Context, params ArchiveThreadParams) error {
+	threadID := params.ThreadID
+	activePath, err := rollout.FindThreadPathByIDStr(s.config.CodexHome, threadID.String())
+	if err != nil {
+		return invalidRequestError("failed to locate thread id %s: %v", threadID, err)
+	}
+	if activePath == "" {
+		return invalidRequestError("no rollout found for thread id %s", threadID)
+	}
+
+	archiveDir := filepath.Join(s.config.CodexHome, rollout.ArchivedSessionsSubdir)
+	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
+		return internalError(err, "failed to archive thread")
+	}
+	archivedPath := filepath.Join(archiveDir, filepath.Base(activePath))
+	if err := os.Rename(activePath, archivedPath); err != nil {
+		return internalError(err, "failed to archive thread")
+	}
+
+	if s.stateDB != nil {
+		at := time.Now().UTC()
+		s.applyArchiveState(ctx, threadID, archivedPath, &at)
+	}
+	return nil
+}
+
+// unarchiveThread reverses an archive: it moves the rollout file back into the
+// dated active sessions tree, clears the archived state in the DB (when present),
+// and returns the restored StoredThread, mirroring the Rust `unarchive_thread`.
+func (s *LocalThreadStore) unarchiveThread(ctx context.Context, params ArchiveThreadParams) (StoredThread, error) {
+	threadID := params.ThreadID
+	archivedPath, err := rollout.FindArchivedThreadPathByIDStr(s.config.CodexHome, threadID.String())
+	if err != nil {
+		return StoredThread{}, invalidRequestError("failed to locate archived thread id %s: %v", threadID, err)
+	}
+	if archivedPath == "" {
+		return StoredThread{}, invalidRequestError("no archived rollout found for thread id %s", threadID)
+	}
+
+	fileName := filepath.Base(archivedPath)
+	year, month, day, ok := rollout.RolloutDateParts(fileName)
+	if !ok {
+		return StoredThread{}, invalidRequestError("rollout path %q missing filename timestamp", archivedPath)
+	}
+
+	destDir := filepath.Join(s.config.CodexHome, rollout.SessionsSubdir, year, month, day)
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		return StoredThread{}, internalError(err, "failed to unarchive thread")
+	}
+	restoredPath := filepath.Join(destDir, fileName)
+	if err := os.Rename(archivedPath, restoredPath); err != nil {
+		return StoredThread{}, internalError(err, "failed to unarchive thread")
+	}
+	if err := touchModifiedTime(restoredPath); err != nil {
+		return StoredThread{}, internalError(err, "failed to update unarchived thread timestamp")
+	}
+
+	if s.stateDB != nil {
+		s.applyArchiveState(ctx, threadID, restoredPath, nil)
+	}
+
+	return s.readThread(ctx, ReadThreadParams{ThreadID: threadID, IncludeArchived: false})
+}
+
+// applyArchiveState rewrites the state-DB row for threadID with the supplied
+// rollout path and archived timestamp (nil clears the archived flag). It is
+// best-effort: a missing row or write failure is ignored, matching the Rust
+// `mark_archived`/`mark_unarchived` best-effort semantics.
+func (s *LocalThreadStore) applyArchiveState(ctx context.Context, threadID protocol.ThreadID, rolloutPath string, archivedAt *time.Time) {
+	metadata, err := s.stateDB.GetThread(ctx, threadID)
+	if err != nil || metadata == nil {
+		return
+	}
+	updated := *metadata
+	updated.RolloutPath = rolloutPath
+	if archivedAt != nil {
+		at := *archivedAt
+		updated.ArchivedAt = &at
+	} else {
+		updated.ArchivedAt = nil
+	}
+	_ = s.stateDB.UpsertThread(ctx, &updated)
+}
+
+// touchModifiedTime updates a file's modification time to now so unarchived
+// threads sort as recently updated, mirroring the Rust `touch_modified_time`.
+func touchModifiedTime(path string) error {
+	now := time.Now()
+	if err := os.Chtimes(path, now, now); err != nil {
+		return errors.New("failed to update modification time: " + err.Error())
+	}
+	return nil
+}
+
+// updateThreadMetadata applies the metadata patch to the thread's state-DB row
+// and returns the updated StoredThread via readThread.
+//
+// Deviation: the upstream crate also rewrites rollout session-meta lines (thread
+// name, memory mode, git info) for legacy compatibility. That rollout-compat
+// surface is out of scope here; this port applies the patch to the SQLite row
+// (the source of truth for listing/reads) and returns the refreshed summary.
+// When no state DB is configured, metadata cannot be persisted, so the operation
+// fails with an invalid-request error rather than reporting unsupported.
+func (s *LocalThreadStore) updateThreadMetadata(ctx context.Context, params UpdateThreadMetadataParams) (StoredThread, error) {
+	threadID := params.ThreadID
+	if params.Patch.IsEmpty() {
+		return s.readThread(ctx, ReadThreadParams{
+			ThreadID:        threadID,
+			IncludeArchived: params.IncludeArchived,
+		})
+	}
+
+	if s.stateDB == nil {
+		return StoredThread{}, invalidRequestError(
+			"local thread store requires a state db to update metadata for thread %s", threadID)
+	}
+
+	existing, err := s.stateDB.GetThread(ctx, threadID)
+	if err != nil {
+		return StoredThread{}, internalError(err, "failed to read thread metadata for %s", threadID)
+	}
+	if existing == nil {
+		return StoredThread{}, invalidRequestError("thread not found: %s", threadID)
+	}
+
+	updated := applyPatchToMetadata(*existing, params.Patch)
+	if err := s.stateDB.UpsertThread(ctx, &updated); err != nil {
+		return StoredThread{}, internalError(err, "failed to update thread metadata for %s", threadID)
+	}
+
+	if params.Patch.MemoryMode != nil {
+		mode := memoryModeAsString(*params.Patch.MemoryMode)
+		if _, err := s.stateDB.SetThreadMemoryMode(ctx, threadID, mode); err != nil {
+			return StoredThread{}, internalError(err, "failed to update memory mode for %s", threadID)
+		}
+	}
+
+	return s.readThread(ctx, ReadThreadParams{
+		ThreadID:        threadID,
+		IncludeArchived: params.IncludeArchived,
+	})
+}
+
+// applyPatchToMetadata returns a new ThreadMetadata with the patch applied,
+// mirroring the field-by-field application in the Rust `apply_metadata_update`.
+// It never mutates the input metadata.
+func applyPatchToMetadata(metadata state.ThreadMetadata, patch ThreadMetadataPatch) state.ThreadMetadata {
+	updated := metadata
+
+	if patch.RolloutPath != nil {
+		updated.RolloutPath = *patch.RolloutPath
+	}
+	if patch.Preview != nil {
+		updated.Preview = cloneStr(patch.Preview)
+	}
+	if patch.Name.IsSome() {
+		updated.Title = flattenString(patch.Name)
+	}
+	if patch.Title != nil {
+		updated.Title = *patch.Title
+	}
+	if patch.ModelProvider != nil {
+		updated.ModelProvider = *patch.ModelProvider
+	}
+	if patch.Model != nil {
+		updated.Model = cloneStr(patch.Model)
+	}
+	if patch.ReasoningEffort != nil {
+		effort := *patch.ReasoningEffort
+		updated.ReasoningEffort = &effort
+	}
+	if patch.CreatedAt != nil {
+		updated.CreatedAt = patch.CreatedAt.UTC()
+	}
+	if patch.UpdatedAt != nil {
+		updated.UpdatedAt = patch.UpdatedAt.UTC()
+	}
+	if patch.Source != nil {
+		updated.Source = patch.Source.String()
+	}
+	if patch.ThreadSource.IsSome() {
+		updated.ThreadSource = flattenThreadSource(patch.ThreadSource)
+	}
+	if patch.AgentNickname.IsSome() {
+		updated.AgentNickname = flattenStringPtr(patch.AgentNickname)
+	}
+	if patch.AgentRole.IsSome() {
+		updated.AgentRole = flattenStringPtr(patch.AgentRole)
+	}
+	if patch.AgentPath.IsSome() {
+		updated.AgentPath = flattenStringPtr(patch.AgentPath)
+	}
+	if patch.Cwd != nil {
+		updated.Cwd = *patch.Cwd
+	}
+	if patch.CliVersion != nil {
+		updated.CliVersion = *patch.CliVersion
+	}
+	if patch.ApprovalMode != nil {
+		updated.ApprovalMode = string(patch.ApprovalMode.Kind)
+	}
+	if patch.TokenUsage != nil {
+		total := patch.TokenUsage.TotalTokens
+		if total < 0 {
+			total = 0
+		}
+		updated.TokensUsed = total
+	}
+	if patch.FirstUserMessage != nil {
+		updated.FirstUserMessage = cloneStr(patch.FirstUserMessage)
+	}
+	if patch.GitInfo != nil {
+		updated.GitSha = resolveClearableGit(patch.GitInfo.SHA, updated.GitSha)
+		updated.GitBranch = resolveClearableGit(patch.GitInfo.Branch, updated.GitBranch)
+		updated.GitOriginURL = resolveClearableGit(patch.GitInfo.OriginURL, updated.GitOriginURL)
+	}
+
+	return updated
+}
+
+// resolveClearableGit applies a clearable git patch field: a set value replaces,
+// a clear request nils the value, and an absent field leaves the existing value.
+func resolveClearableGit(field ClearableField[string], existing *string) *string {
+	if !field.IsSome() {
+		return existing
+	}
+	return cloneStr(field.Value)
+}
+
+// flattenString returns the inner value of a clearable string field, or "" when
+// the field is a clear request.
+func flattenString(field ClearableField[string]) string {
+	if v := flatten(field); v != nil {
+		return *v
+	}
+	return ""
+}
+
+// flattenStringPtr returns the inner pointer of a clearable string field.
+func flattenStringPtr(field ClearableField[string]) *string {
+	return cloneStr(flatten(field))
+}
+
+// flattenThreadSource returns the inner pointer of a clearable thread source.
+func flattenThreadSource(field ClearableField[rollout.ThreadSource]) *rollout.ThreadSource {
+	v := flatten(field)
+	if v == nil {
+		return nil
+	}
+	source := *v
+	return &source
+}
+
+// memoryModeAsString renders a thread memory mode for the state DB column,
+// mirroring the Rust `memory_mode_as_str`.
+func memoryModeAsString(mode protocol.ThreadMemoryMode) string {
+	if mode == protocol.ThreadMemoryModeDisabled {
+		return "disabled"
+	}
+	return "enabled"
+}

@@ -37,11 +37,18 @@ type LocalThreadStoreConfig struct {
 // supported via [CreateThreadParams.ForkedFromID], which is recorded in the
 // session metadata's forked_from_id field.
 //
-// Deviation: the read/list/search paths in the upstream crate scan rollout JSONL
-// and the state DB through helper APIs that are not part of this package's
-// allowed dependency set; those operations return an [ErrorKindUnsupported]
-// error here. The live-writer surface, the in-memory store, and the full type
-// system are faithful.
+// The read/list/search/archive surface is also implemented: it prefers the state
+// DB for ordering and paging and falls back to scanning the on-disk sessions
+// tree when no DB is configured or the DB is empty.
+//
+// Deviations from the upstream crate:
+//   - SearchThreads matches the visible title/preview/cwd/first-user-message via
+//     substring containment rather than a ripgrep transcript scan, which is
+//     outside this package's allowed dependency set.
+//   - UpdateThreadMetadata applies the patch to the SQLite row (the source of
+//     truth for listing/reads) but does not rewrite rollout session-meta lines;
+//     it requires a state DB and reports [ErrorKindInvalidRequest] when none is
+//     configured.
 type LocalThreadStore struct {
 	config LocalThreadStoreConfig
 
@@ -253,9 +260,10 @@ func (s *LocalThreadStore) DiscardThread(_ context.Context, threadID protocol.Th
 	return nil
 }
 
-// LoadHistory is part of the read path, which is not supported in this port.
-func (s *LocalThreadStore) LoadHistory(_ context.Context, _ LoadThreadHistoryParams) (StoredThreadHistory, error) {
-	return StoredThreadHistory{}, unsupportedError("load_history")
+// LoadHistory loads persisted rollout history for the thread by resolving its
+// rollout path and replaying every persisted item.
+func (s *LocalThreadStore) LoadHistory(ctx context.Context, params LoadThreadHistoryParams) (StoredThreadHistory, error) {
+	return s.loadHistory(ctx, params)
 }
 
 // ReadThread loads a stored thread summary (and optional history) by id,
@@ -269,30 +277,30 @@ func (s *LocalThreadStore) ReadThreadByRolloutPath(ctx context.Context, params R
 	return s.readThreadByRolloutPath(ctx, params)
 }
 
-// ListThreads is part of the read path, which is not supported in this port.
-func (s *LocalThreadStore) ListThreads(_ context.Context, _ ListThreadsParams) (ThreadPage, error) {
-	return ThreadPage{}, unsupportedError("list_threads")
+// ListThreads lists stored thread summaries, preferring the state DB and falling
+// back to a sessions-tree scan.
+func (s *LocalThreadStore) ListThreads(ctx context.Context, params ListThreadsParams) (ThreadPage, error) {
+	return s.listThreads(ctx, params)
 }
 
-// SearchThreads is part of the read path, which is not supported in this port.
-func (s *LocalThreadStore) SearchThreads(_ context.Context, _ SearchThreadsParams) (ThreadSearchPage, error) {
-	return ThreadSearchPage{}, unsupportedError("thread/search")
+// SearchThreads lists then filters stored threads by the supplied query.
+func (s *LocalThreadStore) SearchThreads(ctx context.Context, params SearchThreadsParams) (ThreadSearchPage, error) {
+	return s.searchThreads(ctx, params)
 }
 
-// UpdateThreadMetadata is part of the metadata-sync path, which is not supported
-// in this port.
-func (s *LocalThreadStore) UpdateThreadMetadata(_ context.Context, _ UpdateThreadMetadataParams) (StoredThread, error) {
-	return StoredThread{}, unsupportedError("update_thread_metadata")
+// UpdateThreadMetadata applies a metadata patch to the state-DB row and returns
+// the refreshed thread summary.
+func (s *LocalThreadStore) UpdateThreadMetadata(ctx context.Context, params UpdateThreadMetadataParams) (StoredThread, error) {
+	return s.updateThreadMetadata(ctx, params)
 }
 
-// ArchiveThread is part of the read/metadata path, which is not supported in this
-// port.
-func (s *LocalThreadStore) ArchiveThread(_ context.Context, _ ArchiveThreadParams) error {
-	return unsupportedError("archive_thread")
+// ArchiveThread archives a thread by moving its rollout file into the archived
+// sessions tree and updating the state DB when present.
+func (s *LocalThreadStore) ArchiveThread(ctx context.Context, params ArchiveThreadParams) error {
+	return s.archiveThread(ctx, params)
 }
 
-// UnarchiveThread is part of the read/metadata path, which is not supported in
-// this port.
-func (s *LocalThreadStore) UnarchiveThread(_ context.Context, _ ArchiveThreadParams) (StoredThread, error) {
-	return StoredThread{}, unsupportedError("unarchive_thread")
+// UnarchiveThread reverses an archive and returns the restored thread summary.
+func (s *LocalThreadStore) UnarchiveThread(ctx context.Context, params ArchiveThreadParams) (StoredThread, error) {
+	return s.unarchiveThread(ctx, params)
 }

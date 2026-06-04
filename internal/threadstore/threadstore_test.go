@@ -544,9 +544,10 @@ func TestInMemoryRegistrySharesByID(t *testing.T) {
 	}
 }
 
-// TestLocalReadPathsUnsupported verifies the documented deviation: the local
-// store's read/list/search/metadata operations return Unsupported errors.
-func TestLocalReadPathsUnsupported(t *testing.T) {
+// TestLocalReadPathInvalidRequests verifies the invalid-request behavior of the
+// now-implemented read/list/metadata operations when the target thread or its
+// rollout does not exist.
+func TestLocalReadPathInvalidRequests(t *testing.T) {
 	ctx := context.Background()
 	store := NewLocalThreadStore(LocalThreadStoreConfig{CodexHome: t.TempDir()}, nil)
 
@@ -554,33 +555,49 @@ func TestLocalReadPathsUnsupported(t *testing.T) {
 		name string
 		call func() error
 	}{
-		{"load_history", func() error {
-			_, err := store.LoadHistory(ctx, LoadThreadHistoryParams{ThreadID: tid("x")})
+		{"load_history missing", func() error {
+			_, err := store.LoadHistory(ctx, LoadThreadHistoryParams{ThreadID: validTID()})
 			return err
 		}},
-		{"list_threads", func() error {
-			_, err := store.ListThreads(ctx, ListThreadsParams{})
-			return err
-		}},
-		{"search", func() error {
+		{"search requires term", func() error {
 			_, err := store.SearchThreads(ctx, SearchThreadsParams{})
 			return err
 		}},
-		{"update_metadata", func() error {
-			_, err := store.UpdateThreadMetadata(ctx, UpdateThreadMetadataParams{ThreadID: tid("x")})
+		{"update_metadata requires state db", func() error {
+			_, err := store.UpdateThreadMetadata(ctx, UpdateThreadMetadataParams{
+				ThreadID: validTID(),
+				Patch:    ThreadMetadataPatch{Preview: ptr("x")},
+			})
 			return err
 		}},
-		{"archive", func() error {
-			return store.ArchiveThread(ctx, ArchiveThreadParams{ThreadID: tid("x")})
+		{"archive missing", func() error {
+			return store.ArchiveThread(ctx, ArchiveThreadParams{ThreadID: validTID()})
+		}},
+		{"unarchive missing", func() error {
+			_, err := store.UnarchiveThread(ctx, ArchiveThreadParams{ThreadID: validTID()})
+			return err
 		}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var storeErr *Error
-			if err := tc.call(); !errors.As(err, &storeErr) || storeErr.Kind != ErrorKindUnsupported {
-				t.Fatalf("expected Unsupported, got %v", tc.call())
+			if err := tc.call(); !errors.As(err, &storeErr) || storeErr.Kind != ErrorKindInvalidRequest {
+				t.Fatalf("expected InvalidRequest, got %v", err)
 			}
 		})
+	}
+}
+
+// TestLocalListThreadsEmptyOK verifies that listing with no sessions on disk and
+// no state DB returns an empty page rather than an error.
+func TestLocalListThreadsEmptyOK(t *testing.T) {
+	store := NewLocalThreadStore(LocalThreadStoreConfig{CodexHome: t.TempDir()}, nil)
+	page, err := store.ListThreads(context.Background(), ListThreadsParams{PageSize: 10})
+	if err != nil {
+		t.Fatalf("list empty: %v", err)
+	}
+	if len(page.Items) != 0 || page.NextCursor != nil {
+		t.Fatalf("expected empty page, got %+v", page)
 	}
 }
 
