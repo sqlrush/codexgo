@@ -66,6 +66,10 @@ Automated, credential-free, binary-vs-binary (env-gated on `CODEX_PARITY_BIN`):
 | `exec --json` text turn | ✅ byte-identical normalized JSONL |
 | `exec --json` shell-command tool turn | ✅ byte-identical (runs the command) |
 | `exec --json` apply_patch tool turn | ✅ byte-identical + identical patched file |
+| `exec --json` error turn | ✅ same terminal `turn.failed` + exit code (msg text tracked) |
+| `exec -o/--output-last-message` | ✅ byte-identical file |
+| `exec --output-schema` request `text` | ✅ byte-identical json_schema block |
+| full `/responses` request body | 🟡 `model`/`tool_choice`/`store`/`stream`/`include`/`service_tier`/`text`/`reasoning`/`parallel_tool_calls`/`instructions` byte-identical; `input` (env-context) + `tools` (full registry) tracked |
 | `doctor --json` | 🟡 18 check IDs + container/keys match; per-check `details` shape differs |
 | `completion` | 🟡 functional; not clap-byte-identical |
 
