@@ -42,9 +42,19 @@ that, differentials run deterministically offline:
 
 - `internal/paritytest` provides golden helpers (`AssertBytes`, `AssertJSONEqual`,
   `CanonicalizeJSON`).
+- **Automated differential tests** live in
+  `internal/paritytest/differential_test.go`, env-gated on `CODEX_PARITY_BIN`
+  (path to a real codex binary). They build the codexgo `codex` binary and compare
+  it to codex for: the subcommand set, the bundled model-slug set, and an
+  `apply_patch` byte-identity round-trip. They **skip** when `CODEX_PARITY_BIN` is
+  unset, so the default `go test ./...` / CI stays hermetic. Run locally:
+  ```
+  CODEX_PARITY_BIN=/path/to/codex go test ./internal/paritytest/ -run Parity -v
+  ```
+  Current status with codex 0.136.0: **3/3 pass**.
 - Per-spec golden tests run in CI against committed fixtures where the fixture
-  contains no OpenAI content; codex-output fixtures are env-gated
-  (`CODEX_PARITY_BIN=/path/to/codex`) and regenerated locally.
+  contains no OpenAI content; codex-output fixtures are env-gated and regenerated
+  locally.
 
 ## Honest status
 
