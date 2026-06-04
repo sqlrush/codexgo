@@ -11,6 +11,7 @@ import (
 	"github.com/sqlrush/codexgo/internal/core"
 	"github.com/sqlrush/codexgo/internal/modelsmanager"
 	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/internal/unifiedexec"
 )
 
 // defaultMockReply is the canned assistant reply used when CODEX_EXEC_MOCK_REPLY
@@ -129,12 +130,20 @@ func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultMode
 		ModelClientFactory: factory,
 		CodexHome:          codexHome,
 		DefaultModel:       model,
+		// The bundled catalog lets the per-turn tool selection read the real
+		// model metadata (shell_type, truncation policy) — without it every turn
+		// falls back to slug-derived defaults.
+		ModelCatalog: bundledModelCatalog(),
 		// Wire the real built-in tool router so the binary actually executes tools
 		// (exec_command / shell_command, apply_patch, view_image, update_plan).
 		// Without this the assembly defaults to an empty router and every tool call
-		// is rejected with "unsupported call".
+		// is rejected with "unsupported call". The unified-exec executor backs the
+		// exec_command/write_stdin PTY pair that codex advertises by default.
 		ToolRouterFactory: func() (core.ToolRouter, error) {
-			return core.BuiltinToolRouter(core.BuiltinToolDeps{Exec: newLocalExecService()})
+			return core.BuiltinToolRouter(core.BuiltinToolDeps{
+				Exec:        newLocalExecService(),
+				UnifiedExec: unifiedexec.NewExecutor(nil),
+			})
 		},
 	})
 	if err != nil {

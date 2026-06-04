@@ -80,6 +80,11 @@ func resolveMaxTokens(maxTokens *int) int {
 	return DefaultMaxOutputTokens
 }
 
+// GenerateChunkID returns a fresh 6-hex-digit identifier for an output chunk.
+// It is exported for the core tool handlers, which stamp a chunk id onto
+// sandbox-denial responses (mirroring the Rust handler's generate_chunk_id use).
+func GenerateChunkID() string { return generateChunkID() }
+
 // generateChunkID returns a fresh 6-hex-digit identifier for an output chunk.
 // Mirrors generate_chunk_id, which draws 6 random hex nibbles.
 func generateChunkID() string {

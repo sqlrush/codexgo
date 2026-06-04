@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	"github.com/sqlrush/codexgo/internal/core"
+	"github.com/sqlrush/codexgo/internal/modelsmanager"
 	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
@@ -22,26 +23,29 @@ func defaultThreadIDFactory() core.ThreadIDFactory {
 }
 
 // staticModelsManager is a minimal [core.ModelsManager] backed by a single
-// default model slug. It satisfies the small DI interface core needs for the
-// turn-running path without pulling in the full models catalog. The real
-// internal/modelsmanager managers can be injected through
-// [AssemblyConfig.ToolRouterFactory]-style seams when richer metadata is needed.
+// default model slug and an optional model catalog. It satisfies the small DI
+// interface core needs for the turn-running path; with a catalog supplied it
+// resolves the same full per-model metadata the model-client factory uses, so
+// the per-turn tool selection (shell_type) sees the real model capabilities.
 type staticModelsManager struct {
 	defaultSlug string
+	catalog     []modelsmanager.ModelInfo
 }
 
-// newStaticModelsManager builds a models manager with the given default slug.
-func newStaticModelsManager(defaultSlug string) *staticModelsManager {
-	return &staticModelsManager{defaultSlug: defaultSlug}
+// newStaticModelsManager builds a models manager with the given default slug
+// and catalog (nil catalog falls back to slug-derived metadata).
+func newStaticModelsManager(defaultSlug string, catalog []modelsmanager.ModelInfo) *staticModelsManager {
+	return &staticModelsManager{defaultSlug: defaultSlug, catalog: catalog}
 }
 
 // compile-time assertion that staticModelsManager satisfies core.ModelsManager.
 var _ core.ModelsManager = (*staticModelsManager)(nil)
 
-// ModelInfo returns opaque model metadata for slug. Core stores the value on the
-// turn context without interpreting it, so a nil payload is acceptable here.
+// ModelInfo returns the typed [modelsmanager.ModelInfo] for slug, resolved from
+// the catalog with a slug-derived fallback. Core stores the value opaquely on
+// the turn context; the tool-selection helpers type-assert it back.
 func (m *staticModelsManager) ModelInfo(_ context.Context, slug string) (any, error) {
-	return map[string]string{"slug": slug}, nil
+	return resolveModelInfo(slug, m.catalog), nil
 }
 
 // DefaultModelSlug returns the configured default model slug.

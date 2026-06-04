@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/sqlrush/codexgo/internal/applypatch"
+	"github.com/sqlrush/codexgo/internal/modelsmanager"
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/shellcmd"
 	"github.com/sqlrush/codexgo/internal/tools"
@@ -46,23 +47,21 @@ func newShellCommandExecutor(exec ExecService, fs applypatch.FileSystem) shellCo
 	return shellCommandExecutor{exec: exec, fs: fs, toolName: "shell_command", argKey: "command"}
 }
 
-// newExecCommandStringExecutor builds the exec_command executor (a `cmd`-string
-// variant of the shell tool) sharing the shell_command execution path.
-func newExecCommandStringExecutor(exec ExecService, fs applypatch.FileSystem) shellCommandExecutor {
-	return shellCommandExecutor{exec: exec, fs: fs, toolName: "exec_command", argKey: "cmd"}
-}
-
 func (e shellCommandExecutor) Name() protocol.ToolName { return protocol.PlainToolName(e.toolName) }
 
-func (e shellCommandExecutor) Spec(*TurnContext) (tools.ToolSpec, bool) {
-	// codex derives the `login` parameter from config.permissions.allow_login_shell,
-	// which defaults to true (config/mod.rs). Mirror that default so the advertised
-	// exec_command/shell_command spec carries `login` like the reference binary.
-	opts := tools.CommandToolOptions{AllowLoginShell: true}
-	if e.toolName == "exec_command" {
-		return tools.CreateExecCommandTool(opts), true
+// Spec advertises shell_command only when the turn's shell type resolves to it.
+// In UnifiedExec mode the tool stays registered but hidden — codex keeps the
+// legacy shell tool dispatch-only while exec_command/write_stdin are
+// model-visible (spec_plan::add_shell_tools, add_dispatch_only). codex derives
+// the `login` parameter from config.permissions.allow_login_shell, which
+// defaults to true (config/mod.rs).
+func (e shellCommandExecutor) Spec(tc *TurnContext) (tools.ToolSpec, bool) {
+	switch turnShellToolType(tc) {
+	case modelsmanager.ConfigShellToolTypeUnifiedExec, modelsmanager.ConfigShellToolTypeDisabled:
+		return tools.ToolSpec{}, false
+	default:
+		return tools.CreateShellCommandTool(tools.CommandToolOptions{AllowLoginShell: true}), true
 	}
-	return tools.CreateShellCommandTool(opts), true
 }
 
 func (shellCommandExecutor) MatchesPayload(p tools.ToolPayload) bool {
@@ -90,7 +89,11 @@ func (e shellCommandExecutor) Handle(ctx context.Context, h *toolHandlerContext)
 
 	// Intercept an apply_patch heredoc and route it to the patch applier.
 	if hd, ok := shellcmd.ExtractApplyPatchHeredoc(argv); ok {
-		return e.applyHeredocPatch(h, cwd, hd)
+		out, herr := applyHeredocPatch(h, e.fs, cwd, hd)
+		if herr != nil {
+			return nil, herr
+		}
+		return out, nil
 	}
 
 	return e.runShellCommand(ctx, h, argv, cwd)
@@ -188,8 +191,10 @@ func (e shellCommandExecutor) runShellCommand(ctx context.Context, h *toolHandle
 
 // applyHeredocPatch applies an intercepted apply_patch heredoc through
 // internal/applypatch, emitting the file_change item lifecycle (item.started /
-// item.completed) so the JSONL stream matches codex's intercept_apply_patch path.
-func (e shellCommandExecutor) applyHeredocPatch(h *toolHandlerContext, cwd string, hd shellcmd.ApplyPatchHeredoc) (tools.ToolOutput, error) {
+// item.completed) so the JSONL stream matches codex's intercept_apply_patch
+// path. It is shared by the shell_command and exec_command (UnifiedExec)
+// executors, both of which intercept the heredoc form.
+func applyHeredocPatch(h *toolHandlerContext, fsys applypatch.FileSystem, cwd string, hd shellcmd.ApplyPatchHeredoc) (applyPatchToolOutput, error) {
 	effectiveCwd := cwd
 	if hd.Workdir != "" {
 		effectiveCwd = resolveWorkdir(cwd, hd.Workdir)
@@ -197,14 +202,13 @@ func (e shellCommandExecutor) applyHeredocPatch(h *toolHandlerContext, cwd strin
 
 	parsed, perr := applypatch.ParsePatch(hd.Body)
 	if perr != nil {
-		return nil, tools.RespondToModelError(fmt.Sprintf("apply_patch failed to parse: %v", perr))
+		return applyPatchToolOutput{}, tools.RespondToModelError(fmt.Sprintf("apply_patch failed to parse: %v", perr))
 	}
 
 	cwdAbs, cerr := abspath.FromAbsolutePath(effectiveCwd)
 	if cerr != nil {
-		return nil, tools.RespondToModelError(fmt.Sprintf("invalid cwd for apply_patch: %v", cerr))
+		return applyPatchToolOutput{}, tools.RespondToModelError(fmt.Sprintf("invalid cwd for apply_patch: %v", cerr))
 	}
-	fsys := e.fs
 	if fsys == nil {
 		fsys = applypatch.OSFileSystem{}
 	}
@@ -234,7 +238,7 @@ func (e shellCommandExecutor) applyHeredocPatch(h *toolHandlerContext, cwd strin
 		if msg == "" {
 			msg = applyErr.Error()
 		}
-		return nil, tools.RespondToModelError(msg)
+		return applyPatchToolOutput{}, tools.RespondToModelError(msg)
 	}
 
 	if h.Session != nil {

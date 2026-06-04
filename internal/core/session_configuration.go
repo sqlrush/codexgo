@@ -1,6 +1,9 @@
 package core
 
-import "github.com/sqlrush/codexgo/internal/protocol"
+import (
+	"github.com/sqlrush/codexgo/internal/features"
+	"github.com/sqlrush/codexgo/internal/protocol"
+)
 
 // SessionConfiguration is the snapshot of per-session settings that the turn
 // path reads when constructing each turn context. It is a faithful, reduced port
@@ -85,6 +88,11 @@ type SessionConfiguration struct {
 	DynamicTools []protocol.DynamicToolSpec
 	// PersistExtendedHistory selects extended vs. limited event persistence.
 	PersistExtendedHistory bool
+
+	// Features is the resolved feature set for the session (config [features]
+	// table over the per-feature defaults). Nil means "defaults"; turn
+	// construction resolves through [turnFeatures].
+	Features *features.Features
 
 	// AppServerClientName / AppServerClientVersion identify the app-server
 	// client, when one is attached.

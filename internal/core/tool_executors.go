@@ -10,6 +10,7 @@ import (
 	"github.com/sqlrush/codexgo/internal/applypatch"
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/tools"
+	"github.com/sqlrush/codexgo/internal/unifiedexec"
 	"github.com/sqlrush/codexgo/internal/utils/abspath"
 )
 
@@ -64,10 +65,14 @@ type PermissionsRequester interface {
 }
 
 // BuiltinToolDeps bundles the injected dependencies the built-in executors need.
-// Nil fields disable the corresponding tool: e.g. a nil Exec omits exec_command.
+// Nil fields disable the corresponding tool: e.g. a nil Exec omits shell_command.
 type BuiltinToolDeps struct {
-	// Exec runs sandboxed shell commands (exec_command / apply_patch fallback).
+	// Exec runs sandboxed shell commands (shell_command / apply_patch fallback).
 	Exec ExecService
+	// UnifiedExec drives the exec_command/write_stdin PTY session pair. A nil
+	// value omits the UnifiedExec tools (the turn then falls back to
+	// shell_command regardless of the feature-resolved shell type).
+	UnifiedExec *unifiedexec.Executor
 	// Mcp invokes MCP tools.
 	Mcp McpToolCaller
 	// McpTools are the model-visible MCP tool specs to advertise this turn.
@@ -84,36 +89,52 @@ type BuiltinToolDeps struct {
 	PatchFS applypatch.FileSystem
 }
 
-// builtinExecutors assembles the executor list for the configured dependencies.
+// builtinExecutors assembles the executor list for the configured dependencies,
+// in codex's spec_plan registration order (which fixes the model-visible spec
+// order): shell tools, core utility tools (update_plan, request_user_input,
+// request_permissions, apply_patch, view_image), MCP runtime tools, then the
+// hosted specs (web_search) last.
 func builtinExecutors(deps BuiltinToolDeps) []toolExecutor {
 	var execs []toolExecutor
-	// view_image and update_plan have no external dependency.
-	execs = append(execs, viewImageExecutor{}, planExecutor{})
 
-	if deps.Exec != nil {
-		// shell_command is the gpt-5.5 default shell tool: it takes a `command`
-		// STRING, wraps it in the user's shell, and intercepts apply_patch heredocs.
-		execs = append(execs, newShellCommandExecutor(deps.Exec, deps.PatchFS))
-		// exec_command is the PTY-oriented variant (takes a `cmd` STRING) kept for
-		// models that use it; it shares the shell_command execution path.
-		execs = append(execs, newExecCommandStringExecutor(deps.Exec, deps.PatchFS))
+	// Shell family (spec_plan::add_shell_tools). All shell executors register;
+	// the per-turn shell type (shell_type_for_model_and_features) decides which
+	// of them advertises a spec — in UnifiedExec mode shell_command stays
+	// registered dispatch-only, matching codex's add_dispatch_only.
+	if deps.UnifiedExec != nil {
+		execs = append(execs, newUnifiedExecCommandExecutor(deps.UnifiedExec, deps.PatchFS))
+		execs = append(execs, newWriteStdinExecutor(deps.UnifiedExec))
 	}
-	// apply_patch remains available as a standalone tool for the direct (non-shell)
-	// invocation form some models use.
-	execs = append(execs, applyPatchExecutor{fs: deps.PatchFS})
+	if deps.Exec != nil {
+		// shell_command takes a `command` STRING, wraps it in the user's shell,
+		// and intercepts apply_patch heredocs.
+		execs = append(execs, newShellCommandExecutor(deps.Exec, deps.PatchFS))
+	}
+
+	// Core utility tools (spec_plan::add_core_utility_tools order).
+	execs = append(execs, planExecutor{})
 	if deps.UserInput != nil {
 		execs = append(execs, requestUserInputExecutor{req: deps.UserInput})
 	}
 	if deps.Permissions != nil {
 		execs = append(execs, requestPermissionsExecutor{req: deps.Permissions})
 	}
-	if deps.WebSearch != nil {
-		execs = append(execs, webSearchExecutor{runner: deps.WebSearch})
-	}
+	// apply_patch remains available as a standalone tool for the direct
+	// (non-shell) invocation form some models use.
+	execs = append(execs, applyPatchExecutor{fs: deps.PatchFS})
+	execs = append(execs, viewImageExecutor{})
+
+	// MCP runtime tools (spec_plan::add_mcp_runtime_tools).
 	if deps.Mcp != nil {
 		for _, spec := range deps.McpTools {
 			execs = append(execs, mcpExecutor{caller: deps.Mcp, spec: spec, name: protocol.PlainToolName(spec.Name())})
 		}
+	}
+
+	// Hosted specs come after every runtime in the model-visible order
+	// (build_model_visible_specs_and_registry appends hosted_specs last).
+	if deps.WebSearch != nil {
+		execs = append(execs, webSearchExecutor{runner: deps.WebSearch})
 	}
 	return execs
 }

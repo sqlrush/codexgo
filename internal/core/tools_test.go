@@ -10,8 +10,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sqlrush/codexgo/internal/features"
 	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/internal/pty"
 	"github.com/sqlrush/codexgo/internal/tools"
+	"github.com/sqlrush/codexgo/internal/unifiedexec"
 )
 
 // This file tests the core tool-dispatch layer ported from codex-core's
@@ -323,16 +326,24 @@ func TestBuiltinToolRouterRegistration(t *testing.T) {
 			wantTools: []string{"apply_patch", "update_plan", "view_image"},
 		},
 		{
-			name: "exec dep adds shell_command + exec_command",
+			name: "exec dep adds shell_command",
 			deps: BuiltinToolDeps{Exec: &mockExecService{}},
 			wantTools: []string{
-				"apply_patch", "exec_command", "shell_command", "update_plan", "view_image",
+				"apply_patch", "shell_command", "update_plan", "view_image",
+			},
+		},
+		{
+			name: "unified-exec dep adds the PTY pair",
+			deps: BuiltinToolDeps{UnifiedExec: unifiedexec.NewExecutor(nil)},
+			wantTools: []string{
+				"apply_patch", "exec_command", "update_plan", "view_image", "write_stdin",
 			},
 		},
 		{
 			name: "all deps register everything",
 			deps: BuiltinToolDeps{
 				Exec:        &mockExecService{},
+				UnifiedExec: unifiedexec.NewExecutor(nil),
 				WebSearch:   &mockWebSearch{},
 				UserInput:   &mockUserInput{},
 				Permissions: &mockPermissions{},
@@ -342,7 +353,7 @@ func TestBuiltinToolRouterRegistration(t *testing.T) {
 			wantTools: []string{
 				"apply_patch", "exec_command", "request_permissions",
 				"request_user_input", "shell_command", "srv__tool", "update_plan",
-				"view_image", "web_search",
+				"view_image", "web_search", "write_stdin",
 			},
 		},
 	}
@@ -363,24 +374,65 @@ func TestBuiltinToolRouterRegistration(t *testing.T) {
 	}
 }
 
+// TestSpecsForTurn asserts the per-turn shell-type selection: UnifiedExec mode
+// advertises the exec_command/write_stdin pair (shell_command stays registered
+// dispatch-only), shell mode advertises shell_command. The advertised ORDER
+// must match codex's spec_plan order.
 func TestSpecsForTurn(t *testing.T) {
 	t.Parallel()
-	r, err := BuiltinToolRouter(BuiltinToolDeps{Exec: &mockExecService{}})
+	r, err := BuiltinToolRouter(BuiltinToolDeps{
+		Exec:        &mockExecService{},
+		UnifiedExec: unifiedexec.NewExecutor(nil),
+	})
 	if err != nil {
 		t.Fatalf("BuiltinToolRouter: %v", err)
 	}
-	specs, err := r.SpecsForTurn(context.Background(), newTestTurn("/tmp"))
-	if err != nil {
-		t.Fatalf("SpecsForTurn: %v", err)
+
+	tests := []struct {
+		name        string
+		unifiedExec bool
+		wantOrder   []string
+	}{
+		{
+			name:        "unified-exec mode advertises the PTY pair in spec_plan order",
+			unifiedExec: true,
+			wantOrder:   []string{"exec_command", "write_stdin", "update_plan", "apply_patch", "view_image"},
+		},
+		{
+			name:        "shell mode advertises shell_command in spec_plan order",
+			unifiedExec: false,
+			wantOrder:   []string{"shell_command", "update_plan", "apply_patch", "view_image"},
+		},
 	}
-	names := make(map[string]bool, len(specs))
-	for _, s := range specs {
-		names[s.Name()] = true
-	}
-	for _, want := range []string{"view_image", "update_plan", "apply_patch", "exec_command", "shell_command"} {
-		if !names[want] {
-			t.Errorf("missing spec %q in %v", want, names)
-		}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tc := newTestTurn("/tmp")
+			f := features.NewFeaturesWithDefaults()
+			if tt.unifiedExec {
+				if !pty.ConPTYSupported() {
+					t.Skip("no PTY support on this platform")
+				}
+				f.Enable(features.FeatureUnifiedExec)
+			} else {
+				f.Disable(features.FeatureUnifiedExec)
+			}
+			tc.Features = &f
+
+			specs, err := r.SpecsForTurn(context.Background(), tc)
+			if err != nil {
+				t.Fatalf("SpecsForTurn: %v", err)
+			}
+			got := make([]string, 0, len(specs))
+			for _, s := range specs {
+				got = append(got, s.Name())
+			}
+			if strings.Join(got, ",") != strings.Join(tt.wantOrder, ",") {
+				t.Errorf("advertised = %v, want %v", got, tt.wantOrder)
+			}
+		})
 	}
 }
 
@@ -574,8 +626,8 @@ func TestPlanExecutorSuccess(t *testing.T) {
 
 // TestShellCommandExecutor exercises the shell_command tool: it wraps the
 // `command` STRING in the user's shell, runs it through the ExecService, and
-// emits the exec_command_begin/end events. The exec_command executor shares the
-// same path with the `cmd` argument key.
+// emits the exec_command_begin/end events. (The exec_command tool is the
+// UnifiedExec PTY executor, covered in unified_exec_executor_test.go.)
 func TestShellCommandExecutor(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -601,14 +653,6 @@ func TestShellCommandExecutor(t *testing.T) {
 			args:        `{"command":"pwd"}`,
 			exec:        &mockExecService{res: ExecResult{ExitCode: 0, Stdout: "/tmp\n"}},
 			wantCommand: "pwd",
-			wantCwd:     "/tmp",
-		},
-		{
-			name:        "exec_command uses the cmd key",
-			toolName:    "exec_command",
-			args:        `{"cmd":"ls -a"}`,
-			exec:        &mockExecService{res: ExecResult{ExitCode: 0, Stdout: ""}},
-			wantCommand: "ls -a",
 			wantCwd:     "/tmp",
 		},
 		{
@@ -645,12 +689,7 @@ func TestShellCommandExecutor(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			sess, events := newTestSession(t)
-			var ex shellCommandExecutor
-			if tt.toolName == "exec_command" {
-				ex = newExecCommandStringExecutor(tt.exec, nil)
-			} else {
-				ex = newShellCommandExecutor(tt.exec, nil)
-			}
+			ex := newShellCommandExecutor(tt.exec, nil)
 			out, err := ex.Handle(context.Background(), &toolHandlerContext{
 				Session: sess, Turn: newTestTurn("/tmp"), CallID: "c1",
 				ToolName: ex.Name(), Payload: tools.FunctionPayload(tt.args),

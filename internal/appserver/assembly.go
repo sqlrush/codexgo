@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/sqlrush/codexgo/internal/core"
+	"github.com/sqlrush/codexgo/internal/modelsmanager"
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/rollout"
 	"github.com/sqlrush/codexgo/internal/threadstore"
@@ -54,6 +55,11 @@ type AssemblyConfig struct {
 	// DefaultModel is the configured default model slug, returned by the models
 	// manager when no per-turn override is supplied.
 	DefaultModel string
+
+	// ModelCatalog, when non-empty, backs the models manager so turns resolve
+	// full per-model metadata (shell_type, truncation policy, capabilities).
+	// When empty, slug-derived fallback metadata is used.
+	ModelCatalog []modelsmanager.ModelInfo
 
 	// Now returns the current time; defaults to time.Now when nil.
 	Now func() time.Time
@@ -108,7 +114,7 @@ func Assemble(cfg AssemblyConfig) (*Assembly, error) {
 		now = time.Now
 	}
 
-	models := newStaticModelsManager(cfg.DefaultModel)
+	models := newStaticModelsManager(cfg.DefaultModel, cfg.ModelCatalog)
 
 	routerFactory := cfg.ToolRouterFactory
 	if routerFactory == nil {

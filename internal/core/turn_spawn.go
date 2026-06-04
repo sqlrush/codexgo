@@ -37,6 +37,7 @@ func newTurnContext(ctx context.Context, sess *Session, subID string, update *Se
 		DynamicTools:          append([]protocol.DynamicToolSpec(nil), cfg.DynamicTools...),
 		AppServerClientName:   cfg.AppServerClientName,
 		ReasoningEffort:       cfg.CollaborationMode.Settings.ReasoningEffort,
+		Features:              cfg.Features,
 	}
 	if cfg.ModelReasoningSummary != nil {
 		tc.ReasoningSummary = *cfg.ModelReasoningSummary

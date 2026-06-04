@@ -59,3 +59,37 @@ func TestShellCommandToolCallParamsTimeoutAlias(t *testing.T) {
 		t.Errorf("timeout_ms = %v, want 5000", p.TimeoutMs)
 	}
 }
+
+// TestCreateWriteStdinToolSpec asserts the write_stdin tool schema is
+// byte-faithful to codex 0.136.0's create_write_stdin_tool: sorted-key
+// properties, required ["session_id"], strict:false, additionalProperties:false
+// (the serde-skipped output_schema never reaches the wire).
+func TestCreateWriteStdinToolSpec(t *testing.T) {
+	t.Parallel()
+	spec := CreateWriteStdinTool()
+	got, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("marshal write_stdin spec: %v", err)
+	}
+
+	want := `{"type":"function","name":"write_stdin","description":"Writes characters to an existing unified exec session and returns recent output.","strict":false,"parameters":{"type":"object","properties":{"chars":{"type":"string","description":"Bytes to write to stdin. Defaults to empty, which polls without writing."},"max_output_tokens":{"type":"number","description":"Output token budget. Defaults to 10000 tokens; larger requests may be capped by policy."},"session_id":{"type":"number","description":"Identifier of the running unified exec session."},"yield_time_ms":{"type":"number","description":"Wait before yielding output. Non-empty writes default to 250 ms and cap at 30000 ms; empty polls wait 5000-300000 ms by default."}},"required":["session_id"],"additionalProperties":false}}`
+
+	if string(got) != want {
+		t.Errorf("write_stdin spec mismatch\n got: %s\nwant: %s", got, want)
+	}
+}
+
+// TestCreateExecCommandToolEnvironmentID asserts the multi-environment variant
+// adds the environment_id string parameter (and only that).
+func TestCreateExecCommandToolEnvironmentID(t *testing.T) {
+	t.Parallel()
+	with := CreateExecCommandToolWithEnvironmentID(CommandToolOptions{AllowLoginShell: true}, true)
+	without := CreateExecCommandTool(CommandToolOptions{AllowLoginShell: true})
+
+	if _, ok := with.Function.Parameters.Properties["environment_id"]; !ok {
+		t.Error("environment_id property missing from multi-environment variant")
+	}
+	if _, ok := without.Function.Parameters.Properties["environment_id"]; ok {
+		t.Error("environment_id property unexpectedly present in single-environment spec")
+	}
+}

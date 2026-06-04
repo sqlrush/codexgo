@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/json"
 
+	"github.com/sqlrush/codexgo/internal/features"
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/rollout"
 	"github.com/sqlrush/codexgo/internal/tools"
@@ -38,6 +39,10 @@ type TurnContext struct {
 	// ModelInfo is opaque model metadata (from [ModelsManager]); core does not
 	// interpret it but threads it through for the model client.
 	ModelInfo any
+	// Features is the resolved feature set for this turn (mirrors the Rust
+	// `turn_context.features`). A nil value means "defaults"; resolve through
+	// [turnFeatures] rather than reading the field directly.
+	Features *features.Features
 	// ModelContextWindow is the effective context window in tokens, if known.
 	ModelContextWindow *int64
 

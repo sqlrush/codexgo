@@ -67,6 +67,17 @@ func CreateShellCommandTool(opts CommandToolOptions) ToolSpec {
 // string plus optional `workdir`, `shell`, `tty`, `yield_time_ms`,
 // `max_output_tokens`, `login`, and approval parameters.
 func CreateExecCommandTool(opts CommandToolOptions) ToolSpec {
+	return CreateExecCommandToolWithEnvironmentID(opts, false)
+}
+
+// CreateExecCommandToolWithEnvironmentID builds the `exec_command` ToolSpec,
+// optionally adding the `environment_id` parameter used in multi-environment
+// turns. Mirrors Rust `create_exec_command_tool_with_environment_id`.
+//
+// The Rust spec also carries an output_schema (unified_exec_output_schema), but
+// it is `#[serde(skip)]` on ResponsesApiTool — it never reaches the /responses
+// request and is only consumed by code-mode, so it is not ported here.
+func CreateExecCommandToolWithEnvironmentID(opts CommandToolOptions, includeEnvironmentID bool) ToolSpec {
 	properties := map[string]JsonSchema{
 		"cmd":     StringSchema(strPtr("Shell command to execute.")),
 		"workdir": StringSchema(strPtr("Working directory for the command. Defaults to the turn cwd.")),
@@ -82,6 +93,10 @@ func CreateExecCommandTool(opts CommandToolOptions) ToolSpec {
 		properties["login"] = BooleanSchema(strPtr(
 			"True runs the shell with -l/-i semantics; false disables them. Defaults to true."))
 	}
+	if includeEnvironmentID {
+		properties["environment_id"] = StringSchema(strPtr(
+			"Environment id from <environment_context>. Omit to use the primary environment."))
+	}
 	for k, v := range createApprovalParameters(opts.ExecPermissionApprovalsEnabled) {
 		properties[k] = v
 	}
@@ -93,6 +108,35 @@ func CreateExecCommandTool(opts CommandToolOptions) ToolSpec {
 		Parameters: ObjectSchema(
 			properties,
 			[]string{"cmd"},
+			BoolAdditionalProperties(false),
+		),
+	})
+}
+
+// CreateWriteStdinTool builds the `write_stdin` ToolSpec, the companion of the
+// UnifiedExec `exec_command` tool for interacting with a live PTY session.
+// Mirrors Rust `create_write_stdin_tool`: a single required `session_id` number
+// plus optional `chars`, `yield_time_ms`, and `max_output_tokens`. As with
+// exec_command, the Rust output_schema is serde-skipped and not ported.
+func CreateWriteStdinTool() ToolSpec {
+	properties := map[string]JsonSchema{
+		"session_id": NumberSchema(strPtr(
+			"Identifier of the running unified exec session.")),
+		"chars": StringSchema(strPtr(
+			"Bytes to write to stdin. Defaults to empty, which polls without writing.")),
+		"yield_time_ms": NumberSchema(strPtr(
+			"Wait before yielding output. Non-empty writes default to 250 ms and cap at 30000 ms; empty polls wait 5000-300000 ms by default.")),
+		"max_output_tokens": NumberSchema(strPtr(
+			"Output token budget. Defaults to 10000 tokens; larger requests may be capped by policy.")),
+	}
+
+	return FunctionToolSpec(ResponsesApiTool{
+		Name:        "write_stdin",
+		Description: "Writes characters to an existing unified exec session and returns recent output.",
+		Strict:      false,
+		Parameters: ObjectSchema(
+			properties,
+			[]string{"session_id"},
 			BoolAdditionalProperties(false),
 		),
 	})
