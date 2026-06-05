@@ -25,14 +25,14 @@ Legend: ✅ implemented + tested · 🟡 implemented with documented deviation/p
 | 09 | shell parsing & PTY | ✅ | |
 | 10 | exec-server & filesystem | ✅ | |
 | 11 | apply_patch | ✅ | **byte-identical** to codex (parity) |
-| 12 | sandbox core + macOS seatbelt | ✅ | .sbpl gen + spawn |
+| 12 | sandbox core + macOS seatbelt | ✅ | .sbpl gen + spawn; LIVE per-turn policy resolution for exec (read-only/workspace-write -> seatbelt, danger -> none) |
 | 13 | Linux sandbox (landlock+seccomp) | ✅ | native, cgo-free; cross-compiles (behavioral test linux-only) |
 | 14 | Windows sandbox (restricted token) | ✅ | native; cross-compiles (behavioral test windows-only) |
 | 15 | network proxy (SOCKS5/HTTP) | 🟡 | policy+env exact; HTTPS MITM data-path deferred |
 | 16 | tools framework + built-ins | ✅ | shell_command/apply_patch verified drop-in; UnifiedExec PTY pair (exec_command/write_stdin) wired with per-model selection |
 | 17 | rollout JSONL | ✅ | |
 | 18 | state SQLite | ✅ | embedded migrations, pure-Go sqlite; thread-goal store (goals.rs port: budget-limit promotion + accounting modes) |
-| 19 | thread store / history / graph | ✅ | read/list/search/archive; search substring vs ripgrep |
+| 19 | thread store / history / graph | ✅ | read/list/search/archive; search now scans rollout transcripts (search_threads.rs port: snippet gate, excerpts, cursor paging) |
 | 20 | git / file-search / watch | 🟡 | go-git/fsnotify; fuzzy ranking best-effort |
 | 21 | MCP client | ✅ | stdio+http, namespacing |
 | 22 | plugins & marketplace | 🟡 | manifest/install/list; remote-sync orchestration deferred |
@@ -112,8 +112,8 @@ Remaining toward a literal 100%:
   behind WithProjectLayer until the trust decision is ported (admin
   /etc/codex/skills + workspace-write/danger filesystem XML now landed,
   byte-verified). Collab is fully live incl. full-history fork_context.
-- UnifiedExec sandbox policy resolution (async_watcher landed: late
-  exec_command_end + output deltas; two narrow approvals-area STUBs in-row).
+- Sandbox-denial approval escalation + legacy workspace-write knobs (the
+  per-turn policy resolution itself is LIVE: seatbelt on macOS).
 - TUI pixel-fidelity and the documented long-tail deviations (completion
   clap-bytes landed: all 5 shells byte-identical; doctor details: 17/18 exact).
-Rough faithful-and-verified completeness: **~90%**.
+Rough faithful-and-verified completeness: **~91%**.
