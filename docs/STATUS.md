@@ -117,4 +117,4 @@ Remaining toward a literal 100%:
   exec_command_end + output deltas; two narrow approvals-area STUBs in-row).
 - TUI pixel-fidelity and the documented long-tail deviations (completion
   clap-bytes landed: all 5 shells byte-identical; doctor details: 17/18 exact).
-Rough faithful-and-verified completeness: **~87%**.
+Rough faithful-and-verified completeness: **~88%**.
