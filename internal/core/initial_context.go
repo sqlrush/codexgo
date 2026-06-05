@@ -2,9 +2,6 @@ package core
 
 import (
 	"context"
-	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/sqlrush/codexgo/internal/protocol"
@@ -118,21 +115,4 @@ func sessionShellName(configured string) string {
 	default:
 		return "sh"
 	}
-}
-
-// ianaTimezone returns the host IANA timezone name best-effort, mirroring codex's
-// iana_time_zone::get_timezone(): the TZ env var, else the /etc/localtime symlink
-// target under a zoneinfo root, else "UTC".
-func ianaTimezone() string {
-	if tz := strings.TrimSpace(os.Getenv("TZ")); tz != "" {
-		return tz
-	}
-	if target, err := os.Readlink("/etc/localtime"); err == nil {
-		if idx := strings.LastIndex(target, "zoneinfo/"); idx >= 0 {
-			if name := target[idx+len("zoneinfo/"):]; name != "" {
-				return filepath.ToSlash(name)
-			}
-		}
-	}
-	return "UTC"
 }

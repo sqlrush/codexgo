@@ -41,10 +41,13 @@ type LocalThreadStoreConfig struct {
 // DB for ordering and paging and falls back to scanning the on-disk sessions
 // tree when no DB is configured or the DB is empty.
 //
+// SearchThreads scans the rollout transcripts (see local_search.go), a faithful
+// port of thread-store/src/local/search_threads.rs + rollout/src/search.rs: a
+// raw-JSONL case-insensitive literal path match followed by a conversation-text
+// snippet gate. codexgo always uses the in-process scan (codex's `rg`-binary
+// fallback), which has identical match semantics without the external dependency.
+//
 // Deviations from the upstream crate:
-//   - SearchThreads matches the visible title/preview/cwd/first-user-message via
-//     substring containment rather than a ripgrep transcript scan, which is
-//     outside this package's allowed dependency set.
 //   - UpdateThreadMetadata applies the patch to the SQLite row (the source of
 //     truth for listing/reads) but does not rewrite rollout session-meta lines;
 //     it requires a state DB and reports [ErrorKindInvalidRequest] when none is

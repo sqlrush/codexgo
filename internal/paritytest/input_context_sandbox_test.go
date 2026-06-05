@@ -57,11 +57,10 @@ func captureEnvironmentContext(t *testing.T, who, bin, cwd, mode string) string 
 		"CODEX_API_KEY=",
 		"CODEX_ACCESS_TOKEN=",
 	)
-	// Note: TZ is intentionally NOT pinned. Both binaries resolve the host
-	// timezone the same way on the same host, so current_date/timezone agree.
-	// (codex maps an explicit TZ=UTC to "GMT" via iana_time_zone, while codexgo
-	// echoes the raw TZ value — a separate, unrelated timezone-rendering gap, so
-	// pinning TZ here would mask a clean filesystem-XML comparison.)
+	// Note: TZ is intentionally NOT pinned here. Both binaries resolve the host
+	// timezone the same way on the same host, so current_date/timezone agree;
+	// this test focuses on the <filesystem> XML. The TZ canonicalization itself
+	// (e.g. TZ=UTC -> "GMT") is exercised by TestParityInputContextTimezone.
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

@@ -106,54 +106,6 @@ func (s *LocalThreadStore) listThreadsFromScan(ctx context.Context, params ListT
 	return paginateStoredThreads(threads, params, pageSize), nil
 }
 
-// searchThreads lists then filters by the query, matching the codex search
-// semantics of title/preview/cwd substring matching, mirroring the Rust
-// `search_threads` content match (without the ripgrep transcript scan, which is
-// outside this port's dependency set).
-func (s *LocalThreadStore) searchThreads(ctx context.Context, params SearchThreadsParams) (ThreadSearchPage, error) {
-	term := strings.TrimSpace(params.SearchTerm)
-	if term == "" {
-		return ThreadSearchPage{}, invalidRequestError("thread/search requires search_term")
-	}
-
-	pageSize := normalizePageSize(params.PageSize)
-	// Scan a wider window than the page so the substring filter has enough
-	// candidates, mirroring the Rust scan_page_size widening.
-	scanSize := clampInt(pageSize*8, 256, listScanFallbackPageMax)
-
-	listParams := ListThreadsParams{
-		PageSize:       scanSize,
-		Cursor:         params.Cursor,
-		SortKey:        params.SortKey,
-		SortDirection:  params.SortDirection,
-		AllowedSources: params.AllowedSources,
-		Archived:       params.Archived,
-	}
-	page, err := s.listThreads(ctx, listParams)
-	if err != nil {
-		return ThreadSearchPage{}, err
-	}
-
-	lowered := strings.ToLower(term)
-	results := make([]StoredThreadSearchResult, 0, pageSize)
-	var nextCursor *string
-	for i := range page.Items {
-		thread := page.Items[i]
-		snippet, ok := threadSearchSnippet(thread, lowered)
-		if !ok {
-			continue
-		}
-		if len(results) == pageSize {
-			cursor := cursorFromStoredThread(thread, params.SortKey)
-			nextCursor = &cursor
-			break
-		}
-		results = append(results, StoredThreadSearchResult{Thread: thread, Snippet: snippet})
-	}
-
-	return ThreadSearchPage{Items: results, NextCursor: nextCursor}, nil
-}
-
 // threadSearchSnippet reports whether thread matches the lowered query in its
 // title, preview, or cwd, returning the matching field value as the snippet.
 func threadSearchSnippet(thread StoredThread, loweredTerm string) (string, bool) {
