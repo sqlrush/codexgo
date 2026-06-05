@@ -108,14 +108,12 @@ Long-tail wins this wave: the turn-error message is now byte-identical
 `terminal_interaction` echoes the originating exec_command call id.
 
 Remaining toward a literal 100%:
-- **skill roots config layers** — project `.codex/skills` + admin
-  `/etc/codex/skills` roots await the config-layer stack; non-read-only
-  `<filesystem>` XML capture.
-- **collab fork_context** — live spawn/send_input/resume/wait/close landed
-  (CollabAdapter over the real Control); full-history forks await the parent
-  rollout-path plumbing.
+- **git-trust gate** — project `.codex/skills` roots are assembled but held
+  behind WithProjectLayer until the trust decision is ported (admin
+  /etc/codex/skills + workspace-write/danger filesystem XML now landed,
+  byte-verified). Collab is fully live incl. full-history fork_context.
 - UnifiedExec sandbox policy resolution (async_watcher landed: late
   exec_command_end + output deltas; two narrow approvals-area STUBs in-row).
 - TUI pixel-fidelity and the documented long-tail deviations (completion
   clap-bytes landed: all 5 shells byte-identical; doctor details: 17/18 exact).
-Rough faithful-and-verified completeness: **~89%**.
+Rough faithful-and-verified completeness: **~90%**.
