@@ -71,6 +71,50 @@ func ReadOnlyFilesystemContext(cwd string) *FilesystemContext {
 	}
 }
 
+// WorkspaceWriteFilesystemContext builds the managed/restricted profile codex
+// emits for the workspace-write sandbox with no additional writable_roots
+// configured (the default). Captured byte-for-byte from codex 0.136.0, it
+// mirrors PermissionProfile::workspace_write after
+// materialize_project_roots_with_workspace_roots([cwd]):
+//
+//   - :root read
+//   - cwd write (the materialized :workspace_roots / project_roots entry)
+//   - :slash_tmp write (exclude_slash_tmp is false by default)
+//   - :tmpdir write (exclude_tmpdir_env_var is false by default)
+//   - {cwd}/.git, {cwd}/.agents, {cwd}/.codex read (the default read-only
+//     project-root metadata carveouts, appended unconditionally)
+//
+// Additional writable_roots (config sandbox_workspace_write.writable_roots) and
+// their per-root carveouts are not modeled here — codexgo's headless host does
+// not yet thread that config through; tracked in docs/PARITY.md.
+func WorkspaceWriteFilesystemContext(cwd string) *FilesystemContext {
+	return &FilesystemContext{
+		WorkspaceRoots: []string{cwd},
+		ProfileType:    "managed",
+		Restricted:     true,
+		Entries: []FilesystemEntry{
+			{Access: "read", Special: ":root"},
+			{Access: "write", Path: cwd},
+			{Access: "write", Special: ":slash_tmp"},
+			{Access: "write", Special: ":tmpdir"},
+			{Access: "read", Path: cwd + "/.git"},
+			{Access: "read", Path: cwd + "/.agents"},
+			{Access: "read", Path: cwd + "/.codex"},
+		},
+	}
+}
+
+// DangerFullAccessFilesystemContext builds the disabled/unrestricted profile
+// codex emits for the danger-full-access sandbox: workspace_roots = [cwd] and a
+// disabled permission profile with an unrestricted file system. Captured
+// byte-for-byte from codex 0.136.0.
+func DangerFullAccessFilesystemContext(cwd string) *FilesystemContext {
+	return &FilesystemContext{
+		WorkspaceRoots: []string{cwd},
+		ProfileType:    "disabled",
+	}
+}
+
 // pushTextElement appends <name>value</name> with codex's XML escaping. Mirrors
 // Rust push_text_element + escape_xml.
 func pushTextElement(b *strings.Builder, name, value string) {

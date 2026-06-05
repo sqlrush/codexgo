@@ -29,20 +29,24 @@ func rootPaths(roots []SkillRoot) []string {
 	return out
 }
 
-// TestDefaultSkillRootsUserLayer asserts the three user-layer roots render in
-// the Rust order: CODEX_HOME/skills (user), HOME/.agents/skills (user),
-// CODEX_HOME/skills/.system (system).
+// TestDefaultSkillRootsUserLayer asserts the user-layer roots render in the Rust
+// order: CODEX_HOME/skills (user), HOME/.agents/skills (user),
+// CODEX_HOME/skills/.system (system), followed by the always-present admin root
+// from the System config layer (a writable override injected here in place of
+// the unwritable /etc/codex).
 func TestDefaultSkillRootsUserLayer(t *testing.T) {
 	codexHome := absT(t, t.TempDir())
 	homeDir := absT(t, t.TempDir())
 	cwd := absT(t, t.TempDir())
+	systemConfig := absT(t, t.TempDir())
 
-	roots := DefaultSkillRoots(codexHome, &homeDir, cwd)
+	roots := DefaultSkillRoots(codexHome, &homeDir, cwd, WithSystemConfigDir(systemConfig))
 
 	want := []string{
 		codexHome.Join("skills").String(),
 		homeDir.Join(".agents").Join("skills").String(),
 		codexHome.Join("skills").Join(".system").String(),
+		systemConfig.Join("skills").String(),
 	}
 	got := rootPaths(roots)
 	if len(got) != len(want) {
@@ -53,19 +57,169 @@ func TestDefaultSkillRootsUserLayer(t *testing.T) {
 			t.Errorf("roots[%d] = %q, want %q", i, got[i], want[i])
 		}
 	}
-	if roots[0].Scope != SkillScopeUser || roots[1].Scope != SkillScopeUser || roots[2].Scope != SkillScopeSystem {
-		t.Errorf("scopes = %v/%v/%v, want user/user/system", roots[0].Scope, roots[1].Scope, roots[2].Scope)
+	if roots[0].Scope != SkillScopeUser || roots[1].Scope != SkillScopeUser ||
+		roots[2].Scope != SkillScopeSystem || roots[3].Scope != SkillScopeAdmin {
+		t.Errorf("scopes = %v/%v/%v/%v, want user/user/system/admin",
+			roots[0].Scope, roots[1].Scope, roots[2].Scope, roots[3].Scope)
 	}
 }
 
-// TestDefaultSkillRootsNilHome skips the $HOME/.agents/skills root.
+// TestDefaultSkillRootsNilHome skips the $HOME/.agents/skills root, leaving the
+// CODEX_HOME user root, the system cache, and the admin root.
 func TestDefaultSkillRootsNilHome(t *testing.T) {
 	codexHome := absT(t, t.TempDir())
 	cwd := absT(t, t.TempDir())
+	systemConfig := absT(t, t.TempDir())
+
+	roots := DefaultSkillRoots(codexHome, nil, cwd, WithSystemConfigDir(systemConfig))
+	if len(roots) != 3 {
+		t.Fatalf("roots = %v, want 3 entries", rootPaths(roots))
+	}
+}
+
+// TestDefaultSkillRootsProjectLayer discovers `.codex/skills` directories on
+// the chain between the project root (marked by .git) and the cwd as Repo-scoped
+// roots, emitted FIRST (cwd-closest first, mirroring the Rust
+// HighestPrecedenceFirst walk: Project layers precede the User layer) and gated
+// behind WithProjectLayer.
+func TestDefaultSkillRootsProjectLayer(t *testing.T) {
+	codexHome := absT(t, t.TempDir())
+	repo := t.TempDir()
+	// repo/.git marks the project root; repo/.codex/skills and
+	// repo/sub/.codex/skills both exist; cwd is repo/sub/leaf.
+	for _, dir := range []string{
+		filepath.Join(repo, ".git"),
+		filepath.Join(repo, ".codex", "skills"),
+		filepath.Join(repo, "sub", ".codex", "skills"),
+		filepath.Join(repo, "sub", "leaf"),
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+	cwd := absT(t, filepath.Join(repo, "sub", "leaf"))
+	repoAbs := absT(t, repo)
+	systemConfig := absT(t, t.TempDir())
+
+	roots := DefaultSkillRoots(codexHome, nil, cwd, WithProjectLayer(), WithSystemConfigDir(systemConfig))
+
+	want := []string{
+		// Project `.codex/skills` roots come first, cwd-closest first.
+		repoAbs.Join("sub").Join(".codex").Join("skills").String(),
+		repoAbs.Join(".codex").Join("skills").String(),
+		// Then the user layer.
+		codexHome.Join("skills").String(),
+		codexHome.Join("skills").Join(".system").String(),
+		// Then the admin root.
+		systemConfig.Join("skills").String(),
+	}
+	got := rootPaths(roots)
+	if len(got) != len(want) {
+		t.Fatalf("roots = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("roots[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+	if roots[0].Scope != SkillScopeRepo || roots[1].Scope != SkillScopeRepo {
+		t.Errorf("project scopes = %v/%v, want repo/repo", roots[0].Scope, roots[1].Scope)
+	}
+}
+
+// TestDefaultSkillRootsProjectLayerDisabled omits the `.codex/skills` roots when
+// WithProjectLayer is not supplied (the default CLI host gates project loading
+// on git-trust, which codexgo carries as opaque).
+func TestDefaultSkillRootsProjectLayerDisabled(t *testing.T) {
+	codexHome := absT(t, t.TempDir())
+	repo := t.TempDir()
+	for _, dir := range []string{
+		filepath.Join(repo, ".git"),
+		filepath.Join(repo, ".codex", "skills"),
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+	cwd := absT(t, repo)
 
 	roots := DefaultSkillRoots(codexHome, nil, cwd)
-	if len(roots) != 2 {
-		t.Fatalf("roots = %v, want 2 entries", rootPaths(roots))
+	for _, r := range roots {
+		if r.Scope == SkillScopeRepo && filepath.Base(filepath.Dir(r.Path.String())) == ".codex" {
+			t.Errorf("project root leaked without WithProjectLayer: %q", r.Path.String())
+		}
+	}
+}
+
+// TestDefaultSkillRootsAdminLayer appends `<systemConfigDir>/skills` as an
+// Admin-scoped root LAST (mirroring the System config layer being lowest
+// precedence in the HighestPrecedenceFirst walk), via WithSystemConfigDir.
+func TestDefaultSkillRootsAdminLayer(t *testing.T) {
+	codexHome := absT(t, t.TempDir())
+	cwd := absT(t, t.TempDir())
+	systemConfig := absT(t, t.TempDir())
+
+	roots := DefaultSkillRoots(codexHome, nil, cwd, WithSystemConfigDir(systemConfig))
+
+	want := []string{
+		codexHome.Join("skills").String(),
+		codexHome.Join("skills").Join(".system").String(),
+		systemConfig.Join("skills").String(),
+	}
+	got := rootPaths(roots)
+	if len(got) != len(want) {
+		t.Fatalf("roots = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("roots[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+	if roots[2].Scope != SkillScopeAdmin {
+		t.Errorf("admin scope = %v, want admin", roots[2].Scope)
+	}
+}
+
+// TestDefaultSkillRootsFullStack exercises all four scopes together and asserts
+// the Rust HighestPrecedenceFirst order: project `.codex/skills` (cwd-first),
+// user roots, system cache, admin `<systemConfigDir>/skills`, then the repo
+// `.agents/skills` chain appended last by the outer assembly.
+func TestDefaultSkillRootsFullStack(t *testing.T) {
+	codexHome := absT(t, t.TempDir())
+	homeDir := absT(t, t.TempDir())
+	systemConfig := absT(t, t.TempDir())
+	repo := t.TempDir()
+	for _, dir := range []string{
+		filepath.Join(repo, ".git"),
+		filepath.Join(repo, ".codex", "skills"),
+		filepath.Join(repo, ".agents", "skills"),
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+	cwd := absT(t, repo)
+	repoAbs := absT(t, repo)
+
+	roots := DefaultSkillRoots(codexHome, &homeDir, cwd,
+		WithProjectLayer(), WithSystemConfigDir(systemConfig))
+
+	want := []string{
+		repoAbs.Join(".codex").Join("skills").String(),    // project
+		codexHome.Join("skills").String(),                 // user (deprecated)
+		homeDir.Join(".agents").Join("skills").String(),   // user-installed
+		codexHome.Join("skills").Join(".system").String(), // system cache
+		systemConfig.Join("skills").String(),              // admin
+		repoAbs.Join(".agents").Join("skills").String(),   // repo agents chain
+	}
+	got := rootPaths(roots)
+	if len(got) != len(want) {
+		t.Fatalf("roots = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("roots[%d] = %q, want %q", i, got[i], want[i])
+		}
 	}
 }
 
@@ -88,8 +242,9 @@ func TestDefaultSkillRootsRepoAgentsChain(t *testing.T) {
 		}
 	}
 	cwd := absT(t, filepath.Join(repo, "sub", "leaf"))
+	systemConfig := absT(t, t.TempDir())
 
-	roots := DefaultSkillRoots(codexHome, nil, cwd)
+	roots := DefaultSkillRoots(codexHome, nil, cwd, WithSystemConfigDir(systemConfig))
 
 	// Derive expectations from the unresolved repo path (matching cwd's
 	// ancestors) so symlinked temp dirs (macOS /var -> /private/var) compare
@@ -98,6 +253,7 @@ func TestDefaultSkillRootsRepoAgentsChain(t *testing.T) {
 	want := []string{
 		codexHome.Join("skills").String(),
 		codexHome.Join("skills").Join(".system").String(),
+		systemConfig.Join("skills").String(),
 		repoAbs.Join(".agents").Join("skills").String(),
 		repoAbs.Join("sub").Join(".agents").Join("skills").String(),
 	}
@@ -110,7 +266,8 @@ func TestDefaultSkillRootsRepoAgentsChain(t *testing.T) {
 			t.Errorf("roots[%d] = %q, want %q", i, got[i], want[i])
 		}
 	}
-	for _, r := range roots[2:] {
+	// roots[3:] are the repo `.agents/skills` chain (roots[2] is the admin root).
+	for _, r := range roots[3:] {
 		if r.Scope != SkillScopeRepo {
 			t.Errorf("repo chain scope = %v, want repo", r.Scope)
 		}

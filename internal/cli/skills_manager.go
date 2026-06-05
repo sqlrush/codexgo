@@ -84,6 +84,14 @@ func (m *assemblySkillsManager) RenderInitialSkillsInstructions(ctx context.Cont
 }
 
 // loadOutcome assembles the default roots for cwd and loads the skills.
+//
+// The admin (System config layer) root `/etc/codex/skills` is included by
+// default, mirroring the reference binary, which always carries a System config
+// layer. The Project config-layer roots (`.codex/skills`) are intentionally NOT
+// enabled (WithProjectLayer is omitted): the reference loader gates them on
+// git-trust, which this headless host does not yet resolve (STUB — see
+// skills.DefaultSkillRoots doc + DEVIATIONS.md). Both binaries on the same host
+// therefore agree, since neither loads project skills here.
 func (m *assemblySkillsManager) loadOutcome(ctx context.Context, cwd string) (skills.SkillLoadOutcome, bool) {
 	cwdPath, err := abspath.FromAbsolutePathChecked(cwd)
 	if err != nil {

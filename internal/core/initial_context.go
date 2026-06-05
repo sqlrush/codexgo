@@ -84,15 +84,20 @@ func permissionsSandboxModeFromProtocol(mode protocol.SandboxMode) PermissionsSa
 }
 
 // filesystemContextForMode returns the <filesystem> description for the sandbox
-// mode. Only read-only is byte-verified against codex today (managed/restricted,
-// one read entry for :root); for the other modes the filesystem element is omitted
-// (the verified permissions text still conveys the mode) until a capture pins the
-// exact XML — tracked in docs/PARITY.md.
+// mode. All three modes are byte-verified against codex 0.136.0 captures:
+//   - read-only / unset: managed/restricted, one read entry for :root
+//   - workspace-write: managed/restricted with the default write + read-only
+//     carveout entries (no extra writable_roots configured)
+//   - danger-full-access: a disabled, unrestricted profile
 func filesystemContextForMode(mode protocol.SandboxMode, cwd string) *FilesystemContext {
-	if mode == "" || mode == protocol.SandboxModeReadOnly {
+	switch mode {
+	case protocol.SandboxModeWorkspaceWrite:
+		return WorkspaceWriteFilesystemContext(cwd)
+	case protocol.SandboxModeDangerFullAccess:
+		return DangerFullAccessFilesystemContext(cwd)
+	default:
 		return ReadOnlyFilesystemContext(cwd)
 	}
-	return nil
 }
 
 // sessionShellName returns the configured shell name, or the host default shell's
