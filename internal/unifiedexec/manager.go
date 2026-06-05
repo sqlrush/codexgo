@@ -61,6 +61,46 @@ type ProcessManager struct {
 	spawner                  Spawner
 
 	deterministicIDs bool
+
+	// sessionStoredHook, when set, is invoked each time a live session is
+	// persisted so the core layer can arm the background streaming/exit watcher
+	// (the Rust store_process calls start_streaming_output + spawn_exit_watcher).
+	sessionStoredHook SessionStoredHook
+}
+
+// StoredSession is the context handed to a [SessionStoredHook] when a live
+// session is persisted. It bundles the live process, the shared transcript the
+// watcher accumulates into, and the originating-call metadata the late exec-end
+// carries. Mirrors the arguments store_process threads into spawn_exit_watcher.
+type StoredSession struct {
+	// Process is the live unified-exec process; the watcher subscribes to its
+	// output and waits on its exit signal.
+	Process *Process
+	// Transcript is the shared buffer the streaming watcher appends to and the
+	// exit watcher reads for the aggregated output. TranscriptMu guards it.
+	Transcript   *HeadTailBuffer
+	TranscriptMu *sync.Mutex
+	// CallID, TurnID, Command, Cwd, ProcessID, StartedAt carry the
+	// originating-call context for the late exec-end event.
+	CallID    string
+	TurnID    string
+	Command   []string
+	Cwd       string
+	ProcessID int
+	StartedAt time.Time
+}
+
+// SessionStoredHook is invoked when a live session is persisted. It hands the
+// caller the live process and originating-call context so it can arm the
+// background streaming/exit watcher without this package depending on core.
+type SessionStoredHook func(StoredSession)
+
+// SetSessionStoredHook installs the hook fired when a live session is persisted.
+// It is safe to call before any session is opened. Passing nil clears the hook.
+func (m *ProcessManager) SetSessionStoredHook(hook SessionStoredHook) {
+	m.mu.Lock()
+	m.sessionStoredHook = hook
+	m.mu.Unlock()
 }
 
 // NewProcessManager builds a manager with the given empty-poll yield cap and
@@ -360,9 +400,10 @@ func (m *ProcessManager) TerminateAllProcesses() {
 	}
 }
 
-// storeProcess inserts a live session, pruning an old one first when at the cap.
-// Mirrors store_process (without the exit-watcher/event emission the core layer
-// drives).
+// storeProcess inserts a live session, pruning an old one first when at the cap,
+// then arms the background streaming/exit watcher via the session-stored hook
+// (the core layer supplies the event sink). Mirrors store_process, which calls
+// spawn_exit_watcher after inserting the entry.
 func (m *ProcessManager) storeProcess(process *Process, req *ExecCommandRequest, startedAt time.Time) {
 	entry := &processEntry{
 		process:     process,
@@ -375,9 +416,27 @@ func (m *ProcessManager) storeProcess(process *Process, req *ExecCommandRequest,
 	m.mu.Lock()
 	pruned := pruneProcessesIfNeeded(&m.store)
 	m.store.processes[req.ProcessID] = entry
+	hook := m.sessionStoredHook
 	m.mu.Unlock()
 	if pruned != nil {
 		pruned.process.Terminate()
+	}
+
+	if hook != nil {
+		// Mirror the shared Arc<Mutex<HeadTailBuffer>> the Rust watcher threads
+		// through start_streaming_output and spawn_exit_watcher.
+		command := append([]string(nil), req.Command...)
+		hook(StoredSession{
+			Process:      process,
+			Transcript:   NewDefaultHeadTailBuffer(),
+			TranscriptMu: &sync.Mutex{},
+			CallID:       req.CallID,
+			TurnID:       req.TurnID,
+			Command:      command,
+			Cwd:          req.Cwd,
+			ProcessID:    req.ProcessID,
+			StartedAt:    startedAt,
+		})
 	}
 }
 

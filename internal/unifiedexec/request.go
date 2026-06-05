@@ -19,6 +19,11 @@ type ExecCommandRequest struct {
 	// process entry so later write_stdin calls echo it (the Rust
 	// ProcessEntry.call_id -> event_call_id flow behind TerminalInteraction).
 	CallID string
+	// TurnID is the originating turn's correlation id (the Rust
+	// UnifiedExecContext.turn.sub_id). It is carried to the session-stored hook so
+	// the late exec-end event the background watcher emits is correlated with the
+	// turn that opened the session, not whatever turn happens to be active later.
+	TurnID string
 	// ProcessID is the reserved logical process id for this session.
 	ProcessID int
 	// YieldTimeMS is the requested output-collection window.

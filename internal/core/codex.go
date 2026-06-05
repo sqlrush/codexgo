@@ -115,6 +115,11 @@ func Spawn(ctx context.Context, args CodexSpawnArgs) (CodexSpawnOk, error) {
 		cancel:         cancel,
 	}
 
+	// Arm the unified-exec background watcher against this session so any PTY
+	// session that outlives its exec_command call still streams output deltas and
+	// emits a late exec_command_end when it finally exits (async_watcher.rs).
+	armSessionUnifiedExecWatcher(sess)
+
 	// Seed initial history into the shared store (resumed/forked) before the
 	// SessionConfigured event so resume UIs see consistent state.
 	seedInitialHistory(sess, args.ConversationHistory)

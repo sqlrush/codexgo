@@ -26,6 +26,13 @@ func NewExecutor(manager *ProcessManager) *Executor {
 // Manager returns the underlying process manager.
 func (e *Executor) Manager() *ProcessManager { return e.manager }
 
+// SetSessionStoredHook installs the hook fired when a live session is persisted,
+// so the core layer can arm the background streaming/exit watcher. Passing nil
+// clears the hook.
+func (e *Executor) SetSessionStoredHook(hook SessionStoredHook) {
+	e.manager.SetSessionStoredHook(hook)
+}
+
 // ExecCommand opens a new session for req. When req.ProcessID is zero a fresh
 // logical id is allocated; otherwise the caller-reserved id is used. The
 // returned Output reports whether the session persisted (non-nil ProcessID) or

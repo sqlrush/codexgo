@@ -28,9 +28,12 @@ import (
 // in internal/tools/tool_config.go) per turn.
 //
 // STUB: the approval/sandbox orchestration (ToolOrchestrator), deferred network
-// approvals, background exec-end watcher, and hook payload rewriting are owned
-// by other area agents; this bridge spawns directly through the unified-exec
-// sandbox spawner with the none backend, matching the local exec service.
+// approvals, and hook payload rewriting are owned by other area agents; this
+// bridge spawns directly through the unified-exec sandbox spawner with the none
+// backend, matching the local exec service. The background exec-end watcher
+// (async_watcher.rs) IS ported: unified_exec_watcher.go arms it per session so a
+// PTY session that outlives its exec_command call still streams output deltas
+// and emits a late exec_command_end on exit.
 
 // ----------------------------------------------------------------------------
 // Per-turn shell tool selection
@@ -159,6 +162,12 @@ func (unifiedExecCommandExecutor) Name() protocol.ToolName {
 	return protocol.PlainToolName("exec_command")
 }
 
+// unifiedExecExecutor exposes the underlying unified-exec executor so the session
+// can arm the background exit watcher against it (the unifiedExecHost seam).
+func (e unifiedExecCommandExecutor) unifiedExecExecutor() *unifiedexec.Executor {
+	return e.exec
+}
+
 // Spec advertises exec_command only when the turn's shell type resolves to
 // UnifiedExec (spec_plan::add_shell_tools). codex derives `login` from
 // config.permissions.allow_login_shell, which defaults to true.
@@ -228,6 +237,7 @@ func (e unifiedExecCommandExecutor) Handle(ctx context.Context, h *toolHandlerCo
 		Command:         argv,
 		HookCommand:     args.Cmd,
 		CallID:          h.CallID,
+		TurnID:          h.Turn.SubID,
 		ProcessID:       processID,
 		YieldTimeMS:     yieldTimeMS,
 		MaxOutputTokens: args.MaxOutputTokens,
@@ -262,8 +272,9 @@ func (e unifiedExecCommandExecutor) Handle(ctx context.Context, h *toolHandlerCo
 	}
 
 	// Emit the end event when the process finished within this call. A live
-	// session keeps running in the background; its end event is owned by the
-	// background watcher (STUB: async_watcher.rs is not ported yet).
+	// session keeps running in the background; its late end event is owned by the
+	// background watcher armed per session in unified_exec_watcher.go (the port of
+	// async_watcher.rs::spawn_exit_watcher).
 	if out.ProcessID == nil && out.ExitCode != nil {
 		emitExecCommandEnd(h, argv, cwd, string(out.RawOutput), *out.ExitCode)
 	}
