@@ -46,7 +46,7 @@ Legend: ✅ implemented + tested · 🟡 implemented with documented deviation/p
 | 34 | `codex exec` (headless) | ✅ | **turn JSONL byte-identical** to codex (text + tool turns) |
 | 35 | mcp-server | ✅ | stdio v2 + v1 compat |
 | 36–40 | TUI | 🟡 | bubbletea chat/overlays/slash/keymap/onboarding; behavioral port, not pixel-identical |
-| 41–42 | CLI + arg0 + aux | 🟡 | full subcommand set matches codex; app/update/remote-control are notices; completion not byte-identical to clap |
+| 41–42 | CLI + arg0 + aux | 🟡 | full subcommand set matches codex; app/update/remote-control are notices; `completion` byte-identical to clap for all 5 shells |
 | 43 | cloud features | 🟡 | cloud-tasks/requirements/backend; connectors omitted |
 | 44 | telemetry & feedback | ✅ | analytics(opt-out)/otel/feedback |
 | 45 | secrets / proxy / context | ✅ | age store, responses proxy, install/term ctx |
@@ -73,7 +73,7 @@ Automated, credential-free, binary-vs-binary (env-gated on `CODEX_PARITY_BIN`):
 | `/responses` `input` context | ✅ permissions + **skills_instructions** (system skills materialized under skills/.system) + environment_context all byte-identical (`TestParityInputContext`) |
 | built-in tool specs | ✅ **11/11 byte-identical, full-array order equality** (`TestParityToolSpecs` + `TestParityToolOrder`): UnifiedExec PTY pair, update_plan, goals trio (live SQLite store), request_user_input, apply_patch (custom grammar), view_image, tool_search (empty-entries dispatch until BM25/deferred registry), hosted web_search |
 | `doctor --json` | ✅ 18 check IDs + **structured details object, 17/18 exact key sets** (1 probe-outcome-conditional row; best-effort value sources in DEVIATIONS "44 doctor") |
-| `completion` | 🟡 functional; not clap-byte-identical |
+| `completion` | ✅ **byte-identical for all 5 shells** (bash/elvish/fish/powershell/zsh + default-is-bash) via `TestParityCompletion`; bash is a ported clap_complete v4.5.65 generator, the rest are vendored deterministic output |
 
 ## Honest overall
 
@@ -115,6 +115,6 @@ Remaining toward a literal 100%:
   RespondToModel error until the multi-agent runtime wires spawn/wait/etc.
 - UnifiedExec sandbox policy resolution (async_watcher landed: late
   exec_command_end + output deltas; two narrow approvals-area STUBs in-row).
-- completion clap-bytes; TUI pixel-fidelity and the documented long-tail
-  deviations (doctor details landed: 17/18 exact).
+- TUI pixel-fidelity and the documented long-tail deviations (completion
+  clap-bytes landed: all 5 shells byte-identical; doctor details: 17/18 exact).
 Rough faithful-and-verified completeness: **~87%**.

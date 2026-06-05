@@ -175,7 +175,14 @@ func TestCompletionEnumeratesAllSubcommands(t *testing.T) {
 					t.Errorf("%s completion missing subcommand %q", shell, name)
 				}
 			}
-			for _, flag := range topLevelFlags {
+			// The documented top-level long flags must appear in every script.
+			// Shells render long flags differently (bash/zsh/powershell/elvish
+			// use `--config`; fish uses `-l config`), so assert on the bare long
+			// name, which is present regardless of the per-shell decoration.
+			for _, flag := range []string{
+				"config", "enable", "disable", "remote",
+				"remote-auth-token-env", "strict-config", "help", "version",
+			} {
 				if !strings.Contains(script, flag) {
 					t.Errorf("%s completion missing flag %q", shell, flag)
 				}
