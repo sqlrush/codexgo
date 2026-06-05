@@ -107,6 +107,7 @@ func Spawn(ctx context.Context, args CodexSpawnArgs) (CodexSpawnOk, error) {
 		threadID:       args.ThreadID,
 		sessionID:      sessionID,
 		installationID: args.InstallationID,
+		rolloutPath:    clonePtr(args.RolloutPath),
 		services:       args.Services,
 		txEvent:        rxEvent,
 		state:          NewSessionState(args.Configuration),

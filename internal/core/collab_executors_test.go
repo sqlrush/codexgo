@@ -225,6 +225,35 @@ func TestCollabSpawnAgentHandleSpawnsAndReturnsID(t *testing.T) {
 	}
 }
 
+func TestCollabSpawnAgentThreadsParentRolloutPathForFork(t *testing.T) {
+	sess, _ := newTestSession(t)
+	parentPath := "/rollouts/parent.jsonl"
+	sess.rolloutPath = &parentPath
+	fake := newFakeCollabControl()
+	fake.spawnResult = CollabSpawnResult{
+		ThreadID: protocol.NewThreadID("33333333-3333-3333-3333-333333333333"),
+		Status:   protocol.AgentStatus{Kind: protocol.AgentStatusRunning},
+	}
+
+	deps := BuiltinToolDeps{Collab: fake}
+	ex := findCollabExecutor(t, deps, "spawn_agent")
+	if _, err := ex.Handle(context.Background(), &toolHandlerContext{
+		Session:  sess,
+		Turn:     collabTurn(t),
+		CallID:   "call-fork",
+		ToolName: ex.Name(),
+		Payload:  collabPayload(`{"message":"continue","fork_context":true}`),
+	}); err != nil {
+		t.Fatalf("fork spawn handle: %v", err)
+	}
+	if !fake.lastSpawn.ForkContext {
+		t.Fatalf("ForkContext = false, want true")
+	}
+	if fake.lastSpawn.ParentRolloutPath == nil || *fake.lastSpawn.ParentRolloutPath != parentPath {
+		t.Fatalf("ParentRolloutPath = %v, want %q", fake.lastSpawn.ParentRolloutPath, parentPath)
+	}
+}
+
 func TestCollabSpawnAgentRejectsBothMessageAndItems(t *testing.T) {
 	sess, _ := newTestSession(t)
 	fake := newFakeCollabControl()

@@ -28,18 +28,28 @@ func NewCollabAdapter(control *Control) *CollabAdapter {
 }
 
 // SpawnAgent spawns a child agent thread and routes its initial op. Mirrors
-// `AgentControl::spawn_agent_with_metadata` (fresh-thread path).
+// `AgentControl::spawn_agent_with_metadata`: a fresh thread when ForkContext is
+// unset, and a full-history fork of the parent thread when it is set.
 //
-// STUB: ForkContext (full-history fork) needs the parent thread's rollout path
-// threaded from the originating session; until the rollout-path plumbing lands
-// the fork request is rejected with a model-facing error (DEVIATIONS).
+// A full-history fork derives the child's initial history from the parent's
+// persisted rollout, so it requires the originating session's rollout path
+// (req.ParentRolloutPath). When the host has no rollout persistence for the
+// parent (path nil/empty) a full-history fork cannot be served, so the request
+// is rejected with a model-facing error (DEVIATIONS).
 func (a *CollabAdapter) SpawnAgent(ctx context.Context, req core.CollabSpawnRequest) (core.CollabSpawnResult, error) {
+	options := SpawnOptions{Environments: req.Environments}
 	if req.ForkContext {
-		return core.CollabSpawnResult{}, fmt.Errorf("full-history forked spawns are not yet supported; spawn without fork_context")
+		parentPath := ""
+		if req.ParentRolloutPath != nil {
+			parentPath = *req.ParentRolloutPath
+		}
+		if parentPath == "" {
+			return core.CollabSpawnResult{}, fmt.Errorf("full-history forked spawns require parent rollout persistence; spawn without fork_context")
+		}
+		options.Fork = &ForkMode{FullHistory: true}
+		options.ForkParentRolloutPath = parentPath
 	}
-	live, err := a.control.SpawnAgent(ctx, req.Configuration, req.InitialOp, req.Source, SpawnOptions{
-		Environments: req.Environments,
-	})
+	live, err := a.control.SpawnAgent(ctx, req.Configuration, req.InitialOp, req.Source, options)
 	if err != nil {
 		return core.CollabSpawnResult{}, err
 	}

@@ -278,14 +278,14 @@ func reasoningEffortEventRaw(effort *protocol.ReasoningEffort) json.RawMessage {
 // ----------------------------------------------------------------------------
 
 type spawnAgentArgs struct {
-	Message         *string                  `json:"message"`
-	Items           []protocol.UserInput     `json:"items"`
-	AgentType       *string                  `json:"agent_type"`
-	Model           *string                  `json:"model"`
+	Message         *string                   `json:"message"`
+	Items           []protocol.UserInput      `json:"items"`
+	AgentType       *string                   `json:"agent_type"`
+	Model           *string                   `json:"model"`
 	ReasoningEffort *protocol.ReasoningEffort `json:"reasoning_effort"`
-	ServiceTier     *string                  `json:"service_tier"`
-	ForkContext     bool                     `json:"fork_context"`
-	itemsPresent    bool                     `json:"-"`
+	ServiceTier     *string                   `json:"service_tier"`
+	ForkContext     bool                      `json:"fork_context"`
+	itemsPresent    bool                      `json:"-"`
 }
 
 func (a *spawnAgentArgs) UnmarshalJSON(data []byte) error {
@@ -361,11 +361,12 @@ func handleSpawnAgent(ctx context.Context, control CollabControl, h *toolHandler
 	}
 
 	result, spawnErr := control.SpawnAgent(ctx, CollabSpawnRequest{
-		Configuration: cfg,
-		InitialOp:     initialOp,
-		Source:        source,
-		ForkContext:   args.ForkContext,
-		Environments:  environments,
+		Configuration:     cfg,
+		InitialOp:         initialOp,
+		Source:            source,
+		ForkContext:       args.ForkContext,
+		ParentRolloutPath: parentRolloutPath(h),
+		Environments:      environments,
 	})
 
 	var (
@@ -1087,6 +1088,17 @@ func senderThreadID(h *toolHandlerContext) protocol.ThreadID {
 		return h.Session.ThreadID()
 	}
 	return protocol.ThreadID{}
+}
+
+// parentRolloutPath returns the originating session's local rollout path, when
+// filesystem-backed, or nil. It is threaded into a forked spawn so the control
+// plane can read the parent's stored history, mirroring the Rust fork path that
+// snapshots the parent thread's persisted rollout.
+func parentRolloutPath(h *toolHandlerContext) *string {
+	if h == nil || h.Session == nil {
+		return nil
+	}
+	return h.Session.RolloutPath()
 }
 
 // emitCollabEvent sends a collab event correlated with the turn's sub id,

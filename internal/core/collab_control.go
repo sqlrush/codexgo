@@ -73,6 +73,12 @@ type CollabSpawnRequest struct {
 	// ForkContext requests a full-history fork of the parent instead of a fresh
 	// thread. The control plane reads the parent's rollout to derive the history.
 	ForkContext bool
+	// ParentRolloutPath is the originating session's local rollout path. It is the
+	// path the control plane reads the parent's stored history from when
+	// ForkContext is set, mirroring the Rust fork path that snapshots the parent
+	// thread's persisted rollout. nil/empty means the host has no rollout
+	// persistence for the parent, so a full-history fork cannot be served.
+	ParentRolloutPath *string
 	// Environments overrides the inherited turn environments for the child.
 	Environments *[]protocol.TurnEnvironmentSelection
 }

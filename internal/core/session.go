@@ -43,6 +43,13 @@ type Session struct {
 	// installationID is the stable installation identifier.
 	installationID string
 
+	// rolloutPath is the local rollout path for this thread, when
+	// filesystem-backed. It is read-only after construction. The collab spawn
+	// handler reads it to thread the parent rollout path into a forked child
+	// spawn, mirroring the Rust fork path that snapshots the parent's stored
+	// history. nil means the host has no rollout persistence for this thread.
+	rolloutPath *string
+
 	// services holds the injected manager dependencies.
 	services SessionServices
 
@@ -77,6 +84,13 @@ func (s *Session) ThreadID() protocol.ThreadID { return s.threadID }
 
 // SessionID returns the session's shared identity.
 func (s *Session) SessionID() protocol.SessionID { return s.sessionID }
+
+// RolloutPath returns the session's local rollout path, when filesystem-backed,
+// or nil when the host has no rollout persistence for this thread. It is the
+// parent path the collab spawn handler threads into a forked child spawn,
+// mirroring the Rust fork path that snapshots the parent's stored history. The
+// returned pointer is a copy so callers cannot mutate session state.
+func (s *Session) RolloutPath() *string { return clonePtr(s.rolloutPath) }
 
 // Services returns the injected manager dependencies.
 func (s *Session) Services() SessionServices { return s.services }
