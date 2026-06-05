@@ -11,6 +11,11 @@ import (
 // target: codex 0.136.0.
 const Version = "0.0.0-dev"
 
+// BuildCommit is the source commit baked into the build, or "unknown" when not
+// provided. It mirrors the Rust build_commit() helper (CODEX_BUILD_COMMIT /
+// GIT_COMMIT compile-time env), and can be set via -ldflags at build time.
+var BuildCommit = "unknown"
+
 // Streams bundles the process I/O the CLI reads from and writes to. Injecting
 // them keeps Run testable with in-memory buffers.
 type Streams struct {

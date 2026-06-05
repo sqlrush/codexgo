@@ -3,9 +3,12 @@ package cli
 import (
 	"fmt"
 	"os"
-	"runtime"
+	"path/filepath"
 	"sort"
 
+	"golang.org/x/term"
+
+	"github.com/sqlrush/codexgo/internal/gitutils"
 	"github.com/sqlrush/codexgo/internal/termdetect"
 )
 
@@ -20,13 +23,30 @@ var proxyEnvVars = []string{
 // system.environment check surfaces, mirroring the Rust LOCALE_ENV_VARS list.
 var localeEnvVars = []string{"LANG", "LC_ALL", "LC_CTYPE", "LANGUAGE"}
 
+// colorEnvVars are the color-related environment variables the terminal.env check
+// surfaces, mirroring the Rust COLOR_ENV_VARS list.
+var colorEnvVars = []string{"COLORTERM", "NO_COLOR", "CLICOLOR", "CLICOLOR_FORCE", "FORCE_COLOR", "COLORFGBG"}
+
+// terminalDimensionEnvVars are the dimension override env vars terminal.env
+// surfaces, mirroring the Rust TERMINAL_DIMENSION_ENV_VARS list.
+var terminalDimensionEnvVars = []string{"COLUMNS", "LINES"}
+
+// defaultTerminalColumns and defaultTerminalRows are the fallback terminal
+// dimensions used when no controlling terminal is attached, matching crossterm's
+// (80, 24) fallback used by the Rust terminal check.
+const (
+	defaultTerminalColumns = 80
+	defaultTerminalRows    = 24
+)
+
 // systemEnvironmentCheck reports OS/runtime metadata and the effective locale,
 // mirroring system.environment in doctor.rs. It is always informational (ok).
 func systemEnvironmentCheck() doctorCheck {
 	b := newCheck("system.environment", "system")
-	b.detail(fmt.Sprintf("os: %s", runtime.GOOS))
-	b.detail(fmt.Sprintf("arch: %s", runtime.GOARCH))
-	b.detail(fmt.Sprintf("go: %s", runtime.Version()))
+	info := detectOSInfo()
+	b.detail(fmt.Sprintf("os: %s", info.OS))
+	b.detail(fmt.Sprintf("os type: %s", info.OSType))
+	b.detail(fmt.Sprintf("os version: %s", info.OSVersion))
 
 	language := osLanguage()
 	if language != "" {
@@ -54,18 +74,43 @@ func systemEnvironmentCheck() doctorCheck {
 func terminalEnvCheck() doctorCheck {
 	b := newCheck("terminal.env", "terminal")
 	info := termdetect.Detect()
+	stdinTTY := isTerminal(os.Stdin)
+	stdoutTTY := isTerminal(os.Stdout)
+	stderrTTY := isTerminal(os.Stderr)
+
+	// Detail emission order mirrors terminal_check_from_inputs in doctor.rs.
+	b.detail(fmt.Sprintf("terminal: %s", terminalNameDisplay(info)))
 	if info.TermProgram != "" {
 		b.detail(fmt.Sprintf("TERM_PROGRAM: %s", info.TermProgram))
+	}
+	if info.Version != "" {
+		b.detail(fmt.Sprintf("terminal version: %s", info.Version))
 	}
 	if info.Term != "" {
 		b.detail(fmt.Sprintf("TERM: %s", info.Term))
 	}
-	if value, ok := os.LookupEnv("COLORTERM"); ok && value != "" {
-		b.detail(fmt.Sprintf("COLORTERM: %s", value))
+	if info.Multiplexer.Present() {
+		b.detail(fmt.Sprintf("multiplexer: %s", multiplexerNameDisplay(info.Multiplexer)))
 	}
-	b.detail(fmt.Sprintf("stdout is terminal: %t", isTerminal(os.Stdout)))
-	b.detail(fmt.Sprintf("stderr is terminal: %t", isTerminal(os.Stderr)))
-	b.detail(fmt.Sprintf("stdin is terminal: %t", isTerminal(os.Stdin)))
+	b.detail(fmt.Sprintf("stdin is terminal: %t", stdinTTY))
+	b.detail(fmt.Sprintf("stdout is terminal: %t", stdoutTTY))
+	b.detail(fmt.Sprintf("stderr is terminal: %t", stderrTTY))
+
+	columns, rows := detectTerminalSize()
+	b.detail(fmt.Sprintf("terminal size: %dx%d", columns, rows))
+	for _, name := range terminalDimensionEnvVars {
+		if value, ok := os.LookupEnv(name); ok && value != "" {
+			b.detail(fmt.Sprintf("%s: %s", name, value))
+		}
+	}
+
+	b.detail(fmt.Sprintf("color output: %s", colorOutputSummary(stdoutTTY)))
+	for _, name := range colorEnvVars {
+		if value, ok := os.LookupEnv(name); ok && value != "" {
+			b.detail(fmt.Sprintf("%s: %s", name, value))
+		}
+	}
+
 	b.detail(fmt.Sprintf("effective locale: %s", orNone(effectiveLocale())))
 
 	if info.Name == termdetect.TerminalDumb {
@@ -75,6 +120,82 @@ func terminalEnvCheck() doctorCheck {
 	}
 	b.ok("terminal metadata was detected")
 	return b.build()
+}
+
+// terminalNameDisplay maps a detected terminal name to its display label,
+// mirroring terminal_name in doctor.rs.
+func terminalNameDisplay(info termdetect.TerminalInfo) string {
+	switch info.Name {
+	case termdetect.TerminalAppleTerminal:
+		return "Apple Terminal"
+	case termdetect.TerminalGhostty:
+		return "Ghostty"
+	case termdetect.TerminalIterm2:
+		return "iTerm2"
+	case termdetect.TerminalWarpTerminal:
+		return "Warp"
+	case termdetect.TerminalVsCode:
+		return "VS Code"
+	case termdetect.TerminalWezTerm:
+		return "WezTerm"
+	case termdetect.TerminalKitty:
+		return "kitty"
+	case termdetect.TerminalAlacritty:
+		return "Alacritty"
+	case termdetect.TerminalKonsole:
+		return "Konsole"
+	case termdetect.TerminalGnomeTerminal:
+		return "GNOME Terminal"
+	case termdetect.TerminalVte:
+		return "VTE"
+	case termdetect.TerminalWindowsTerminal:
+		return "Windows Terminal"
+	case termdetect.TerminalDumb:
+		return "dumb"
+	default:
+		return "unknown"
+	}
+}
+
+// multiplexerNameDisplay renders the detected multiplexer with its version,
+// mirroring multiplexer_name in doctor.rs.
+func multiplexerNameDisplay(mux termdetect.Multiplexer) string {
+	name := "tmux"
+	if mux.Kind == termdetect.MultiplexerZellij {
+		name = "zellij"
+	}
+	if mux.Version != "" {
+		return fmt.Sprintf("%s %s", name, mux.Version)
+	}
+	return name
+}
+
+// detectTerminalSize returns the controlling terminal's column/row count, falling
+// back to 80x24 when no terminal is attached, matching crossterm::terminal::size.
+func detectTerminalSize() (columns, rows int) {
+	for _, f := range []*os.File{os.Stderr, os.Stdout, os.Stdin} {
+		if cols, lines, err := term.GetSize(int(f.Fd())); err == nil && cols > 0 && lines > 0 {
+			return cols, lines
+		}
+	}
+	return defaultTerminalColumns, defaultTerminalRows
+}
+
+// colorOutputSummary reports whether colorized output is enabled and, when
+// disabled, the dominant reason, mirroring color_output_summary in doctor.rs. The
+// doctor JSON renderer always disables color (output is captured), so the common
+// reason on a non-tty stdout is "stdout is not a terminal".
+func colorOutputSummary(stdoutTTY bool) string {
+	if envVarPresent("NO_COLOR") {
+		return "disabled (NO_COLOR)"
+	}
+	if value, ok := os.LookupEnv("TERM"); ok && value == "dumb" {
+		return "disabled (TERM=dumb)"
+	}
+	if !stdoutTTY {
+		return "disabled (stdout is not a terminal)"
+	}
+	return "enabled"
 }
 
 // terminalTitleCheck reports the configured terminal-title behavior, mirroring
@@ -100,6 +221,18 @@ func terminalTitleCheck(dctx doctorContext) doctorCheck {
 		b.detail(fmt.Sprintf("terminal title items: %s", joinComma(items)))
 	}
 	b.detail(fmt.Sprintf("terminal title activity: %t", containsString(items, "activity")))
+
+	// When the project-name item is selected, codex emits the project source and
+	// value rows. The project root is the git repo root when present, otherwise
+	// the cwd; the value is the basename, truncated to the TUI title width.
+	if projectTitleSelected(items) {
+		projectSource, projectValue := projectTitleCandidate(resolveCwd())
+		b.detail(fmt.Sprintf("terminal title project source: %s", projectSource))
+		if projectValue != "" {
+			b.detail(fmt.Sprintf("terminal title project value: %s", projectValue))
+		}
+	}
+
 	b.ok(fmt.Sprintf("terminal title %s", source))
 	return b.build()
 }
@@ -182,6 +315,45 @@ func osLanguage() string {
 		locale = locale[:idx]
 	}
 	return replaceRune(locale, '_', '-')
+}
+
+// projectTitleMaxChars bounds the rendered project-title value, mirroring the
+// PROJECT_TITLE_MAX_CHARS constant in title.rs.
+const projectTitleMaxChars = 24
+
+// projectTitleSelected reports whether the configured title items include the
+// project-name item (or its "project" alias), mirroring project_title_selected.
+func projectTitleSelected(items []string) bool {
+	for _, item := range items {
+		if item == "project-name" || item == "project" {
+			return true
+		}
+	}
+	return false
+}
+
+// projectTitleCandidate resolves the project-title source label and value,
+// mirroring terminal_title_project_root + project_title_candidate in title.rs:
+// the git repo root ("git repo root") takes precedence over the cwd ("cwd"). The
+// value is the directory basename truncated to projectTitleMaxChars graphemes.
+func projectTitleCandidate(cwd string) (source, value string) {
+	if root, ok := gitutils.GetGitRepoRoot(cwd); ok {
+		return "git repo root", truncateTitlePart(filepath.Base(root))
+	}
+	return "cwd", truncateTitlePart(filepath.Base(cwd))
+}
+
+// truncateTitlePart truncates value to projectTitleMaxChars runes, appending an
+// ellipsis when truncation occurred, mirroring truncate_title_part in title.rs.
+func truncateTitlePart(value string) string {
+	runes := []rune(value)
+	if len(runes) <= projectTitleMaxChars || projectTitleMaxChars <= 3 {
+		if len(runes) > projectTitleMaxChars {
+			return string(runes[:projectTitleMaxChars])
+		}
+		return value
+	}
+	return string(runes[:projectTitleMaxChars-3]) + "..."
 }
 
 // containsString reports whether items contains value.

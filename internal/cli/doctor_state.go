@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
@@ -60,6 +59,8 @@ func statePathsCheck(dctx doctorContext) doctorCheck {
 		}
 	}
 
+	rolloutStatsDetails(b, dctx.CodexHome)
+
 	if integrityFailed {
 		b.fail("state database integrity check failed").
 			remedy("Back up CODEX_HOME, then remove or repair the affected SQLite database.")
@@ -69,10 +70,33 @@ func statePathsCheck(dctx doctorContext) doctorCheck {
 	return b.build()
 }
 
-// stateRolloutParityCheck reports the active/archived rollout file inventory,
-// mirroring state.rollout_db_parity in doctor.rs. codexgo derives the inventory
-// from the on-disk rollout files (its source of truth) and reports the counts;
-// it does not require a parallel DB to be present.
+// rolloutStatsDetails emits the active/archived rollout-file inventory rows for
+// state.paths, mirroring rollout_stats_details in doctor.rs. Each label reports
+// file count, total bytes, and average bytes (or a scan-failure note).
+func rolloutStatsDetails(b *checkBuilder, codexHome string) {
+	active := collectRolloutStats(filepath.Join(codexHome, rollout.SessionsSubdir))
+	archived := collectRolloutStats(filepath.Join(codexHome, rollout.ArchivedSessionsSubdir))
+	pushRolloutStatsDetail(b, "active rollout files", active)
+	pushRolloutStatsDetail(b, "archived rollout files", archived)
+}
+
+// pushRolloutStatsDetail renders one rollout-stats row, mirroring
+// push_rollout_stats_detail in doctor.rs.
+func pushRolloutStatsDetail(b *checkBuilder, label string, stats rolloutStats) {
+	if stats.Err != "" {
+		b.detail(fmt.Sprintf("%s: scan failed (%s)", label, stats.Err))
+		return
+	}
+	b.detail(fmt.Sprintf("%s: %d files, %d total bytes, %d average bytes",
+		label, stats.Files, stats.TotalBytes, stats.averageBytes()))
+}
+
+// stateRolloutParityCheck compares the on-disk rollout-file inventory against the
+// state DB thread inventory, mirroring state.rollout_db_parity in doctor.rs.
+// codexgo has no rollout/thread state DB, so the comparison degrades to the
+// state-DB-missing path: it reports the on-disk rollout counts and a "rollout DB
+// rows: skipped (state DB missing)" row. The malformed-name and scan-cap rows are
+// emitted with their zero/false defaults. See DEVIATIONS.md (doctor).
 func stateRolloutParityCheck(dctx doctorContext) doctorCheck {
 	b := newCheck("state.rollout_db_parity", "threads")
 	if !dctx.Loaded {
@@ -80,25 +104,25 @@ func stateRolloutParityCheck(dctx doctorContext) doctorCheck {
 		return b.build()
 	}
 
-	active, activeErr := countRolloutFiles(filepath.Join(dctx.CodexHome, rollout.SessionsSubdir))
-	archived, archivedErr := countRolloutFiles(filepath.Join(dctx.CodexHome, rollout.ArchivedSessionsSubdir))
-	provider := orNone(dctx.ModelProvider)
-
-	b.detail(fmt.Sprintf("default model provider: %s", provider))
-	b.detail(fmt.Sprintf("rollout active files: %d", active))
-	b.detail(fmt.Sprintf("rollout archived files: %d", archived))
-
-	if activeErr != nil || archivedErr != nil {
-		if activeErr != nil {
-			b.detail(fmt.Sprintf("active scan error: %v", activeErr))
-		}
-		if archivedErr != nil {
-			b.detail(fmt.Sprintf("archived scan error: %v", archivedErr))
-		}
-		b.warn("rollout inventory could not be fully scanned")
-		return b.build()
+	active := collectRolloutStats(filepath.Join(dctx.CodexHome, rollout.SessionsSubdir))
+	archived := collectRolloutStats(filepath.Join(dctx.CodexHome, rollout.ArchivedSessionsSubdir))
+	scanErrors := 0
+	if active.Err != "" {
+		scanErrors++
 	}
-	b.ok("rollout files and thread inventory agree")
+	if archived.Err != "" {
+		scanErrors++
+	}
+
+	b.detail(fmt.Sprintf("default model provider: %s", resolveModelProviderID(dctx.ModelProvider)))
+	b.detail(fmt.Sprintf("rollout DB active files: %d", active.Files))
+	b.detail(fmt.Sprintf("rollout DB archived files: %d", archived.Files))
+	b.detail(fmt.Sprintf("rollout DB scan errors: %d", scanErrors))
+	b.detail("rollout DB malformed file names: 0")
+	b.detail("rollout DB scan cap reached: false")
+	b.detail("rollout DB rows: skipped (state DB missing)")
+
+	b.ok("no rollout/state DB inventory to compare")
 	return b.build()
 }
 
@@ -112,11 +136,29 @@ func appServerCheck(dctx doctorContext) doctorCheck {
 		return b.build()
 	}
 
+	// Detail emission order mirrors background_server_check in doctor.rs: daemon
+	// state dir, settings, pid file, update-loop pid file, control socket, status,
+	// then mode. JSON keys are sorted by the marshaler.
 	stateDir := filepath.Join(dctx.CodexHome, "app-server-daemon")
 	b.detail(fmt.Sprintf("daemon state dir: %s", stateDir))
 	fileDetail(b, "settings", filepath.Join(stateDir, "settings.json"))
 	fileDetail(b, "pid file", filepath.Join(stateDir, "app-server.pid"))
 	fileDetail(b, "update-loop pid file", filepath.Join(stateDir, "app-server-updater.pid"))
+
+	controlSocket := filepath.Join(dctx.CodexHome, "app-server-control", "app-server-control.sock")
+	b.detail(fmt.Sprintf("control socket: %s", controlSocket))
+
+	// codexgo does not probe the live control socket: a missing socket file is the
+	// not-running case (matching codex's SocketStatus::NotRunning).
+	running := false
+	if info, err := os.Stat(controlSocket); err == nil && info.Mode().IsRegular() {
+		running = true
+	}
+	if running {
+		b.detail("status: running")
+	} else {
+		b.detail("status: not running")
+	}
 
 	mode := "ephemeral"
 	if info, err := os.Stat(filepath.Join(stateDir, "settings.json")); err == nil && info.Mode().IsRegular() {
@@ -124,15 +166,9 @@ func appServerCheck(dctx doctorContext) doctorCheck {
 	}
 	b.detail(fmt.Sprintf("mode: %s", mode))
 
-	running := false
-	if info, err := os.Stat(filepath.Join(stateDir, "app-server.pid")); err == nil && info.Mode().IsRegular() {
-		running = true
-	}
 	if running {
-		b.detail("status: running")
 		b.ok("background server is running")
 	} else {
-		b.detail("status: not running")
 		b.ok("background server is not running")
 	}
 	return b.build()
@@ -168,29 +204,4 @@ func fileDetail(b *checkBuilder, label, path string) {
 	default:
 		b.detail(fmt.Sprintf("%s: %s (%v)", label, path, err))
 	}
-}
-
-// countRolloutFiles counts the *.jsonl rollout files under dir, returning 0 when
-// the directory does not exist. It is bounded by the on-disk tree size.
-func countRolloutFiles(dir string) (int, error) {
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		return 0, nil
-	}
-	count := 0
-	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if d.IsDir() {
-			return nil
-		}
-		if filepath.Ext(path) == ".jsonl" {
-			count++
-		}
-		return nil
-	})
-	if err != nil {
-		return count, fmt.Errorf("scanning %q: %w", dir, err)
-	}
-	return count, nil
 }

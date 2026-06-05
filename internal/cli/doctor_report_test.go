@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -65,5 +66,76 @@ func TestCheckBuilderTransitions(t *testing.T) {
 	}
 	if c.Remediation == nil || *c.Remediation != "run codex login" {
 		t.Errorf("remediation = %v", c.Remediation)
+	}
+}
+
+// TestStructuredJSONDetails mirrors structured_json_details in doctor.rs: each
+// "label: value" detail becomes a map entry keyed by the label, repeated labels
+// collapse into an ordered array, and detail strings without a ": " separator are
+// dropped from the map (preserved as notes).
+func TestStructuredJSONDetails(t *testing.T) {
+	details := []string{
+		"model: gpt-5.5",
+		"config.toml: /home/.codex/config.toml",
+		"config.toml: missing",
+		"a free-form note without a separator",
+		": value with empty key",
+	}
+	structured, notes := structuredJSONDetails(details)
+
+	if got, ok := structured["model"]; !ok || got.One == nil || *got.One != "gpt-5.5" {
+		t.Errorf("model = %#v, want One=gpt-5.5", got)
+	}
+	got := structured["config.toml"]
+	if got.One != nil {
+		t.Errorf("config.toml should be Many, got One=%q", *got.One)
+	}
+	if want := []string{"/home/.codex/config.toml", "missing"}; len(got.Many) != 2 || got.Many[0] != want[0] || got.Many[1] != want[1] {
+		t.Errorf("config.toml = %#v, want %v", got.Many, want)
+	}
+	if len(notes) != 2 {
+		t.Errorf("notes = %v, want 2 entries", notes)
+	}
+}
+
+// TestDoctorCheckDetailsMarshalAsObject asserts the JSON `details` field is an
+// object (map of label -> string|[]string), matching codex 0.136.0. The empty
+// case serializes to {} (not null) so callers can index into it safely.
+func TestDoctorCheckDetailsMarshalAsObject(t *testing.T) {
+	check := newCheck("config.load", "config").
+		ok("config loaded").
+		detail("model: gpt-5.5").
+		detail("config.toml: /home/.codex/config.toml").
+		detail("config.toml: missing").
+		build()
+
+	data, err := json.Marshal(check)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var decoded struct {
+		Details map[string]json.RawMessage `json:"details"`
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if string(decoded.Details["model"]) != `"gpt-5.5"` {
+		t.Errorf("model = %s, want scalar string", decoded.Details["model"])
+	}
+	if string(decoded.Details["config.toml"]) != `["/home/.codex/config.toml","missing"]` {
+		t.Errorf("config.toml = %s, want array", decoded.Details["config.toml"])
+	}
+}
+
+// TestEmptyDetailsMarshalAsEmptyObject asserts a check with no details serializes
+// details as {} rather than null, matching codex's mcp.config "details": {}.
+func TestEmptyDetailsMarshalAsEmptyObject(t *testing.T) {
+	check := newCheck("mcp.config", "mcp").ok("no MCP servers configured").build()
+	data, err := json.Marshal(check)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(data), `"details":{}`) {
+		t.Errorf("empty details = %s, want \"details\":{}", data)
 	}
 }

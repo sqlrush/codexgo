@@ -67,14 +67,48 @@ func (r doctorReport) MarshalJSON() ([]byte, error) {
 // doctorCheck is one diagnostic result. It mirrors the camelCase DoctorCheck
 // struct: a category, a status, a one-line summary, optional details, and an
 // optional remediation hint.
+//
+// Details are stored internally as ordered "label: value" strings (matching the
+// Rust DoctorCheck.details: Vec<String>) so the human renderer can parse them by
+// label; MarshalJSON converts them into the keyed object shape codex emits.
 type doctorCheck struct {
 	ID          string      `json:"id"`
 	Category    string      `json:"category"`
 	Status      checkStatus `json:"status"`
 	Summary     string      `json:"summary"`
-	Details     []string    `json:"details"`
+	Details     []string    `json:"-"`
 	Remediation *string     `json:"remediation"`
 	DurationMs  uint64      `json:"durationMs"`
+}
+
+// MarshalJSON renders the redacted JSON check shape from doctor.rs: details are
+// emitted as an object keyed by detail label (a string for single values, an
+// array for repeated labels), and non-conforming detail strings are surfaced as
+// `notes` (omitted when empty), mirroring JsonDoctorCheck/structured_json_details.
+//
+// An empty details set serializes to `{}` (never null), matching codex's
+// `mcp.config` row whose `details` is an empty object.
+func (c doctorCheck) MarshalJSON() ([]byte, error) {
+	details, notes := structuredJSONDetails(c.Details)
+	return json.Marshal(struct {
+		ID          string                     `json:"id"`
+		Category    string                     `json:"category"`
+		Status      checkStatus                `json:"status"`
+		Summary     string                     `json:"summary"`
+		Details     map[string]jsonDetailValue `json:"details"`
+		Notes       []string                   `json:"notes,omitempty"`
+		Remediation *string                    `json:"remediation"`
+		DurationMs  uint64                     `json:"durationMs"`
+	}{
+		ID:          c.ID,
+		Category:    c.Category,
+		Status:      c.Status,
+		Summary:     c.Summary,
+		Details:     details,
+		Notes:       notes,
+		Remediation: c.Remediation,
+		DurationMs:  c.DurationMs,
+	})
 }
 
 // newDoctorReport assembles a report from the given checks, computing the overall

@@ -2,8 +2,27 @@ package cli
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 )
+
+// resolveLogDir returns the configured log directory override, or the default
+// CODEX_HOME/log when unset. Mirrors Config.log_dir resolution in config.rs.
+func resolveLogDir(dctx doctorContext) string {
+	if dctx.LogDir != "" {
+		return dctx.LogDir
+	}
+	return filepath.Join(dctx.CodexHome, "log")
+}
+
+// resolveSqliteHome returns the configured sqlite home override, or the default
+// CODEX_HOME when unset. Mirrors Config.sqlite_home resolution in config.rs.
+func resolveSqliteHome(dctx doctorContext) string {
+	if dctx.SqliteHome != "" {
+		return dctx.SqliteHome
+	}
+	return dctx.CodexHome
+}
 
 // derefString returns the pointed-to string, or "" when the pointer is nil.
 func derefString(value *string) string {

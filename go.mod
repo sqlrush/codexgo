@@ -20,6 +20,7 @@ require (
 	github.com/muesli/termenv v0.16.0
 	github.com/pelletier/go-toml/v2 v2.3.1
 	github.com/pion/webrtc/v4 v4.2.14
+	github.com/rivo/uniseg v0.4.7
 	github.com/yuin/goldmark v1.8.2
 	github.com/zalando/go-keyring v0.2.8
 	go.opentelemetry.io/otel v1.44.0
@@ -29,6 +30,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.44.0
 	go.starlark.net v0.0.0-20260522144826-ec58d4b459e2
 	golang.org/x/sys v0.45.0
+	golang.org/x/term v0.43.0
 	modernc.org/sqlite v1.51.0
 	mvdan.cc/sh/v3 v3.13.1
 )
@@ -91,7 +93,6 @@ require (
 	github.com/pion/turn/v5 v5.0.7 // indirect
 	github.com/pjbgf/sha1cd v0.6.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
 	github.com/skeema/knownhosts v1.3.1 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
