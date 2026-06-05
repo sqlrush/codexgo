@@ -32,6 +32,8 @@ func newTurnContext(ctx context.Context, sess *Session, subID string, update *Se
 		CollaborationMode:            cfg.CollaborationMode,
 		Personality:                  cfg.Personality,
 		ApprovalPolicy:               cfg.ApprovalPolicy,
+		SandboxMode:                  cfg.SandboxMode,
+		NetworkAccessEnabled:         cfg.NetworkAccessEnabled,
 		WindowsSandboxLevel:          cfg.WindowsSandboxLevel,
 		Environments:                 append([]protocol.TurnEnvironmentSelection(nil), cfg.Environments...),
 		DynamicTools:                 append([]protocol.DynamicToolSpec(nil), cfg.DynamicTools...),

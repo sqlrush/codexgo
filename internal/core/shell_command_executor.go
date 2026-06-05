@@ -157,7 +157,18 @@ func (e shellCommandExecutor) runShellCommand(ctx context.Context, h *toolHandle
 		})
 	}
 
-	res, runErr := e.exec.Run(ctx, ExecRequest{Command: argv, Cwd: cwd})
+	// Resolve and apply the turn's REAL sandbox policy (mirrors codex's
+	// ToolOrchestrator): read-only / workspace-write spawn under the platform
+	// sandbox; danger-full-access keeps the none backend.
+	pol := resolveTurnSandboxPolicy(h.Turn)
+	res, runErr := e.exec.Run(ctx, ExecRequest{
+		Command:                 argv,
+		Cwd:                     cwd,
+		SandboxType:             pol.SandboxType,
+		FileSystemSandboxPolicy: pol.FileSystemSandboxPolicy,
+		NetworkSandboxPolicy:    pol.NetworkSandboxPolicy,
+		SandboxPolicyCwd:        h.Turn.Cwd,
+	})
 	if runErr != nil {
 		return nil, tools.RespondToModelError(fmt.Sprintf("exec failed: %v", runErr))
 	}

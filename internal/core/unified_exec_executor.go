@@ -233,21 +233,17 @@ func (e unifiedExecCommandExecutor) Handle(ctx context.Context, h *toolHandlerCo
 
 	emitExecCommandBegin(h, argv, cwd)
 
-	out, execErr := e.exec.ExecCommand(ctx, &unifiedexec.ExecCommandRequest{
-		Command:         argv,
+	out, execErr := e.exec.ExecCommand(ctx, buildUnifiedExecRequest(unifiedExecRequestParams{
+		Turn:            h.Turn,
+		Argv:            argv,
 		HookCommand:     args.Cmd,
 		CallID:          h.CallID,
-		TurnID:          h.Turn.SubID,
 		ProcessID:       processID,
 		YieldTimeMS:     yieldTimeMS,
 		MaxOutputTokens: args.MaxOutputTokens,
 		Cwd:             cwd,
-		SandboxCwd:      h.Turn.Cwd,
-		Env:             execEnvironMap(),
 		TTY:             args.TTY,
-		// SandboxType none: sandbox policy resolution for unified exec is owned
-		// by the permissions/sandbox area (STUB), matching the local exec service.
-	})
+	}))
 	if execErr != nil {
 		// Sandbox denial is terminal but still carries the captured output, so it
 		// is rendered as a tool response rather than an error (the Rust
@@ -280,6 +276,70 @@ func (e unifiedExecCommandExecutor) Handle(ctx context.Context, h *toolHandlerCo
 	}
 
 	return newUnifiedExecToolOutput(out, turnTruncationPolicy(h.Turn)), nil
+}
+
+// unifiedExecRequestParams bundles the inputs needed to construct an
+// ExecCommandRequest from a turn. It exists so request construction (including
+// the per-turn sandbox-policy resolution) is testable independently of the live
+// PTY spawn.
+type unifiedExecRequestParams struct {
+	// Turn is the read-only turn snapshot whose sandbox mode drives policy
+	// resolution. SandboxCwd defaults to the turn's cwd.
+	Turn *TurnContext
+	// Argv is the resolved program + arguments to spawn.
+	Argv []string
+	// HookCommand is the original shell command string echoed back in output.
+	HookCommand string
+	// CallID is the originating exec_command tool call id.
+	CallID string
+	// ProcessID is the reserved logical process id for the session.
+	ProcessID int
+	// YieldTimeMS is the requested output-collection window.
+	YieldTimeMS uint64
+	// MaxOutputTokens optionally caps the response token count.
+	MaxOutputTokens *int
+	// Cwd is the working directory for the child.
+	Cwd string
+	// TTY requests a pseudo-terminal.
+	TTY bool
+}
+
+// buildUnifiedExecRequest constructs the ExecCommandRequest for an exec_command
+// call, resolving and applying the turn's REAL sandbox policy (the fix for the
+// none-STUB). A read-only / workspace-write turn spawns under the platform
+// sandbox with the resolved filesystem + network policy; danger-full-access keeps
+// the none backend (mirroring codex's ToolOrchestrator + SandboxManager).
+//
+// The sandbox cwd anchors policy resolution (project_roots, denied-read globs)
+// to the turn's cwd, matching the Rust UnifiedExecRequest.sandbox_cwd.
+func buildUnifiedExecRequest(p unifiedExecRequestParams) *unifiedexec.ExecCommandRequest {
+	pol := resolveTurnSandboxPolicy(p.Turn)
+
+	turnID := ""
+	sandboxCwd := p.Cwd
+	if p.Turn != nil {
+		turnID = p.Turn.SubID
+		if p.Turn.Cwd != "" {
+			sandboxCwd = p.Turn.Cwd
+		}
+	}
+
+	return &unifiedexec.ExecCommandRequest{
+		Command:                 p.Argv,
+		HookCommand:             p.HookCommand,
+		CallID:                  p.CallID,
+		TurnID:                  turnID,
+		ProcessID:               p.ProcessID,
+		YieldTimeMS:             p.YieldTimeMS,
+		MaxOutputTokens:         p.MaxOutputTokens,
+		Cwd:                     p.Cwd,
+		SandboxCwd:              sandboxCwd,
+		Env:                     execEnvironMap(),
+		TTY:                     p.TTY,
+		SandboxType:             pol.SandboxType,
+		FileSystemSandboxPolicy: pol.FileSystemSandboxPolicy,
+		NetworkSandboxPolicy:    pol.NetworkSandboxPolicy,
+	}
 }
 
 // parseUnifiedExecCommandArgs decodes and validates exec_command arguments.

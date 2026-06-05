@@ -6,6 +6,7 @@ import (
 	"github.com/sqlrush/codexgo/internal/api"
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/rollout"
+	"github.com/sqlrush/codexgo/internal/sandbox"
 	"github.com/sqlrush/codexgo/internal/tools"
 )
 
@@ -205,6 +206,19 @@ type ExecRequest struct {
 	Command []string
 	// Cwd is the working directory for the command.
 	Cwd string
+
+	// SandboxType selects which platform sandbox backend the command spawns
+	// under. The zero value (SandboxTypeNone) runs the command unsandboxed,
+	// preserving the prior behavior for danger-full-access turns.
+	SandboxType sandbox.SandboxType
+	// FileSystemSandboxPolicy is the resolved filesystem policy the backend
+	// enforces (consulted only when SandboxType is not none).
+	FileSystemSandboxPolicy protocol.FileSystemSandboxPolicy
+	// NetworkSandboxPolicy is the resolved network policy the backend enforces.
+	NetworkSandboxPolicy protocol.NetworkSandboxPolicy
+	// SandboxPolicyCwd anchors sandbox policy resolution (project_roots,
+	// denied-read globs); defaults to Cwd when empty.
+	SandboxPolicyCwd string
 }
 
 // ExecResult is the outcome of an exec request.

@@ -9,18 +9,25 @@ import (
 	"github.com/sqlrush/codexgo/internal/core"
 	"github.com/sqlrush/codexgo/internal/execserver"
 	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/internal/pty"
+	"github.com/sqlrush/codexgo/internal/sandbox"
 )
 
 // localExecService is the binary's [core.ExecService]: it runs an already-argv-
-// resolved command to completion through the in-process [execserver.LocalProcess]
-// backend (which spawns via internal/pty) and returns the captured stdout,
-// stderr, and exit code.
+// resolved command to completion and returns the captured stdout, stderr, and
+// exit code.
+//
+// The sandbox backend selected by the turn drives the spawn: a none backend
+// (e.g. danger-full-access) runs through the in-process [execserver.LocalProcess]
+// backend (which spawns via internal/pty), while a read-only / workspace-write
+// turn spawns the child under the resolved platform sandbox (Seatbelt on macOS)
+// via [sandbox.Spawn] with the turn's filesystem + network policy.
 //
 // STUB: streaming output deltas, unified-exec session reuse, PTY interaction,
-// timeouts, and sandbox-policy escalation are deferred; the turn-running subset
-// the binary needs is a synchronous "spawn, capture, exit" call. The command is
-// executed without an OS sandbox, matching the `danger-full-access` /
-// `approval_policy = "never"` configuration the non-interactive exec path uses.
+// timeouts, and sandbox-policy escalation/approval are deferred; the turn-running
+// subset the binary needs is a synchronous "spawn, capture, exit" call. codex
+// would prompt for approval (request_command_approval) on a sandbox denial under
+// an interactive approval policy; the headless path has no interactive client.
 type localExecService struct {
 	backend *execserver.LocalProcess
 	// seq mints a unique process id per Run so concurrent calls never collide in
@@ -48,6 +55,13 @@ func (s *localExecService) Run(ctx context.Context, req core.ExecRequest) (core.
 		return core.ExecResult{}, fmt.Errorf("cli: exec requires a non-empty command")
 	}
 
+	// A sandboxed turn (read-only / workspace-write) spawns the child under the
+	// resolved platform backend; an unsandboxed turn (danger-full-access -> none)
+	// keeps the in-process LocalProcess path so its behavior stays byte-identical.
+	if req.SandboxType != sandbox.SandboxTypeNone {
+		return runSandboxedExec(ctx, req)
+	}
+
 	id := execserver.NewProcessId(fmt.Sprintf("codexgo-exec-%d", s.seq.Add(1)))
 	started, err := s.backend.Start(ctx, execserver.ExecParams{
 		ProcessID: id,
@@ -60,6 +74,72 @@ func (s *localExecService) Run(ctx context.Context, req core.ExecRequest) (core.
 	defer func() { _ = started.Process.Terminate(context.Background()) }()
 
 	return drainProcess(ctx, started.Process)
+}
+
+// runSandboxedExec spawns req.Command under the resolved platform sandbox backend
+// and drains its output to completion. It mirrors the local branch of codex's
+// exec path: select the backend for the turn policy, spawn, capture, exit.
+func runSandboxedExec(ctx context.Context, req core.ExecRequest) (core.ExecResult, error) {
+	sandboxCwd := req.SandboxPolicyCwd
+	if sandboxCwd == "" {
+		sandboxCwd = req.Cwd
+	}
+	spawnReq := sandbox.SpawnRequest{
+		Command:                 req.Command,
+		Cwd:                     req.Cwd,
+		Env:                     currentEnv(),
+		FileSystemSandboxPolicy: req.FileSystemSandboxPolicy,
+		NetworkSandboxPolicy:    req.NetworkSandboxPolicy,
+		SandboxPolicyCwd:        sandboxCwd,
+		Output:                  sandbox.OutputModePipeNoStdin,
+	}
+	params := sandbox.SelectParams{
+		FileSystemSandboxPolicy: req.FileSystemSandboxPolicy,
+		NetworkSandboxPolicy:    req.NetworkSandboxPolicy,
+		// The turn already resolved the backend (Auto); requiring it here keeps
+		// the spawn consistent with that decision on the selected platform.
+		Preference: sandbox.SandboxablePreferenceRequire,
+	}
+
+	proc, _, err := sandbox.Spawn(ctx, params, spawnReq)
+	if err != nil {
+		return core.ExecResult{}, fmt.Errorf("cli: start sandboxed command %q: %w", req.Command[0], err)
+	}
+	return drainSpawnedProcess(ctx, proc)
+}
+
+// drainSpawnedProcess reads a [pty.SpawnedProcess] to completion, accumulating
+// stdout and stderr and capturing the exit code.
+func drainSpawnedProcess(ctx context.Context, proc *pty.SpawnedProcess) (core.ExecResult, error) {
+	var stdout, stderr strings.Builder
+	stdoutCh, stderrCh, exitCh := proc.Stdout, proc.Stderr, proc.Exit
+	var exitCode int32
+	for stdoutCh != nil || stderrCh != nil {
+		select {
+		case chunk, ok := <-stdoutCh:
+			if !ok {
+				stdoutCh = nil
+				continue
+			}
+			stdout.Write(chunk)
+		case chunk, ok := <-stderrCh:
+			if !ok {
+				stderrCh = nil
+				continue
+			}
+			stderr.Write(chunk)
+		case <-ctx.Done():
+			return core.ExecResult{}, fmt.Errorf("cli: command interrupted: %w", ctx.Err())
+		}
+	}
+	if code, ok := <-exitCh; ok {
+		exitCode = int32(code)
+	}
+	return core.ExecResult{
+		ExitCode: exitCode,
+		Stdout:   stdout.String(),
+		Stderr:   stderr.String(),
+	}, nil
 }
 
 // drainProcess reads a started process to completion, accumulating stdout and

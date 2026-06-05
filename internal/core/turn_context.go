@@ -86,6 +86,14 @@ type TurnContext struct {
 	// PermissionProfile is the effective permission profile (opaque to core;
 	// owned by the permissions area agent).
 	PermissionProfile any
+	// SandboxMode is the effective filesystem sandbox mode for the turn (the
+	// reduced projection of PermissionProfile core needs to resolve the real
+	// per-turn sandbox policy for exec). Defaults to read-only for the zero
+	// value, mirroring codex's config default.
+	SandboxMode protocol.SandboxMode
+	// NetworkAccessEnabled reports whether outbound network access is granted to
+	// sandboxed commands this turn (the network half of the resolved policy).
+	NetworkAccessEnabled bool
 	// WindowsSandboxLevel is the effective Windows sandbox level.
 	WindowsSandboxLevel protocol.WindowsSandboxLevel
 
