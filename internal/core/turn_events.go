@@ -1,8 +1,10 @@
 package core
 
 import (
+	"errors"
 	"time"
 
+	"github.com/sqlrush/codexgo/internal/client"
 	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
@@ -234,9 +236,21 @@ func emitTurnError(sess *Session, tc *TurnContext, err error) {
 	sess.SendEvent(tc.SubID, protocol.EventMsg{
 		Type: protocol.EventMsgKindError,
 		Error: &protocol.ErrorEvent{
-			Message: err.Error(),
+			Message: modelFacingErrorMessage(err),
 		},
 	})
+}
+
+// modelFacingErrorMessage renders a turn error the way codex surfaces it to the
+// client: an HTTP transport failure reports the UPSTREAM RESPONSE BODY verbatim
+// (the Rust UnexpectedStatus display), not the internal Go wrapping chain.
+// Other errors keep their full message.
+func modelFacingErrorMessage(err error) string {
+	var transport *client.TransportError
+	if errors.As(err, &transport) && transport.Kind == client.TransportErrorHTTP && transport.Body != "" {
+		return transport.Body
+	}
+	return err.Error()
 }
 
 // accountAndEmitTokenCount folds the completed request's token usage into the

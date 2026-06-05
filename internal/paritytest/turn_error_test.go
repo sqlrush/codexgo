@@ -114,10 +114,24 @@ func TestParityTurnError(t *testing.T) {
 	if a, b := eventTypeSequence(refEvents), eventTypeSequence(cgoEvents); strings.Join(a, ",") != strings.Join(b, ",") {
 		t.Errorf("error-turn event-type sequence mismatch:\n codex:   %v\n codexgo: %v", a, b)
 	}
-	// NOTE (documented deviation, docs/PARITY.md): the error *message* text differs
-	// — codex surfaces the clean upstream error body, while codexgo currently leaks
-	// internal wrapping ("core: model stream failed: ..."). The event SHAPE, exit
-	// code, and terminal turn.failed all match; the message-text cleanup is tracked.
+	// The error *message* text must match byte-for-byte: codex surfaces the
+	// clean upstream error body, and codexgo must not leak internal wrapping.
+	if a, b := firstErrorMessage(refEvents), firstErrorMessage(cgoEvents); a != b {
+		t.Errorf("error message mismatch:\n codex:   %q\n codexgo: %q", a, b)
+	}
+}
+
+// firstErrorMessage returns the message of the first error event in the stream.
+func firstErrorMessage(events []map[string]any) string {
+	for _, ev := range events {
+		if t, _ := ev["type"].(string); t != "error" {
+			continue
+		}
+		if msg, ok := ev["message"].(string); ok {
+			return msg
+		}
+	}
+	return ""
 }
 
 // terminalEventType returns the "type" of the last event in the stream.
