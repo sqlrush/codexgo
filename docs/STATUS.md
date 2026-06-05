@@ -66,7 +66,7 @@ Automated, credential-free, binary-vs-binary (env-gated on `CODEX_PARITY_BIN`):
 | `exec --json` text turn | ✅ byte-identical normalized JSONL |
 | `exec --json` shell-command tool turn | ✅ byte-identical (runs the command) |
 | `exec --json` apply_patch tool turn | ✅ byte-identical + identical patched file |
-| `exec --json` error turn | ✅ same terminal `turn.failed` + exit code (msg text tracked) |
+| `exec --json` error turn | ✅ same terminal `turn.failed` + exit code + **byte-identical error message** (upstream body surfaced verbatim) |
 | `exec -o/--output-last-message` | ✅ byte-identical file |
 | `exec --output-schema` request `text` | ✅ byte-identical json_schema block |
 | full `/responses` request body | ✅ **EVERY top-level field byte-identical** (`documentedGapFields` empty): scalars, `instructions`, full 11-tool `tools` registry, and `input` (per-run CODEX_HOME normalized) |
@@ -103,12 +103,18 @@ semantics incl. the rust-stemmers Porter2 variant, validated against its full
 binary — and the differential exposed a real codex nondeterminism (HashSet tie
 order) documented in DEVIATIONS.
 
+Long-tail wins this wave: the turn-error message is now byte-identical
+(upstream HTTP body surfaced verbatim, enforced by `TestParityTurnError`), and
+`terminal_interaction` echoes the originating exec_command call id.
+
 Remaining toward a literal 100%:
 - **skill roots config layers** — project `.codex/skills` + admin
   `/etc/codex/skills` roots await the config-layer stack; non-read-only
   `<filesystem>` XML capture.
 - **collab tool execution** — the deferred specs dispatch a STUB
   RespondToModel error until the multi-agent runtime wires spawn/wait/etc.
-- UnifiedExec orchestration tail (sandbox policy, async watcher, call ids).
-- TUI pixel-fidelity and the documented long-tail deviations.
-Rough faithful-and-verified completeness: **~84%**.
+- UnifiedExec orchestration tail (sandbox policy resolution + async_watcher
+  background end events).
+- doctor per-check `details` map shape; completion clap-bytes; TUI
+  pixel-fidelity and the documented long-tail deviations.
+Rough faithful-and-verified completeness: **~85%**.
