@@ -227,6 +227,7 @@ func (e unifiedExecCommandExecutor) Handle(ctx context.Context, h *toolHandlerCo
 	out, execErr := e.exec.ExecCommand(ctx, &unifiedexec.ExecCommandRequest{
 		Command:         argv,
 		HookCommand:     args.Cmd,
+		CallID:          h.CallID,
 		ProcessID:       processID,
 		YieldTimeMS:     yieldTimeMS,
 		MaxOutputTokens: args.MaxOutputTokens,
@@ -447,16 +448,22 @@ func (e writeStdinExecutor) Handle(ctx context.Context, h *toolHandlerContext) (
 
 	// Empty stdin is a background poll, so surface it only while a live process
 	// remains; non-empty stdin is a real terminal interaction and stays visible
-	// even when it completes the process (write_stdin.rs).
+	// even when it completes the process (write_stdin.rs). The event is tagged
+	// with the ORIGINATING exec_command's call id (response.event_call_id),
+	// falling back to this call's id when the entry predates call-id tracking.
 	if (args.Chars != "" || out.ProcessID != nil) && h.Session != nil {
 		pid := *args.SessionID
 		if out.ProcessID != nil {
 			pid = *out.ProcessID
 		}
+		eventCallID := out.EventCallID
+		if eventCallID == "" {
+			eventCallID = h.CallID
+		}
 		h.Session.SendEvent(h.Turn.SubID, protocol.EventMsg{
 			Type: protocol.EventMsgKindTerminalInteraction,
 			TerminalInteraction: &protocol.TerminalInteractionEvent{
-				CallID:    h.CallID,
+				CallID:    eventCallID,
 				ProcessID: strconv.Itoa(pid),
 				Stdin:     args.Chars,
 			},

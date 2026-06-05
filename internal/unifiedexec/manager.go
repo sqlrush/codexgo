@@ -197,6 +197,7 @@ func (m *ProcessManager) ExecCommand(ctx context.Context, req *ExecCommandReques
 
 	return &Output{
 		ChunkID:            chunkID,
+		EventCallID:        req.CallID,
 		WallTime:           int64(wallTime),
 		RawOutput:          collected,
 		MaxOutputTokens:    req.MaxOutputTokens,
@@ -279,6 +280,7 @@ func (m *ProcessManager) WriteStdin(ctx context.Context, req *WriteStdinRequest)
 
 	return &Output{
 		ChunkID:            chunkID,
+		EventCallID:        prepared.callID,
 		WallTime:           int64(wallTime),
 		RawOutput:          collected,
 		MaxOutputTokens:    req.MaxOutputTokens,
@@ -364,6 +366,7 @@ func (m *ProcessManager) TerminateAllProcesses() {
 func (m *ProcessManager) storeProcess(process *Process, req *ExecCommandRequest, startedAt time.Time) {
 	entry := &processEntry{
 		process:     process,
+		callID:      req.CallID,
 		processID:   req.ProcessID,
 		hookCommand: req.HookCommand,
 		tty:         req.TTY,
@@ -383,6 +386,7 @@ func (m *ProcessManager) storeProcess(process *Process, req *ExecCommandRequest,
 type prepared struct {
 	process     *Process
 	handles     outputHandles
+	callID      string
 	hookCommand string
 	tty         bool
 }
@@ -400,6 +404,7 @@ func (m *ProcessManager) prepareProcessHandles(processID int) (*prepared, error)
 	return &prepared{
 		process:     entry.process,
 		handles:     entry.process.outputHandles(),
+		callID:      entry.callID,
 		hookCommand: entry.hookCommand,
 		tty:         entry.tty,
 	}, nil

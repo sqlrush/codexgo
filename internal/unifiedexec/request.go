@@ -15,6 +15,10 @@ type ExecCommandRequest struct {
 	Command []string
 	// HookCommand is the original shell command string, echoed back in output.
 	HookCommand string
+	// CallID is the originating exec_command tool call id; it is stored on the
+	// process entry so later write_stdin calls echo it (the Rust
+	// ProcessEntry.call_id -> event_call_id flow behind TerminalInteraction).
+	CallID string
 	// ProcessID is the reserved logical process id for this session.
 	ProcessID int
 	// YieldTimeMS is the requested output-collection window.
@@ -68,6 +72,10 @@ type ResizeRequest struct {
 type Output struct {
 	// ChunkID is a fresh per-call identifier for this output chunk.
 	ChunkID string
+	// EventCallID is the originating exec_command call id for the session this
+	// output belongs to (the Rust ExecCommandToolOutput.event_call_id); event
+	// emitters tag TerminalInteraction with it.
+	EventCallID string
 	// WallTime is how long the call spent collecting output.
 	WallTime int64 // nanoseconds, mirroring time.Duration
 	// RawOutput is the collected bytes for this call.
