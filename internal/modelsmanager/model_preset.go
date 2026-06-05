@@ -90,6 +90,15 @@ func modelPresetFromInfo(info ModelInfo) ModelPreset {
 	}
 }
 
+// BuildAvailableModelsForCatalog builds picker-ready presets from a catalog
+// snapshot with no auth manager (the bare-run derivation: API-supported models
+// only, since no ChatGPT backend is authenticated). Mirrors the Rust
+// `ModelsManager::build_available_models` call path with an unauthenticated
+// session. The input slice is not mutated.
+func BuildAvailableModelsForCatalog(remoteModels []ModelInfo) []ModelPreset {
+	return buildAvailableModels(nil, remoteModels)
+}
+
 // SupportsFastMode reports whether the preset advertises the "fast"/"priority"
 // service tier (either via ServiceTiers or the legacy AdditionalSpeedTiers).
 func (p ModelPreset) SupportsFastMode() bool {

@@ -141,6 +141,16 @@ func builtinExecutors(deps BuiltinToolDeps) []toolExecutor {
 		}
 	}
 
+	// Deferred collab (multi-agent) runtimes register before tool_search, in
+	// spec_plan order (spawn, send_input, resume, wait, close). They are always
+	// registered (dispatch-only) but only participate in tool_search and direct
+	// dispatch when the per-turn deferred-exposure gate holds (collabExecutor's
+	// Spec is hidden and searchInfo is gated on collabDeferredEligible). The
+	// registration order fixes the BM25 corpus document ids.
+	for _, ce := range collabExecutors() {
+		execs = append(execs, ce)
+	}
+
 	// tool_search appends after every other runtime
 	// (spec_plan::append_tool_search_executor runs after add_tool_sources); its
 	// per-turn gate (search-capable model + namespace tools + deferred sources)

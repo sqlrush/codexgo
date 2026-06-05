@@ -96,12 +96,19 @@ bridge).
 `documentedGapFields` is empty; skills_instructions renders from the same
 embedded system skills codex materializes under `CODEX_HOME/skills/.system`.
 
+**tool_search dispatch is now byte-verified too** (`TestParityToolSearchTurn`):
+the five multi_agent_v1 deferred specs, the BM25 engine (bm25 crate 2.3.2
+semantics incl. the rust-stemmers Porter2 variant, validated against its full
+29,417-word vocabulary), and the coalesced namespace output all match the real
+binary — and the differential exposed a real codex nondeterminism (HashSet tie
+order) documented in DEVIATIONS.
+
 Remaining toward a literal 100%:
-- **tool_search dispatch depth** — the five collab agent tool specs as deferred
-  runtimes + the BM25 engine (multi-agent area).
 - **skill roots config layers** — project `.codex/skills` + admin
   `/etc/codex/skills` roots await the config-layer stack; non-read-only
   `<filesystem>` XML capture.
+- **collab tool execution** — the deferred specs dispatch a STUB
+  RespondToModel error until the multi-agent runtime wires spawn/wait/etc.
 - UnifiedExec orchestration tail (sandbox policy, async watcher, call ids).
 - TUI pixel-fidelity and the documented long-tail deviations.
-Rough faithful-and-verified completeness: **~82%**.
+Rough faithful-and-verified completeness: **~84%**.

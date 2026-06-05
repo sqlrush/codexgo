@@ -24,8 +24,6 @@ func jsonEqual(t *testing.T, got []byte, want string) {
 	}
 }
 
-func boolPtr(b bool) *bool { return &b }
-
 func TestToolSpecName(t *testing.T) {
 	high := protocol.WebSearchContextSizeHigh
 	tests := []struct {

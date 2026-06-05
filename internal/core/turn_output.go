@@ -60,10 +60,13 @@ func handleOutputItemDone(ctx context.Context, sess *Session, tc *TurnContext, i
 	case protocol.ResponseItemKindCustomToolCall:
 		return dispatchCustomToolCall(ctx, sess, tc, item, st)
 
+	case protocol.ResponseItemKindToolSearchCall:
+		return dispatchToolSearchCall(ctx, sess, tc, item, st)
+
 	default:
-		// LocalShellCall, WebSearchCall, ImageGenerationCall, ToolSearchCall and
-		// other tool variants are recorded verbatim; their dedicated handlers are
-		// STUBbed (owned by the tools area agent).
+		// LocalShellCall, WebSearchCall, ImageGenerationCall and other tool
+		// variants are recorded verbatim; their dedicated handlers are STUBbed
+		// (owned by the tools area agent).
 		sess.RecordItems([]protocol.ResponseItem{item})
 		return nil
 	}
@@ -126,6 +129,91 @@ func dispatchCustomToolCall(ctx context.Context, sess *Session, tc *TurnContext,
 	*st.toolOutputs = append(*st.toolOutputs, output)
 	*st.needsFollowUp = true
 	return nil
+}
+
+// dispatchToolSearchCall routes a client-executed tool_search call through the
+// router (preserving the ToolSearch payload variant) and records the
+// tool_search_output item carrying the matched deferred specs. Non-client or
+// id-less searches are recorded verbatim and skipped, mirroring
+// build_tool_call. Mirrors the Rust tool-search dispatch path.
+func dispatchToolSearchCall(ctx context.Context, sess *Session, tc *TurnContext, item protocol.ResponseItem, st *streamState) error {
+	sess.RecordItems([]protocol.ResponseItem{item})
+
+	call, err := BuildToolCall(item)
+	if err != nil {
+		// Malformed arguments surface to the model as a failed output.
+		if item.CallIDOpt != nil {
+			result := ToolResult{Output: err.Error(), Success: false}
+			*st.toolOutputs = append(*st.toolOutputs, functionCallOutputItem(*item.CallIDOpt, result))
+			*st.needsFollowUp = true
+		}
+		return nil
+	}
+	if call == nil {
+		return nil
+	}
+	if at := sess.ActiveTurn(); at != nil {
+		at.State.IncToolCalls()
+	}
+
+	parsedRouter, ok := sess.services.ToolRouter.(parsedAwareRouter)
+	if !ok {
+		// Routers without parsed dispatch cannot preserve the ToolSearch payload;
+		// surface a recoverable failure to the model.
+		result := ToolResult{Output: "tool_search is not supported by this router", Success: false}
+		*st.toolOutputs = append(*st.toolOutputs, functionCallOutputItem(call.CallID, result))
+		*st.needsFollowUp = true
+		return nil
+	}
+	res, err := parsedRouter.DispatchParsed(ctx, sess, tc, *call)
+	if err != nil {
+		result := ToolResult{Output: fmt.Sprintf("tool dispatch error: %v", err), Success: false}
+		*st.toolOutputs = append(*st.toolOutputs, functionCallOutputItem(call.CallID, result))
+		*st.needsFollowUp = true
+		return nil
+	}
+
+	output := responseItemFromInput(res.IntoResponse())
+	*st.toolOutputs = append(*st.toolOutputs, output)
+	*st.needsFollowUp = true
+	return nil
+}
+
+// parsedAwareRouter is implemented by routers that can dispatch a
+// [ParsedToolCall] with its exact payload variant preserved (the
+// [DefaultToolRouter]). tool_search dispatch requires it.
+type parsedAwareRouter interface {
+	DispatchParsed(ctx context.Context, sess *Session, tc *TurnContext, call ParsedToolCall) (AnyToolResult, error)
+}
+
+// responseItemFromInput projects a tool-output [tools.ResponseInputItem] onto
+// the protocol [protocol.ResponseItem] recorded in history and fed back to the
+// model. Only the output-side variants tools produce are mapped.
+func responseItemFromInput(in tools.ResponseInputItem) protocol.ResponseItem {
+	switch in.Kind {
+	case tools.ResponseInputItemKindToolSearchOutput:
+		callID := in.CallID
+		return protocol.ResponseItem{
+			Type:             protocol.ResponseItemKindToolSearchOutput,
+			CallIDOpt:        &callID,
+			ToolSearchStatus: in.Status,
+			Execution:        in.Execution,
+			Tools:            in.Tools,
+		}
+	case tools.ResponseInputItemKindCustomToolCallOutput:
+		return protocol.ResponseItem{
+			Type:       protocol.ResponseItemKindCustomToolCallOutput,
+			CallID:     in.CallID,
+			OutputName: in.Name,
+			Output:     &in.Output,
+		}
+	default:
+		return protocol.ResponseItem{
+			Type:   protocol.ResponseItemKindFunctionCallOutput,
+			CallID: in.CallID,
+			Output: &in.Output,
+		}
+	}
 }
 
 // toolNameFor derives a [protocol.ToolName] from a function-call item, honoring
