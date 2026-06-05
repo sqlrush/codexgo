@@ -31,7 +31,7 @@ Legend: ✅ implemented + tested · 🟡 implemented with documented deviation/p
 | 15 | network proxy (SOCKS5/HTTP) | 🟡 | policy+env exact; HTTPS MITM data-path deferred |
 | 16 | tools framework + built-ins | ✅ | shell_command/apply_patch verified drop-in; UnifiedExec PTY pair (exec_command/write_stdin) wired with per-model selection |
 | 17 | rollout JSONL | ✅ | |
-| 18 | state SQLite | ✅ | embedded migrations, pure-Go sqlite |
+| 18 | state SQLite | ✅ | embedded migrations, pure-Go sqlite; thread-goal store (goals.rs port: budget-limit promotion + accounting modes) |
 | 19 | thread store / history / graph | ✅ | read/list/search/archive; search substring vs ripgrep |
 | 20 | git / file-search / watch | 🟡 | go-git/fsnotify; fuzzy ranking best-effort |
 | 21 | MCP client | ✅ | stdio+http, namespacing |
@@ -39,8 +39,8 @@ Legend: ✅ implemented + tested · 🟡 implemented with documented deviation/p
 | 23 | skills | ✅ | |
 | 24 | hooks | ✅ | |
 | 25 | code-mode (JS) | ✅ | goja engine; JS-feature gaps vs V8 documented |
-| 26 | extensions/connectors/memories | 🟡 | guardian/goal/memories/imagegen/websearch; connectors-in-core partial |
-| 27–31 | core engine | 🟡 | turn loop / streaming / tools / approvals / compaction / assembly run end-to-end; unified-exec now wired into the live loop (PTY tool pair); remaining advanced breadth (multi-agent/realtime/goals-deep) ported as packages, not all wired |
+| 26 | extensions/connectors/memories | 🟡 | guardian/goal/memories/imagegen/websearch; goal tools now LIVE in the headless loop (SQLite-backed via state bridge; events/metrics no-op until registry wiring); connectors-in-core partial |
+| 27–31 | core engine | 🟡 | turn loop / streaming / tools / approvals / compaction / assembly run end-to-end; unified-exec + goals trio + tool_search advertisement wired into the live loop; remaining advanced breadth (multi-agent/realtime) ported as packages, not all wired |
 | 32 | app-server protocol | ✅ | JSON-RPC registry, v1/v2 |
 | 33 | app-server + transport | 🟡 | stdio/uds/ws + turn-driving methods; full method surface partial |
 | 34 | `codex exec` (headless) | ✅ | **turn JSONL byte-identical** to codex (text + tool turns) |
@@ -69,9 +69,9 @@ Automated, credential-free, binary-vs-binary (env-gated on `CODEX_PARITY_BIN`):
 | `exec --json` error turn | ✅ same terminal `turn.failed` + exit code (msg text tracked) |
 | `exec -o/--output-last-message` | ✅ byte-identical file |
 | `exec --output-schema` request `text` | ✅ byte-identical json_schema block |
-| full `/responses` request body | 🟡 `model`/`tool_choice`/`store`/`stream`/`include`/`service_tier`/`text`/`reasoning`/`parallel_tool_calls`/`instructions` byte-identical; `tools` registry 7/11 advertised (ordered subsequence, `TestParityToolOrder`) |
+| full `/responses` request body | 🟡 every top-level field byte-identical — incl. `instructions` and the full `tools` registry — except `input` (skills_instructions + filesystem XML tracked) |
 | `/responses` `input` context | ✅ permissions + environment_context byte-identical (`TestParityInputContext`); `<skills_instructions>` sub-gap tracked |
-| built-in tool specs | 🟡 `view_image`/`update_plan`/`exec_command`/`write_stdin`/`request_user_input`/`apply_patch`(custom grammar)/`web_search`(hosted) byte-identical (`TestParityToolSpecs`); per-model selection + UnifiedExec PTY bridge live; goals/`tool_search` specs pending |
+| built-in tool specs | ✅ **11/11 byte-identical, full-array order equality** (`TestParityToolSpecs` + `TestParityToolOrder`): UnifiedExec PTY pair, update_plan, goals trio (live SQLite store), request_user_input, apply_patch (custom grammar), view_image, tool_search (empty-entries dispatch until BM25/deferred registry), hosted web_search |
 | `doctor --json` | 🟡 18 check IDs + container/keys match; per-check `details` shape differs |
 | `completion` | 🟡 functional; not clap-byte-identical |
 
@@ -79,24 +79,24 @@ Automated, credential-free, binary-vs-binary (env-gated on `CODEX_PARITY_BIN`):
 
 Breadth: all 49 specs build; the headless agent runs and is a verified drop-in for
 the core flows (text + tool turns). The `/responses` REQUEST is now byte-identical
-to codex for every scalar field plus `instructions`, the `input` context
-(permissions + environment_context), and the five advertised tool specs.
+to codex for **every top-level field except `input`**: all scalars,
+`instructions` (personality rendering), and the **complete 11-tool registry in
+codex's exact spec_plan order** (full-array equality, every spec byte-identical).
 
-**UnifiedExec bridge is live**: the per-model/per-feature shell selection
-(`shell_type_for_model_and_features`, ported in `internal/tools/tool_config.go`)
-drives the per-turn registry, so on PTY-capable hosts codexgo advertises the
-`exec_command` + `write_stdin` PTY pair (backed by `internal/unifiedexec`
-sessions) with `shell_command` registered dispatch-only — exactly codex's
-spec_plan behavior. The advertised tool list is verified as an ordered
-subsequence of codex's (`TestParityToolOrder`), each spec byte-identical.
+**Tools registry is closed**: the UnifiedExec PTY pair rides the ported
+per-model shell selection (`shell_type_for_model_and_features`); the goals trio
+is gated like codex's `goal_tools_enabled` and backed by a real SQLite goal
+store (`internal/state/goals.go`); `tool_search` is gated like
+`append_tool_search_executor` with the ported spec renderer. Behavioral tails
+are tracked in `DEVIATIONS.md` (tool_search returns the empty-entries result
+until the deferred registry + BM25 land; goal events no-op in the headless
+bridge).
 
 Remaining toward a literal 100%:
-- **`tools` registry tail** — 4/11 tools still unadvertised: `get_goal`/
-  `create_goal`/`update_goal` (needs the goal-store behavior) and `tool_search`
-  (needs the deferred-tool registry). `request_user_input` (default-enabled,
-  headless calls resolve as cancelled) and the hosted `web_search` spec
-  (cached-mode default) are now advertised byte-identically.
-- **`input` context** — only `<skills_instructions>` (a `SKILL.md` scan) and the
-  non-read-only `<filesystem>` XML remain.
+- **`input` context** — only `<skills_instructions>` (a `SKILL.md` scan,
+  ~4.9 KB) and the non-read-only `<filesystem>` XML remain (the LAST
+  request-body gap).
+- **tool_search dispatch depth** — the five collab agent tool specs as deferred
+  runtimes + the BM25 engine (multi-agent area).
 - TUI pixel-fidelity and the documented long-tail deviations.
-Rough faithful-and-verified completeness: **~76%**.
+Rough faithful-and-verified completeness: **~80%**.
