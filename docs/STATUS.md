@@ -72,7 +72,7 @@ Automated, credential-free, binary-vs-binary (env-gated on `CODEX_PARITY_BIN`):
 | full `/responses` request body | ✅ **EVERY top-level field byte-identical** (`documentedGapFields` empty): scalars, `instructions`, full 11-tool `tools` registry, and `input` (per-run CODEX_HOME normalized) |
 | `/responses` `input` context | ✅ permissions + **skills_instructions** (system skills materialized under skills/.system) + environment_context all byte-identical (`TestParityInputContext`) |
 | built-in tool specs | ✅ **11/11 byte-identical, full-array order equality** (`TestParityToolSpecs` + `TestParityToolOrder`): UnifiedExec PTY pair, update_plan, goals trio (live SQLite store), request_user_input, apply_patch (custom grammar), view_image, tool_search (empty-entries dispatch until BM25/deferred registry), hosted web_search |
-| `doctor --json` | 🟡 18 check IDs + container/keys match; per-check `details` shape differs |
+| `doctor --json` | ✅ 18 check IDs + **structured details object, 17/18 exact key sets** (1 probe-outcome-conditional row; best-effort value sources in DEVIATIONS "44 doctor") |
 | `completion` | 🟡 functional; not clap-byte-identical |
 
 ## Honest overall
@@ -115,6 +115,6 @@ Remaining toward a literal 100%:
   RespondToModel error until the multi-agent runtime wires spawn/wait/etc.
 - UnifiedExec orchestration tail (sandbox policy resolution + async_watcher
   background end events).
-- doctor per-check `details` map shape; completion clap-bytes; TUI
-  pixel-fidelity and the documented long-tail deviations.
-Rough faithful-and-verified completeness: **~85%**.
+- completion clap-bytes; TUI pixel-fidelity and the documented long-tail
+  deviations (doctor details landed: 17/18 exact).
+Rough faithful-and-verified completeness: **~86%**.
