@@ -113,8 +113,8 @@ Remaining toward a literal 100%:
   `<filesystem>` XML capture.
 - **collab tool execution** — the deferred specs dispatch a STUB
   RespondToModel error until the multi-agent runtime wires spawn/wait/etc.
-- UnifiedExec orchestration tail (sandbox policy resolution + async_watcher
-  background end events).
+- UnifiedExec sandbox policy resolution (async_watcher landed: late
+  exec_command_end + output deltas; two narrow approvals-area STUBs in-row).
 - completion clap-bytes; TUI pixel-fidelity and the documented long-tail
   deviations (doctor details landed: 17/18 exact).
-Rough faithful-and-verified completeness: **~86%**.
+Rough faithful-and-verified completeness: **~87%**.
