@@ -40,7 +40,7 @@ Legend: ✅ implemented + tested · 🟡 implemented with documented deviation/p
 | 24 | hooks | ✅ | |
 | 25 | code-mode (JS) | ✅ | goja engine; JS-feature gaps vs V8 documented |
 | 26 | extensions/connectors/memories | 🟡 | guardian/goal/memories/imagegen/websearch; goal tools now LIVE in the headless loop (SQLite-backed via state bridge; events/metrics no-op until registry wiring); connectors-in-core partial |
-| 27–31 | core engine | 🟡 | turn loop / streaming / tools / approvals / compaction / assembly run end-to-end; unified-exec + goals trio + tool_search advertisement wired into the live loop; remaining advanced breadth (multi-agent/realtime) ported as packages, not all wired |
+| 27–31 | core engine | 🟡 | turn loop / streaming / tools / approvals / compaction / assembly run end-to-end; unified-exec + goals + tool_search + LIVE collab execution (spawn/wait/send_input/resume/close) wired into the loop; realtime remains package-only |
 | 32 | app-server protocol | ✅ | JSON-RPC registry, v1/v2 |
 | 33 | app-server + transport | 🟡 | stdio/uds/ws + turn-driving methods; full method surface partial |
 | 34 | `codex exec` (headless) | ✅ | **turn JSONL byte-identical** to codex (text + tool turns) |
@@ -111,10 +111,11 @@ Remaining toward a literal 100%:
 - **skill roots config layers** — project `.codex/skills` + admin
   `/etc/codex/skills` roots await the config-layer stack; non-read-only
   `<filesystem>` XML capture.
-- **collab tool execution** — the deferred specs dispatch a STUB
-  RespondToModel error until the multi-agent runtime wires spawn/wait/etc.
+- **collab fork_context** — live spawn/send_input/resume/wait/close landed
+  (CollabAdapter over the real Control); full-history forks await the parent
+  rollout-path plumbing.
 - UnifiedExec sandbox policy resolution (async_watcher landed: late
   exec_command_end + output deltas; two narrow approvals-area STUBs in-row).
 - TUI pixel-fidelity and the documented long-tail deviations (completion
   clap-bytes landed: all 5 shells byte-identical; doctor details: 17/18 exact).
-Rough faithful-and-verified completeness: **~88%**.
+Rough faithful-and-verified completeness: **~89%**.
