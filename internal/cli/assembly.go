@@ -9,8 +9,10 @@ import (
 	"github.com/sqlrush/codexgo/internal/appserver"
 	"github.com/sqlrush/codexgo/internal/config"
 	"github.com/sqlrush/codexgo/internal/core"
+	"github.com/sqlrush/codexgo/internal/ext/goal"
 	"github.com/sqlrush/codexgo/internal/modelsmanager"
 	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/internal/state"
 	"github.com/sqlrush/codexgo/internal/unifiedexec"
 )
 
@@ -126,6 +128,17 @@ func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultMode
 		sandboxMode = protocol.SandboxModeReadOnly
 	}
 	model := resolveDefaultModel(defaultModel)
+	// Open the SQLite state runtime under the codex home so goal tools persist
+	// thread goals exactly like codex (goal_tools_supported requires the state
+	// DB). A failed open degrades to no goal tools rather than failing the
+	// assembly, mirroring codex's state_db().is_none() path. The runtime stays
+	// open for the process lifetime (the pools close on exit).
+	var goalStateRuntime *state.StateRuntime
+	if rt, err := state.InitRuntime(context.Background(), codexHome, providerID); err == nil {
+		goalStateRuntime = rt
+	} else {
+		fmt.Fprintf(os.Stderr, "warning: state runtime unavailable, goal tools disabled: %v\n", err)
+	}
 	asm, err := appserver.Assemble(appserver.AssemblyConfig{
 		ModelClientFactory: factory,
 		CodexHome:          codexHome,
@@ -139,8 +152,8 @@ func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultMode
 		// Without this the assembly defaults to an empty router and every tool call
 		// is rejected with "unsupported call". The unified-exec executor backs the
 		// exec_command/write_stdin PTY pair that codex advertises by default.
-		ToolRouterFactory: func() (core.ToolRouter, error) {
-			return core.BuiltinToolRouter(core.BuiltinToolDeps{
+		ToolRouterFactory: func(threadID protocol.ThreadID) (core.ToolRouter, error) {
+			deps := core.BuiltinToolDeps{
 				Exec:        newLocalExecService(),
 				UnifiedExec: unifiedexec.NewExecutor(nil),
 				// request_user_input is advertised by default (codex's
@@ -148,7 +161,13 @@ func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultMode
 				// interactive client, so calls resolve as cancelled; the TUI /
 				// app-server clients supply a real requester when they land.
 				UserInput: headlessUserInputRequester{},
-			})
+			}
+			if goalStateRuntime != nil {
+				// Goal tools persist per-thread goals in the goals DB; the nil
+				// event sink and metrics client are the headless defaults.
+				deps.GoalTools = goal.NewToolExecutors(threadID, goal.NewStateRuntimeBridge(goalStateRuntime), nil, nil)
+			}
+			return core.BuiltinToolRouter(deps)
 		},
 	})
 	if err != nil {

@@ -80,27 +80,24 @@ var volatileRequestFields = map[string]bool{
 // stays a green characterization of the fields that already match while precisely
 // enumerating the remaining work toward request-level drop-in:
 //
-//   - input: codex prepends an environment-context user message
-//     (<permissions instructions> + cwd/sandbox/approval/network); codexgo sends
-//     only the bare user turn. Port: turn-context / environment_context rendering.
-//   - tools: codex advertises the full gpt-5.5 tool registry (exec_command PTY +
-//     more) in a fixed order; codexgo advertises a minimal set. Port: the tool
-//     registry + per-model tool selection.
+//   - input: codex appends a `<skills_instructions>` content part (the SKILL.md
+//     scan) to the first developer message and a non-read-only `<filesystem>`
+//     XML block; codexgo's input matches everything else. Port: the skills
+//     scan and the filesystem rendering.
 //
-// NOTE: `instructions` USED to be a gap (codexgo sent gpt-5.5's "friendly"-baked
-// base prompt; codex renders the template with the resolved Pragmatic personality)
-// and is now byte-identical — it is intentionally NOT in this allowlist, so a
-// regression of the personality rendering fails the test loudly.
+// NOTE: `instructions` and `tools` USED to be gaps (base-prompt personality
+// rendering; the tool registry) and are now byte-identical — they are
+// intentionally NOT in this allowlist, so a regression of either fails the
+// test loudly.
 var documentedGapFields = map[string]bool{
 	"input": true,
-	"tools": true,
 }
 
 // TestParityRequestBody asserts codexgo sends a /responses request whose
 // non-volatile, non-documented-gap top-level fields are byte-identical to real
-// codex for a plain turn. The three large request-shape ports (instructions
-// personality, input environment-context, tools registry) are logged as tracked
-// gaps rather than hard failures (see documentedGapFields / docs/PARITY.md).
+// codex for a plain turn. The one remaining request-shape port (the input
+// skills_instructions + filesystem parts) is logged as a tracked gap rather
+// than a hard failure (see documentedGapFields / docs/PARITY.md).
 func TestParityRequestBody(t *testing.T) {
 	refBin := referenceBin(t)
 	cgoBin := buildCodexgo(t)

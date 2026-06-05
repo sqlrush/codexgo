@@ -40,6 +40,7 @@ func newTurnContext(ctx context.Context, sess *Session, subID string, update *Se
 		Features:                     cfg.Features,
 		WebSearchMode:                cfg.WebSearchMode,
 		ExperimentalRequestUserInput: cfg.ExperimentalRequestUserInput,
+		SessionSource:                cfg.SessionSource,
 	}
 	if cfg.ModelReasoningSummary != nil {
 		tc.ReasoningSummary = *cfg.ModelReasoningSummary

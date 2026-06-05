@@ -102,6 +102,11 @@ type TurnContext struct {
 
 	// AppServerClientName identifies the attached app-server client, if any.
 	AppServerClientName *string
+
+	// SessionSource is the opaque session-origin classification
+	// (rollout.SessionSource when populated). It drives source-scoped tool
+	// gating (e.g. goal tools are hidden for the review sub-agent).
+	SessionSource any
 }
 
 // CompactPromptText returns the effective compaction prompt for the turn,

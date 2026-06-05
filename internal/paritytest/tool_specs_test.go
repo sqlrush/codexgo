@@ -1,11 +1,11 @@
 package paritytest
 
-// Per-tool-spec parity: even though the FULL advertised tool set still differs
-// (codexgo lacks the goals/tool_search tools — tracked in docs/PARITY.md), the
-// specs codexgo DOES advertise must be byte-identical to codex's, and the
-// advertised ORDER must be a subsequence of codex's spec_plan order. This locks
-// in the view_image/update_plan/exec_command/write_stdin/apply_patch schemas so
-// a regression fails loudly. Env-gated on CODEX_PARITY_BIN.
+// Per-tool-spec parity: codexgo must advertise codex's FULL default tool
+// registry (11 tools for a plain gpt-5.x turn) with byte-identical specs in the
+// exact spec_plan order. This locks in every advertised schema — the shell PTY
+// pair, plan/goal/user-input utilities, apply_patch, view_image, tool_search,
+// and the hosted web_search — so a regression fails loudly. Env-gated on
+// CODEX_PARITY_BIN.
 
 import (
 	"encoding/json"
@@ -61,12 +61,16 @@ func TestParityToolSpecs(t *testing.T) {
 	ref := toolsByName(t, "codex", refBin)
 	cgo := toolsByName(t, "codexgo", cgoBin)
 
-	// Tools codexgo advertises today that must match codex byte-for-byte. With
-	// the UnifiedExec bridge, the PTY pair (exec_command + write_stdin) is the
-	// advertised shell family on PTY-capable hosts, exactly like codex;
-	// request_user_input (enabled by default) and the hosted web_search spec
-	// (cached mode default) round out 7 of codex's 11.
-	for _, name := range []string{"view_image", "update_plan", "exec_command", "write_stdin", "request_user_input", "apply_patch", "web_search"} {
+	// Every tool in codex's default plain-turn registry must match codex
+	// byte-for-byte: the UnifiedExec PTY pair, the core utility tools (plan,
+	// goals trio, request_user_input, apply_patch, view_image), tool_search
+	// (deferred multi-agent discovery), and the hosted web_search spec.
+	for _, name := range []string{
+		"exec_command", "write_stdin",
+		"update_plan", "get_goal", "create_goal", "update_goal",
+		"request_user_input", "apply_patch", "view_image",
+		"tool_search", "web_search",
+	} {
 		rv, ok := ref[name]
 		if !ok {
 			t.Fatalf("codex did not advertise %q (got %d tools)", name, len(ref))
@@ -82,10 +86,8 @@ func TestParityToolSpecs(t *testing.T) {
 	}
 }
 
-// TestParityToolOrder asserts codexgo advertises no tool codex does not, and
-// that the advertised names appear in codex's order (an ordered subsequence).
-// Once the remaining registry gaps (goals, tool_search) land, this tightens
-// into full-array equality.
+// TestParityToolOrder asserts codexgo advertises exactly codex's tool list for
+// a plain turn — same names, same order, nothing extra, nothing missing.
 func TestParityToolOrder(t *testing.T) {
 	refBin := referenceBin(t)
 	cgoBin := buildCodexgo(t)
@@ -93,44 +95,8 @@ func TestParityToolOrder(t *testing.T) {
 	refOrder, _ := capturedTools(t, "codex", refBin)
 	cgoOrder, _ := capturedTools(t, "codexgo", cgoBin)
 
-	// Subsequence check: every codexgo tool must appear in codex's list, in the
-	// same relative order.
-	i := 0
-	for _, name := range cgoOrder {
-		found := false
-		for i < len(refOrder) {
-			if refOrder[i] == name {
-				found = true
-				i++
-				break
-			}
-			i++
-		}
-		if !found {
-			t.Errorf("codexgo advertises %q out of codex order (or codex does not advertise it)\n codex:   %s\n codexgo: %s",
-				name, strings.Join(refOrder, ","), strings.Join(cgoOrder, ","))
-			break
-		}
+	if strings.Join(refOrder, ",") != strings.Join(cgoOrder, ",") {
+		t.Errorf("advertised tool order mismatch\n codex:   %s\n codexgo: %s",
+			strings.Join(refOrder, ","), strings.Join(cgoOrder, ","))
 	}
-
-	if len(cgoOrder) < len(refOrder) {
-		missing := missingNames(refOrder, cgoOrder)
-		t.Logf("known gap: codexgo advertises %d/%d tools; missing %s",
-			len(cgoOrder), len(refOrder), strings.Join(missing, ","))
-	}
-}
-
-// missingNames returns the names in ref that are absent from got.
-func missingNames(ref, got []string) []string {
-	have := make(map[string]bool, len(got))
-	for _, name := range got {
-		have[name] = true
-	}
-	out := make([]string, 0, len(ref))
-	for _, name := range ref {
-		if !have[name] {
-			out = append(out, name)
-		}
-	}
-	return out
 }

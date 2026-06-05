@@ -323,21 +323,22 @@ func TestBuiltinToolRouterRegistration(t *testing.T) {
 			name: "no deps registers dependency-free + apply_patch",
 			deps: BuiltinToolDeps{},
 			// view_image, update_plan always; apply_patch always (nil FS -> OS);
+			// tool_search always (advertisement is gated per-turn in Spec);
 			// web_search always (hosted spec, provider-executed).
-			wantTools: []string{"apply_patch", "update_plan", "view_image", "web_search"},
+			wantTools: []string{"apply_patch", "tool_search", "update_plan", "view_image", "web_search"},
 		},
 		{
 			name: "exec dep adds shell_command",
 			deps: BuiltinToolDeps{Exec: &mockExecService{}},
 			wantTools: []string{
-				"apply_patch", "shell_command", "update_plan", "view_image", "web_search",
+				"apply_patch", "shell_command", "tool_search", "update_plan", "view_image", "web_search",
 			},
 		},
 		{
 			name: "unified-exec dep adds the PTY pair",
 			deps: BuiltinToolDeps{UnifiedExec: unifiedexec.NewExecutor(nil)},
 			wantTools: []string{
-				"apply_patch", "exec_command", "update_plan", "view_image", "web_search", "write_stdin",
+				"apply_patch", "exec_command", "tool_search", "update_plan", "view_image", "web_search", "write_stdin",
 			},
 		},
 		{
@@ -353,8 +354,8 @@ func TestBuiltinToolRouterRegistration(t *testing.T) {
 			},
 			wantTools: []string{
 				"apply_patch", "exec_command", "request_permissions",
-				"request_user_input", "shell_command", "srv__tool", "update_plan",
-				"view_image", "web_search", "write_stdin",
+				"request_user_input", "shell_command", "srv__tool", "tool_search",
+				"update_plan", "view_image", "web_search", "write_stdin",
 			},
 		},
 	}

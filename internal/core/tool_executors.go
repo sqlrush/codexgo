@@ -81,6 +81,11 @@ type BuiltinToolDeps struct {
 	McpTools []tools.ToolSpec
 	// WebSearch performs web searches.
 	WebSearch WebSearchRunner
+	// GoalTools are the per-thread goal tool executors (get/create/update) from
+	// internal/ext/goal, present only when the host wires a persistent goal
+	// store — the Go analogue of the Rust goal_tools_supported state-DB check.
+	// A nil slice omits the goal tools.
+	GoalTools []goalToolBridge
 	// UserInput routes request_user_input.
 	UserInput UserInputRequester
 	// Permissions routes request_permissions.
@@ -113,6 +118,11 @@ func builtinExecutors(deps BuiltinToolDeps) []toolExecutor {
 
 	// Core utility tools (spec_plan::add_core_utility_tools order).
 	execs = append(execs, planExecutor{})
+	// Goal tools register right after update_plan, mirroring spec_plan's
+	// goal_tools_enabled block; the per-turn gate lives in goalExecutor.Spec.
+	for _, goalTool := range deps.GoalTools {
+		execs = append(execs, goalExecutor{inner: goalTool})
+	}
 	if deps.UserInput != nil {
 		execs = append(execs, requestUserInputExecutor{req: deps.UserInput})
 	}
@@ -130,6 +140,12 @@ func builtinExecutors(deps BuiltinToolDeps) []toolExecutor {
 			execs = append(execs, mcpExecutor{caller: deps.Mcp, spec: spec, name: protocol.PlainToolName(spec.Name())})
 		}
 	}
+
+	// tool_search appends after every other runtime
+	// (spec_plan::append_tool_search_executor runs after add_tool_sources); its
+	// per-turn gate (search-capable model + namespace tools + deferred sources)
+	// lives in toolSearchExecutor.Spec.
+	execs = append(execs, toolSearchExecutor{})
 
 	// Hosted specs come after every runtime in the model-visible order
 	// (build_model_visible_specs_and_registry appends hosted_specs last).

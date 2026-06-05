@@ -73,9 +73,11 @@ type AssemblyConfig struct {
 	ExecService     core.ExecService
 	RolloutRecorder core.RolloutRecorder
 
-	// ToolRouterFactory, when set, builds the per-thread tool router. When nil,
+	// ToolRouterFactory, when set, builds the per-thread tool router; it
+	// receives the spawning thread's id so per-thread tools (e.g. the goal
+	// trio, which persists goals keyed by thread) can be scoped. When nil,
 	// core.NewDefaultToolRouter is used.
-	ToolRouterFactory func() (core.ToolRouter, error)
+	ToolRouterFactory func(threadID protocol.ThreadID) (core.ToolRouter, error)
 }
 
 // Assembly is the constructed engine: the thread manager plus the models
@@ -118,7 +120,7 @@ func Assemble(cfg AssemblyConfig) (*Assembly, error) {
 
 	routerFactory := cfg.ToolRouterFactory
 	if routerFactory == nil {
-		routerFactory = func() (core.ToolRouter, error) {
+		routerFactory = func(protocol.ThreadID) (core.ToolRouter, error) {
 			return core.NewDefaultToolRouter()
 		}
 	}
@@ -131,7 +133,7 @@ func Assemble(cfg AssemblyConfig) (*Assembly, error) {
 		if err != nil {
 			return core.SessionServices{}, fmt.Errorf("appserver: build model client for thread %s: %w", threadID.String(), err)
 		}
-		router, err := routerFactory()
+		router, err := routerFactory(threadID)
 		if err != nil {
 			return core.SessionServices{}, fmt.Errorf("appserver: build tool router for thread %s: %w", threadID.String(), err)
 		}
