@@ -390,6 +390,75 @@ func (c *Control) GetAgentMetadata(agentID protocol.ThreadID) *AgentMetadata {
 	return c.registry.AgentMetadataForThread(agentID)
 }
 
+// SubscribeStatus returns the current status, a channel of subsequent status
+// transitions, and an unsubscribe function for an agent, mirroring the Rust
+// `subscribe_status` (which forwards the thread's watch channel). It returns
+// [core.ErrThreadNotFound] when the agent is not live.
+func (c *Control) SubscribeStatus(_ context.Context, agentID protocol.ThreadID) (protocol.AgentStatus, <-chan protocol.AgentStatus, func(), error) {
+	thread, err := c.engine.GetThread(agentID)
+	if err != nil {
+		return protocol.AgentStatus{Kind: protocol.AgentStatusNotFound}, nil, nil, fmt.Errorf("multiagent: subscribe status for %s: %w", agentID, core.ErrThreadNotFound)
+	}
+	current, ch, unsubscribe := thread.SubscribeAgentStatus()
+	return current, ch, unsubscribe, nil
+}
+
+// ResumeAgent reopens a closed agent from its persisted rollout, mirroring the
+// single-agent subset of the Rust `resume_agent_from_rollout` /
+// `resume_single_agent_from_rollout`: it reserves a spawn slot, prepares the
+// thread-spawn source/metadata, resumes the thread by id, commits the metadata,
+// and persists the open spawn edge.
+//
+// STUB: re-resuming the open thread-spawn descendant tree (the Rust BFS over the
+// persisted state DB) and re-reading the closed agent's nickname/role from the
+// state DB are owned by the state-DB-backed agentgraph; the in-memory path
+// resumes only the directly-targeted agent and re-reserves a fresh nickname. See
+// DEVIATIONS.
+func (c *Control) ResumeAgent(ctx context.Context, cfg core.SessionConfiguration, threadID protocol.ThreadID, source rollout.SessionSource) error {
+	reservation, err := c.registry.ReserveSpawnSlot(c.maxThreads)
+	if err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			reservation.Release()
+		}
+	}()
+
+	resolvedSource, metadata, err := c.prepareSource(reservation, cfg, source)
+	if err != nil {
+		return err
+	}
+
+	resumed, err := c.engine.ResumeThreadByID(ctx, withSource(cfg, resolvedSource, nil), threadID, resolvedSource)
+	if err != nil {
+		return fmt.Errorf("multiagent: resume agent %s: %w", threadID, err)
+	}
+
+	id := resumed.ThreadID
+	metadata.AgentID = &id
+	reservation.Commit(metadata.clone())
+	committed = true
+
+	if err := c.persistThreadSpawnEdge(ctx, resumed.ThreadID, resolvedSource); err != nil {
+		return err
+	}
+	return nil
+}
+
+// GetAgentConfigSnapshot returns the effective config snapshot for a live agent,
+// mirroring the Rust `get_agent_config_snapshot`. It returns nil when the agent
+// is not live.
+func (c *Control) GetAgentConfigSnapshot(agentID protocol.ThreadID) *core.ThreadConfigSnapshot {
+	thread, err := c.engine.GetThread(agentID)
+	if err != nil {
+		return nil
+	}
+	snapshot := thread.ConfigSnapshot()
+	return &snapshot
+}
+
 // ResolveAgentReference resolves an absolute or relative agent reference against
 // the current session source's agent path, returning the live thread id. It is a
 // faithful port of the Rust `resolve_agent_reference`.

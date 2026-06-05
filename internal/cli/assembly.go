@@ -4,14 +4,18 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
 
+	"github.com/sqlrush/codexgo/internal/agentgraph"
 	"github.com/sqlrush/codexgo/internal/api"
 	"github.com/sqlrush/codexgo/internal/appserver"
 	"github.com/sqlrush/codexgo/internal/config"
 	"github.com/sqlrush/codexgo/internal/core"
 	"github.com/sqlrush/codexgo/internal/ext/goal"
 	"github.com/sqlrush/codexgo/internal/modelsmanager"
+	"github.com/sqlrush/codexgo/internal/multiagent"
 	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/internal/rollout"
 	"github.com/sqlrush/codexgo/internal/state"
 	"github.com/sqlrush/codexgo/internal/unifiedexec"
 )
@@ -148,6 +152,15 @@ func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultMode
 	} else {
 		fmt.Fprintf(os.Stderr, "warning: skills manager unavailable, skills instructions disabled: %v\n", err)
 	}
+	// Multi-agent control plane: the thread manager only exists after Assemble
+	// returns, while the per-thread router factory below closes over it, so the
+	// engine is published through a guarded holder after assembly. The spawn-edge
+	// graph is process-wide (shared across roots), like the Rust agent graph.
+	var collabEngine struct {
+		mu  sync.Mutex
+		mgr *core.ThreadManager
+	}
+	collabGraph := agentgraph.NewInMemoryAgentGraphStore()
 	asm, err := appserver.Assemble(appserver.AssemblyConfig{
 		ModelClientFactory: factory,
 		SkillsManager:      skillsManager,
@@ -177,12 +190,36 @@ func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultMode
 				// event sink and metrics client are the headless defaults.
 				deps.GoalTools = goal.NewToolExecutors(threadID, goal.NewStateRuntimeBridge(goalStateRuntime), nil, nil)
 			}
+			// Wire the multi-agent control plane so the deferred collab tools
+			// (spawn_agent et al., discovered via tool_search) actually execute.
+			// Each root thread gets its own Control (registry scope) over the
+			// shared engine + spawn-edge graph, mirroring the per-session
+			// AgentControl in codex.
+			collabEngine.mu.Lock()
+			engine := collabEngine.mgr
+			collabEngine.mu.Unlock()
+			if engine != nil {
+				control, cerr := multiagent.NewControl(multiagent.Config{
+					Engine:    engine,
+					Graph:     collabGraph,
+					SessionID: threadID.ToSessionID(),
+				})
+				if cerr == nil {
+					control.RegisterSessionRoot(threadID, rollout.NewCliSource())
+					deps.Collab = multiagent.NewCollabAdapter(control)
+				} else {
+					fmt.Fprintf(os.Stderr, "warning: collab control unavailable: %v\n", cerr)
+				}
+			}
 			return core.BuiltinToolRouter(deps)
 		},
 	})
 	if err != nil {
 		return nil, appserver.Defaults{}, err
 	}
+	collabEngine.mu.Lock()
+	collabEngine.mgr = asm.ThreadManager
+	collabEngine.mu.Unlock()
 	defaults := appserver.Defaults{
 		Model:      model,
 		ProviderID: providerID,

@@ -189,6 +189,43 @@ func (m *ThreadManager) ResumeThreadFromRollout(ctx context.Context, cfg Session
 	return m.ResumeThreadWithHistory(ctx, cfg, history)
 }
 
+// ResumeThreadByID resumes a thread by reading its persisted history from the
+// store keyed by thread id (rather than rollout path), then replaying it under
+// the supplied session source. It is the resume-by-id path the multi-agent
+// control plane uses to reopen a closed sub-agent, mirroring the Rust
+// `resume_single_agent_from_rollout` store read by `ThreadId`.
+func (m *ThreadManager) ResumeThreadByID(ctx context.Context, cfg SessionConfiguration, threadID protocol.ThreadID, source rollout.SessionSource) (NewThread, error) {
+	stored, err := m.store.ReadThread(ctx, threadstore.ReadThreadParams{
+		ThreadID:        threadID,
+		IncludeArchived: true,
+		IncludeHistory:  true,
+	})
+	if err != nil {
+		return NewThread{}, mapStoreReadError(err)
+	}
+	history, err := storedThreadToInitialHistory(stored, nil)
+	if err != nil {
+		return NewThread{}, err
+	}
+	options := StartThreadOptions{
+		Configuration:  cfg,
+		InitialHistory: history,
+		SessionSource:  &source,
+		ThreadSource:   subagentThreadSourceForResume(source),
+	}
+	return m.spawnThread(ctx, options, nil)
+}
+
+// subagentThreadSourceForResume returns the subagent analytics source for a
+// thread-spawn resume, matching the spawn path's classification.
+func subagentThreadSourceForResume(source rollout.SessionSource) *rollout.ThreadSource {
+	if source.Kind == rollout.SessionSourceKindSubAgent {
+		ts := rollout.ThreadSourceSubagent
+		return &ts
+	}
+	return nil
+}
+
 // ResumeThreadWithHistory resumes a thread from already-loaded history, mirroring
 // the Rust `ThreadManager::resume_thread_with_history`.
 func (m *ThreadManager) ResumeThreadWithHistory(ctx context.Context, cfg SessionConfiguration, history rollout.InitialHistory) (NewThread, error) {

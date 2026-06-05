@@ -6,13 +6,14 @@ package core
 // tool_search) when search + namespace tools are available and Feature::Collab is
 // enabled without MultiAgentV2. This file mirrors that exposure: each executor
 // reports a hidden spec (Spec returns false), exposes its v1 spec + search text
-// for tool_search via [deferredToolSource], and handles invocations with a
-// documented STUB error.
+// for tool_search via [deferredToolSource], and handles invocations through the
+// injected [CollabControl] control plane.
 //
-// STUB: the actual multi-agent execution (spawning child threads, routing
-// messages, waiting) lives in internal/multiagent and is wired by the
-// multi-agent area; these deferred runtimes only need to participate in
-// tool_search and reject direct calls with a RespondToModel error.
+// The actual multi-agent execution (spawning child threads, routing messages,
+// waiting) lives in internal/multiagent and is reached through the [CollabControl]
+// seam (see collab_control.go). When no control plane is wired, the runtimes
+// still participate in tool_search but reject direct calls with a RespondToModel
+// error, matching a default run with collab tools deferred but unavailable.
 
 import (
 	"context"
@@ -23,6 +24,19 @@ import (
 	maspec "github.com/sqlrush/codexgo/internal/multiagent/spec"
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/tools"
+)
+
+// collabHandlerKind discriminates which real handler a [collabExecutor] routes a
+// direct invocation to. The spec/search machinery is shared; only the dispatch
+// differs per tool.
+type collabHandlerKind int
+
+const (
+	collabHandlerSpawn collabHandlerKind = iota
+	collabHandlerSendInput
+	collabHandlerResume
+	collabHandlerWait
+	collabHandlerClose
 )
 
 // deferredToolSource is implemented by deferred runtimes that contribute a
@@ -42,6 +56,11 @@ type collabExecutor struct {
 	// buildSpec builds the v1 ToolSpec for the turn (spawn_agent needs the
 	// turn's available models; the others ignore the turn).
 	buildSpec func(tc *TurnContext) tools.ToolSpec
+	// kind selects the real handler for a direct invocation.
+	kind collabHandlerKind
+	// control is the injected multi-agent control plane. When nil the runtime
+	// rejects direct calls with a RespondToModel error (deferred-but-unavailable).
+	control CollabControl
 }
 
 func (e collabExecutor) Name() protocol.ToolName { return e.name }
@@ -58,10 +77,28 @@ func (collabExecutor) MatchesPayload(p tools.ToolPayload) bool {
 	return p.Kind == tools.ToolPayloadKindFunction
 }
 
-// Handle rejects direct invocations with a model-facing error: the multi-agent
-// execution path is not yet wired into the turn runner (STUB).
-func (e collabExecutor) Handle(_ context.Context, _ *toolHandlerContext) (tools.ToolOutput, error) {
-	return nil, tools.RespondToModelError(e.name.Name + " is not yet supported in codexgo")
+// Handle dispatches a direct invocation to the real multi-agent handler through
+// the injected [CollabControl]. When no control plane is wired the runtime
+// rejects the call with a model-facing error (deferred-but-unavailable), so a
+// run without the multi-agent area assembled still answers cleanly.
+func (e collabExecutor) Handle(ctx context.Context, h *toolHandlerContext) (tools.ToolOutput, error) {
+	if e.control == nil {
+		return nil, tools.RespondToModelError("collab manager unavailable")
+	}
+	switch e.kind {
+	case collabHandlerSpawn:
+		return handleSpawnAgent(ctx, e.control, h)
+	case collabHandlerSendInput:
+		return handleSendInput(ctx, e.control, h)
+	case collabHandlerResume:
+		return handleResumeAgent(ctx, e.control, h)
+	case collabHandlerWait:
+		return handleWaitAgent(ctx, e.control, h)
+	case collabHandlerClose:
+		return handleCloseAgent(ctx, e.control, h)
+	default:
+		return nil, tools.RespondToModelError(e.name.Name + " is not supported")
+	}
 }
 
 // searchInfo returns the deferred tool_search entry for this turn when collab
@@ -113,10 +150,19 @@ func bareSpawnAgentOptions() maspec.SpawnAgentToolOptions {
 	}
 }
 
-// collabExecutors returns the five deferred collab runtimes in spec_plan
-// registration order (spawn, send_input, resume, wait, close). The order fixes
-// the BM25 corpus document ids, which determines tie-break order in search.
+// collabExecutors returns the five deferred collab runtimes with no control
+// plane wired (tool_search-only; direct calls report the manager unavailable).
+// Prefer [collabExecutorsWithDeps] when a [CollabControl] is available.
 func collabExecutors() []collabExecutor {
+	return collabExecutorsWithDeps(BuiltinToolDeps{})
+}
+
+// collabExecutorsWithDeps returns the five deferred collab runtimes in spec_plan
+// registration order (spawn, send_input, resume, wait, close), each wired with
+// the injected control plane. The order fixes the BM25 corpus document ids,
+// which determines tie-break order in search.
+func collabExecutorsWithDeps(deps BuiltinToolDeps) []collabExecutor {
+	control := deps.Collab
 	return []collabExecutor{
 		{
 			name:       protocol.NamespacedToolName(maspec.MultiAgentV1Namespace, "spawn_agent"),
@@ -124,16 +170,22 @@ func collabExecutors() []collabExecutor {
 			buildSpec: func(*TurnContext) tools.ToolSpec {
 				return maspec.CreateSpawnAgentToolV1(bareSpawnAgentOptions())
 			},
+			kind:    collabHandlerSpawn,
+			control: control,
 		},
 		{
 			name:       protocol.NamespacedToolName(maspec.MultiAgentV1Namespace, "send_input"),
 			searchText: maspec.SendInputSearchText,
 			buildSpec:  func(*TurnContext) tools.ToolSpec { return maspec.CreateSendInputToolV1() },
+			kind:       collabHandlerSendInput,
+			control:    control,
 		},
 		{
 			name:       protocol.NamespacedToolName(maspec.MultiAgentV1Namespace, "resume_agent"),
 			searchText: maspec.ResumeAgentSearchText,
 			buildSpec:  func(*TurnContext) tools.ToolSpec { return maspec.CreateResumeAgentTool() },
+			kind:       collabHandlerResume,
+			control:    control,
 		},
 		{
 			name:       protocol.NamespacedToolName(maspec.MultiAgentV1Namespace, "wait_agent"),
@@ -141,11 +193,15 @@ func collabExecutors() []collabExecutor {
 			buildSpec: func(*TurnContext) tools.ToolSpec {
 				return maspec.CreateWaitAgentToolV1(maspec.DefaultWaitAgentTimeoutOptions())
 			},
+			kind:    collabHandlerWait,
+			control: control,
 		},
 		{
 			name:       protocol.NamespacedToolName(maspec.MultiAgentV1Namespace, "close_agent"),
 			searchText: maspec.CloseAgentSearchText,
 			buildSpec:  func(*TurnContext) tools.ToolSpec { return maspec.CreateCloseAgentToolV1() },
+			kind:       collabHandlerClose,
+			control:    control,
 		},
 	}
 }

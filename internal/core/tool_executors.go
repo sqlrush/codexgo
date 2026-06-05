@@ -86,6 +86,12 @@ type BuiltinToolDeps struct {
 	// store — the Go analogue of the Rust goal_tools_supported state-DB check.
 	// A nil slice omits the goal tools.
 	GoalTools []goalToolBridge
+	// Collab is the multi-agent control plane the deferred collab tools route
+	// through (spawn_agent/send_input/resume_agent/wait_agent/close_agent). A nil
+	// value leaves the tools registered for tool_search but unable to execute
+	// (direct calls report the manager unavailable), matching a run without the
+	// multi-agent area assembled.
+	Collab CollabControl
 	// UserInput routes request_user_input.
 	UserInput UserInputRequester
 	// Permissions routes request_permissions.
@@ -147,7 +153,7 @@ func builtinExecutors(deps BuiltinToolDeps) []toolExecutor {
 	// dispatch when the per-turn deferred-exposure gate holds (collabExecutor's
 	// Spec is hidden and searchInfo is gated on collabDeferredEligible). The
 	// registration order fixes the BM25 corpus document ids.
-	for _, ce := range collabExecutors() {
+	for _, ce := range collabExecutorsWithDeps(deps) {
 		execs = append(execs, ce)
 	}
 

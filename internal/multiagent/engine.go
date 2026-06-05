@@ -22,6 +22,9 @@ type ThreadEngine interface {
 	// ResumeThreadFromRollout resumes a child thread by reading its persisted
 	// history from a rollout path.
 	ResumeThreadFromRollout(ctx context.Context, cfg core.SessionConfiguration, rolloutPath string) (core.NewThread, error)
+	// ResumeThreadByID resumes a child thread by reading its persisted history
+	// from the store keyed by thread id, under the supplied session source.
+	ResumeThreadByID(ctx context.Context, cfg core.SessionConfiguration, threadID protocol.ThreadID, source rollout.SessionSource) (core.NewThread, error)
 	// ForkThread forks a child thread by reading the parent's persisted history
 	// from a rollout path and snapshotting it per snapshot.
 	ForkThread(ctx context.Context, snapshot core.ForkSnapshot, cfg core.SessionConfiguration, rolloutPath string, threadSource *rollout.ThreadSource, persistExtendedHistory bool) (core.NewThread, error)

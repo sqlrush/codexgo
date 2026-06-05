@@ -295,6 +295,13 @@ func (c *Codex) Shutdown(ctx context.Context) error {
 // AgentStatus returns the latest known agent status.
 func (c *Codex) AgentStatus() protocol.AgentStatus { return c.session.AgentStatus() }
 
+// SubscribeAgentStatus subscribes to this thread's agent-status transitions,
+// forwarding to [Session.SubscribeAgentStatus]. Mirrors the watch-channel
+// subscription `AgentControl` reaches via the thread.
+func (c *Codex) SubscribeAgentStatus() (protocol.AgentStatus, <-chan protocol.AgentStatus, func()) {
+	return c.session.SubscribeAgentStatus()
+}
+
 // isClosed reports whether the submission queue has been closed (i.e. the loop
 // has been shut down). It mirrors the Rust `tx_sub.is_closed()` check used by
 // `CodexThread::is_running`.

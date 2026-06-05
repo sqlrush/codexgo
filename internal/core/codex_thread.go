@@ -93,6 +93,14 @@ func (t *CodexThread) ShutdownAndWait(ctx context.Context) error {
 // AgentStatus returns the latest known agent status for this thread.
 func (t *CodexThread) AgentStatus() protocol.AgentStatus { return t.codex.AgentStatus() }
 
+// SubscribeAgentStatus returns the current status, a channel of subsequent
+// transitions, and an unsubscribe function, mirroring the Rust
+// `CodexThread`/`Session::subscribe_status` watch handle that `AgentControl`
+// uses while waiting on a child agent.
+func (t *CodexThread) SubscribeAgentStatus() (protocol.AgentStatus, <-chan protocol.AgentStatus, func()) {
+	return t.codex.SubscribeAgentStatus()
+}
+
 // RolloutPath returns the local rollout path, when filesystem-backed.
 func (t *CodexThread) RolloutPath() *string { return clonePtr(t.rolloutPath) }
 

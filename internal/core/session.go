@@ -167,6 +167,36 @@ func (s *Session) setAgentStatus(status protocol.AgentStatus) {
 	}
 }
 
+// SubscribeAgentStatus returns the current status plus a channel that receives
+// every subsequent status transition, and an unsubscribe function the caller
+// must invoke when done. It is the Go analogue of the Rust
+// `Session::subscribe_status` watch channel: the channel is buffered so a slow
+// watcher never blocks the status producer; the latest value is always readable
+// via [Session.AgentStatus]. The unsubscribe closes the channel and removes it
+// from the watcher set.
+func (s *Session) SubscribeAgentStatus() (protocol.AgentStatus, <-chan protocol.AgentStatus, func()) {
+	s.agentStatusMu.Lock()
+	current := s.agentStatus
+	// Buffer generously so bursts of transitions during a turn do not drop the
+	// final status before the watcher observes it.
+	ch := make(chan protocol.AgentStatus, 16)
+	s.statusWatchers = append(s.statusWatchers, ch)
+	s.agentStatusMu.Unlock()
+
+	unsubscribe := func() {
+		s.agentStatusMu.Lock()
+		defer s.agentStatusMu.Unlock()
+		for i, w := range s.statusWatchers {
+			if w == ch {
+				s.statusWatchers = append(s.statusWatchers[:i], s.statusWatchers[i+1:]...)
+				close(ch)
+				return
+			}
+		}
+	}
+	return current, ch, unsubscribe
+}
+
 // nextInternalSubmissionID returns a fresh auto-compaction-style internal
 // submission id, mirroring the Rust `next_internal_sub_id`.
 func (s *Session) nextInternalSubmissionID() string {
