@@ -36,7 +36,7 @@ Legend: ✅ implemented + tested · 🟡 implemented with documented deviation/p
 | 20 | git / file-search / watch | 🟡 | go-git/fsnotify; fuzzy ranking best-effort |
 | 21 | MCP client | ✅ | stdio+http, namespacing |
 | 22 | plugins & marketplace | 🟡 | manifest/install/list; remote-sync orchestration deferred |
-| 23 | skills | ✅ | |
+| 23 | skills | ✅ | loader/render/system-install + LIVE `<skills_instructions>` injection (default roots; project/admin layer roots await config-layer stack) |
 | 24 | hooks | ✅ | |
 | 25 | code-mode (JS) | ✅ | goja engine; JS-feature gaps vs V8 documented |
 | 26 | extensions/connectors/memories | 🟡 | guardian/goal/memories/imagegen/websearch; goal tools now LIVE in the headless loop (SQLite-backed via state bridge; events/metrics no-op until registry wiring); connectors-in-core partial |
@@ -69,8 +69,8 @@ Automated, credential-free, binary-vs-binary (env-gated on `CODEX_PARITY_BIN`):
 | `exec --json` error turn | ✅ same terminal `turn.failed` + exit code (msg text tracked) |
 | `exec -o/--output-last-message` | ✅ byte-identical file |
 | `exec --output-schema` request `text` | ✅ byte-identical json_schema block |
-| full `/responses` request body | 🟡 every top-level field byte-identical — incl. `instructions` and the full `tools` registry — except `input` (skills_instructions + filesystem XML tracked) |
-| `/responses` `input` context | ✅ permissions + environment_context byte-identical (`TestParityInputContext`); `<skills_instructions>` sub-gap tracked |
+| full `/responses` request body | ✅ **EVERY top-level field byte-identical** (`documentedGapFields` empty): scalars, `instructions`, full 11-tool `tools` registry, and `input` (per-run CODEX_HOME normalized) |
+| `/responses` `input` context | ✅ permissions + **skills_instructions** (system skills materialized under skills/.system) + environment_context all byte-identical (`TestParityInputContext`) |
 | built-in tool specs | ✅ **11/11 byte-identical, full-array order equality** (`TestParityToolSpecs` + `TestParityToolOrder`): UnifiedExec PTY pair, update_plan, goals trio (live SQLite store), request_user_input, apply_patch (custom grammar), view_image, tool_search (empty-entries dispatch until BM25/deferred registry), hosted web_search |
 | `doctor --json` | 🟡 18 check IDs + container/keys match; per-check `details` shape differs |
 | `completion` | 🟡 functional; not clap-byte-identical |
@@ -92,11 +92,16 @@ are tracked in `DEVIATIONS.md` (tool_search returns the empty-entries result
 until the deferred registry + BM25 land; goal events no-op in the headless
 bridge).
 
+**The plain-turn `/responses` request is now a FULL byte-level drop-in** —
+`documentedGapFields` is empty; skills_instructions renders from the same
+embedded system skills codex materializes under `CODEX_HOME/skills/.system`.
+
 Remaining toward a literal 100%:
-- **`input` context** — only `<skills_instructions>` (a `SKILL.md` scan,
-  ~4.9 KB) and the non-read-only `<filesystem>` XML remain (the LAST
-  request-body gap).
 - **tool_search dispatch depth** — the five collab agent tool specs as deferred
   runtimes + the BM25 engine (multi-agent area).
+- **skill roots config layers** — project `.codex/skills` + admin
+  `/etc/codex/skills` roots await the config-layer stack; non-read-only
+  `<filesystem>` XML capture.
+- UnifiedExec orchestration tail (sandbox policy, async watcher, call ids).
 - TUI pixel-fidelity and the documented long-tail deviations.
-Rough faithful-and-verified completeness: **~80%**.
+Rough faithful-and-verified completeness: **~82%**.

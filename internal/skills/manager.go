@@ -2,6 +2,8 @@ package skills
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"sync"
 
 	"github.com/sqlrush/codexgo/internal/utils/abspath"
@@ -45,10 +47,10 @@ func NewSkillsManagerWithRestrictionProduct(codexHome abspath.AbsolutePathBuf, b
 		// removal fails.
 		UninstallSystemSkills(codexHome)
 	} else if err := InstallSystemSkills(codexHome); err != nil {
-		// Mirror the Rust behavior of logging and continuing; here we swallow the
-		// error since callers cannot recover and discovery proceeds without the
-		// cache.
-		_ = err
+		// Mirror the Rust tracing::error log-and-continue: callers cannot
+		// recover (discovery proceeds without the system cache), but the
+		// failure must not be silent.
+		fmt.Fprintf(os.Stderr, "warning: failed to install system skills: %v\n", err)
 	}
 	return manager
 }

@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -19,6 +20,15 @@ import (
 // runPlainTurnCapture runs `bin exec --json` against a capturing server and
 // returns the first decoded request body.
 func runPlainTurnCapture(t *testing.T, who, bin string) map[string]json.RawMessage {
+	t.Helper()
+	req, _ := runPlainTurnCaptureHome(t, who, bin)
+	return req
+}
+
+// runPlainTurnCaptureHome additionally returns the per-run CODEX_HOME so
+// callers can normalize home-embedded absolute paths (the skills_instructions
+// scan renders SKILL.md paths under CODEX_HOME) before comparing captures.
+func runPlainTurnCaptureHome(t *testing.T, who, bin string) (map[string]json.RawMessage, string) {
 	t.Helper()
 	srv := newCapturingServer(t)
 	defer srv.Close()
@@ -48,7 +58,18 @@ func runPlainTurnCapture(t *testing.T, who, bin string) map[string]json.RawMessa
 	if err := json.Unmarshal(srv.requests[0], &req); err != nil {
 		t.Fatalf("%s decode request body: %v", who, err)
 	}
-	return req
+	return req, home
+}
+
+// normalizeHomePaths replaces the per-run CODEX_HOME (in both its literal and
+// symlink-resolved forms — macOS /var vs /private/var) with a stable
+// placeholder so home-embedded absolute paths compare across runs.
+func normalizeHomePaths(s, home string) string {
+	s = strings.ReplaceAll(s, home, "<CODEX_HOME>")
+	if resolved, err := filepath.EvalSymlinks(home); err == nil && resolved != home {
+		s = strings.ReplaceAll(s, resolved, "<CODEX_HOME>")
+	}
+	return s
 }
 
 // canonField re-marshals a raw field value in canonical (sorted-key) form so two
@@ -74,36 +95,27 @@ var volatileRequestFields = map[string]bool{
 }
 
 // documentedGapFields are top-level request fields where codexgo is a KNOWN,
-// tracked divergence from codex (see docs/PARITY.md "request-body gaps"). They are
-// compared for presence (codexgo must still send the field) and logged with byte
-// sizes, but a value difference is reported via t.Log, not t.Error, so this test
-// stays a green characterization of the fields that already match while precisely
-// enumerating the remaining work toward request-level drop-in:
+// tracked divergence from codex (see docs/PARITY.md "request-body gaps"). They
+// are compared for presence (codexgo must still send the field) and logged
+// with byte sizes, but a value difference is reported via t.Log, not t.Error.
 //
-//   - input: codex appends a `<skills_instructions>` content part (the SKILL.md
-//     scan) to the first developer message and a non-read-only `<filesystem>`
-//     XML block; codexgo's input matches everything else. Port: the skills
-//     scan and the filesystem rendering.
-//
-// NOTE: `instructions` and `tools` USED to be gaps (base-prompt personality
-// rendering; the tool registry) and are now byte-identical — they are
-// intentionally NOT in this allowlist, so a regression of either fails the
-// test loudly.
-var documentedGapFields = map[string]bool{
-	"input": true,
-}
+// The map is now EMPTY: every top-level request field — including
+// `instructions` (personality rendering), `tools` (the full 11-tool registry),
+// and `input` (permissions + skills_instructions + environment_context, with
+// per-run CODEX_HOME paths normalized) — is byte-identical to codex and
+// enforced below, so any regression fails the test loudly.
+var documentedGapFields = map[string]bool{}
 
 // TestParityRequestBody asserts codexgo sends a /responses request whose
-// non-volatile, non-documented-gap top-level fields are byte-identical to real
-// codex for a plain turn. The one remaining request-shape port (the input
-// skills_instructions + filesystem parts) is logged as a tracked gap rather
-// than a hard failure (see documentedGapFields / docs/PARITY.md).
+// non-volatile top-level fields are ALL byte-identical to real codex for a
+// plain turn (per-run CODEX_HOME paths normalized) — full request-level
+// drop-in for this scenario.
 func TestParityRequestBody(t *testing.T) {
 	refBin := referenceBin(t)
 	cgoBin := buildCodexgo(t)
 
-	ref := runPlainTurnCapture(t, "codex", refBin)
-	cgo := runPlainTurnCapture(t, "codexgo", cgoBin)
+	ref, refHome := runPlainTurnCaptureHome(t, "codex", refBin)
+	cgo, cgoHome := runPlainTurnCaptureHome(t, "codexgo", cgoBin)
 
 	// 1) Same set of top-level keys (codexgo must send every field codex does).
 	refKeys := sortedKeys(ref)
@@ -112,8 +124,9 @@ func TestParityRequestBody(t *testing.T) {
 		t.Errorf("top-level request key set mismatch\n codex:   %v\n codexgo: %v", refKeys, cgoKeys)
 	}
 
-	// 2) Each non-volatile field byte-identical (canonicalized), except the
-	//    documented large-port gaps which are logged for tracking.
+	// 2) Each non-volatile field byte-identical (canonicalized; per-run
+	//    CODEX_HOME paths normalized), except the documented large-port gaps
+	//    which are logged for tracking.
 	for _, k := range refKeys {
 		cVal, ok := cgo[k]
 		if !ok {
@@ -123,7 +136,8 @@ func TestParityRequestBody(t *testing.T) {
 		if volatileRequestFields[k] {
 			continue
 		}
-		rc, cc := canonField(t, ref[k]), canonField(t, cVal)
+		rc := normalizeHomePaths(canonField(t, ref[k]), refHome)
+		cc := normalizeHomePaths(canonField(t, cVal), cgoHome)
 		if rc == cc {
 			continue
 		}

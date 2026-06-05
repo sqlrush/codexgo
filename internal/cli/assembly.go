@@ -139,8 +139,18 @@ func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultMode
 	} else {
 		fmt.Fprintf(os.Stderr, "warning: state runtime unavailable, goal tools disabled: %v\n", err)
 	}
+	// The skills manager installs the embedded system skills under
+	// CODEX_HOME/skills/.system and renders the <skills_instructions> developer
+	// section for new threads, like codex's include_skill_instructions default.
+	var skillsManager core.SkillsManager
+	if sm, err := newAssemblySkillsManager(codexHome); err == nil {
+		skillsManager = sm
+	} else {
+		fmt.Fprintf(os.Stderr, "warning: skills manager unavailable, skills instructions disabled: %v\n", err)
+	}
 	asm, err := appserver.Assemble(appserver.AssemblyConfig{
 		ModelClientFactory: factory,
+		SkillsManager:      skillsManager,
 		CodexHome:          codexHome,
 		DefaultModel:       model,
 		// The bundled catalog lets the per-turn tool selection read the real

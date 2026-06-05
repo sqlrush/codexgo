@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,13 +13,20 @@ import (
 
 // buildSessionInitialContext renders the codex initial-context messages seeded
 // into a new thread's history at session start: the developer-role
-// `<permissions instructions>` and the user-role `<environment_context>`. Mirrors
-// the environment-context subset of Session::build_initial_context. It is only
-// invoked when SessionConfiguration.IncludeEnvironmentContext is set (the real
-// binary's assembly), so unit tests are unaffected.
-func buildSessionInitialContext(cfg SessionConfiguration) []protocol.ResponseItem {
+// `<permissions instructions>` (plus the `<skills_instructions>` content part
+// when the host renders one) and the user-role `<environment_context>`.
+// Mirrors the developer-section assembly of Session::build_initial_context,
+// where every developer section becomes one content part of a single
+// developer message. It is only invoked when
+// SessionConfiguration.IncludeEnvironmentContext is set (the real binary's
+// assembly), so unit tests are unaffected.
+func buildSessionInitialContext(cfg SessionConfiguration, skillsInstructions *string) []protocol.ResponseItem {
 	mode := permissionsSandboxModeFromProtocol(cfg.SandboxMode)
 	permissions := RenderPermissionsInstructions(mode, cfg.NetworkAccessEnabled, cfg.ApprovalPolicy.Kind)
+	developerSections := []string{permissions}
+	if skillsInstructions != nil && *skillsInstructions != "" {
+		developerSections = append(developerSections, *skillsInstructions)
+	}
 
 	env := RenderEnvironmentContext(EnvironmentContextInput{
 		Cwd:         cfg.Cwd,
@@ -29,9 +37,37 @@ func buildSessionInitialContext(cfg SessionConfiguration) []protocol.ResponseIte
 	})
 
 	return []protocol.ResponseItem{
-		developerTextMessage(permissions),
+		developerMessage(developerSections),
 		userTextMessage(env),
 	}
+}
+
+// developerMessage builds a developer-role message carrying one input-text
+// content part per section, mirroring codex's developer-sections bundling.
+func developerMessage(sections []string) protocol.ResponseItem {
+	content := make([]protocol.ContentItem, 0, len(sections))
+	for _, section := range sections {
+		content = append(content, protocol.ContentItem{
+			Type: protocol.ContentItemKindInputText,
+			Text: section,
+		})
+	}
+	return protocol.ResponseItem{
+		Type:    protocol.ResponseItemKindMessage,
+		Role:    "developer",
+		Content: content,
+	}
+}
+
+// InitialSkillsRenderer is the optional capability a SkillsManager implements
+// to render the `<skills_instructions>` developer section for a new thread's
+// initial context (the headless analogue of codex's include_skill_instructions
+// block in build_initial_context). ok=false means no skills are eligible and
+// the section is omitted.
+type InitialSkillsRenderer interface {
+	// RenderInitialSkillsInstructions scans the skill roots for cwd and renders
+	// the tagged skills_instructions text under the model's metadata budget.
+	RenderInitialSkillsInstructions(ctx context.Context, cwd string, contextWindow *int64) (string, bool)
 }
 
 // permissionsSandboxModeFromProtocol maps a protocol.SandboxMode to the renderer's

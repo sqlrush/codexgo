@@ -120,12 +120,24 @@ func Spawn(ctx context.Context, args CodexSpawnArgs) (CodexSpawnOk, error) {
 	seedInitialHistory(sess, args.ConversationHistory)
 
 	// For a fresh thread (no resumed/forked history), seed the codex initial
-	// context — the `<permissions instructions>` + `<environment_context>` messages
-	// — so the model sees the active sandbox/approval and cwd from turn one, like
-	// the reference binary. Gated on IncludeEnvironmentContext (set by the real
-	// binary's assembly) so direct-construction unit tests are unaffected.
+	// context — the `<permissions instructions>` (+ `<skills_instructions>`)
+	// developer message and the `<environment_context>` user message — so the
+	// model sees the active sandbox/approval, available skills, and cwd from
+	// turn one, like the reference binary. Gated on IncludeEnvironmentContext
+	// (set by the real binary's assembly) so direct-construction unit tests are
+	// unaffected.
 	if args.Configuration.IncludeEnvironmentContext && len(sess.HistoryItems()) == 0 {
-		sess.RecordItems(buildSessionInitialContext(args.Configuration))
+		var skillsInstructions *string
+		if renderer, ok := args.Services.SkillsManager.(InitialSkillsRenderer); ok {
+			var contextWindow *int64
+			if mc := args.Services.ModelClient; mc != nil {
+				contextWindow = mc.ContextWindow()
+			}
+			if text, ok := renderer.RenderInitialSkillsInstructions(sessionCtx, args.Configuration.Cwd, contextWindow); ok {
+				skillsInstructions = &text
+			}
+		}
+		sess.RecordItems(buildSessionInitialContext(args.Configuration, skillsInstructions))
 	}
 
 	codex := &Codex{
