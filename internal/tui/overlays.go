@@ -160,7 +160,13 @@ func (s OverlayStack) HandleKey(msg tea.KeyMsg) (OverlayStack, tea.Cmd) {
 	if isCancelKey(msg) && !prefersEscRouting(top, msg) {
 		if cc, okCC := top.(overlayCtrlC); okCC {
 			if cc.OnCtrlC() == CancellationHandled {
-				return s.prune(), nil
+				// Views queue their cancel callbacks for deferred execution
+				// (running them synchronously inside Update deadlocks the
+				// unbuffered Program.Send); drain them into the returned cmd.
+				if p, okP := top.(interface{ PendingCmd() tea.Cmd }); okP {
+					cmd = p.PendingCmd()
+				}
+				return s.prune(), cmd
 			}
 		}
 	}

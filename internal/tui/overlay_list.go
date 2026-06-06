@@ -85,6 +85,14 @@ type ListSelectionOverlay struct {
 	initialSelected   int
 	onSelectionChange func(int, *AppEventSender)
 	onCancel          func(*AppEventSender)
+
+	// pendingCallbacks queues item/selection/cancel callbacks raised during key
+	// handling. They are NEVER run synchronously: AppEventSender.Send forwards
+	// to bubbletea's UNBUFFERED Program.Send, and the event loop is still
+	// blocked inside Update while a key is handled — a synchronous Send
+	// deadlocks the whole TUI. drainPending wraps the queue into a tea.Cmd,
+	// which bubbletea executes on a separate goroutine after Update returns.
+	pendingCallbacks []func(*AppEventSender)
 }
 
 // NewListSelectionOverlay builds a list selection overlay from params. A
@@ -218,12 +226,43 @@ func (v *ListSelectionOverlay) firstEnabledVisible() int {
 	return -1
 }
 
+// queueCallback enqueues a sender callback for deferred execution (see the
+// pendingCallbacks field for why callbacks must not run inside Update).
+func (v *ListSelectionOverlay) queueCallback(fn func(*AppEventSender)) {
+	if fn == nil {
+		return
+	}
+	v.pendingCallbacks = append(v.pendingCallbacks, fn)
+}
+
+// drainPending wraps the queued callbacks into a single command that runs them
+// in order on bubbletea's command goroutine. Returns nil when nothing queued.
+func (v *ListSelectionOverlay) drainPending() tea.Cmd {
+	if len(v.pendingCallbacks) == 0 {
+		return nil
+	}
+	callbacks := v.pendingCallbacks
+	v.pendingCallbacks = nil
+	sender := v.sender
+	return func() tea.Msg {
+		for _, fn := range callbacks {
+			fn(sender)
+		}
+		return nil
+	}
+}
+
+// PendingCmd exposes drainPending for the overlay stack's cancel-key branch,
+// which returns before HandleKey runs.
+func (v *ListSelectionOverlay) PendingCmd() tea.Cmd { return v.drainPending() }
+
 func (v *ListSelectionOverlay) fireSelectionChanged() {
 	if v.onSelectionChange == nil {
 		return
 	}
 	if actual := v.selectedActualIdx(); actual >= 0 {
-		v.onSelectionChange(actual, v.sender)
+		onChange := v.onSelectionChange
+		v.queueCallback(func(sender *AppEventSender) { onChange(actual, sender) })
 	}
 }
 
@@ -275,7 +314,7 @@ func (v *ListSelectionOverlay) accept() {
 		v.lastSelected = actual
 		item := v.items[actual]
 		for _, act := range item.Actions {
-			act(v.sender)
+			v.queueCallback(act)
 		}
 		if item.DismissOnSelect {
 			v.completion = CompletionAccepted
@@ -283,9 +322,7 @@ func (v *ListSelectionOverlay) accept() {
 		return
 	}
 	if actual < 0 {
-		if v.onCancel != nil {
-			v.onCancel(v.sender)
-		}
+		v.queueCallback(v.onCancel)
 		v.completion = CompletionCancelled
 	}
 }
@@ -301,7 +338,9 @@ func (v *ListSelectionOverlay) toggleSelected() {
 	}
 	tog.IsOn = !tog.IsOn
 	if tog.Action != nil {
-		tog.Action(tog.IsOn, v.sender)
+		action := tog.Action
+		isOn := tog.IsOn
+		v.queueCallback(func(sender *AppEventSender) { action(isOn, sender) })
 	}
 }
 
@@ -346,7 +385,7 @@ func (v *ListSelectionOverlay) HandleKey(msg tea.KeyMsg) tea.Cmd {
 	case !v.isSearchable && len(msg.Runes) == 1 && plainText:
 		v.handleShortcutOrNumber(msg)
 	}
-	return nil
+	return v.drainPending()
 }
 
 func (v *ListSelectionOverlay) handleShortcutOrNumber(msg tea.KeyMsg) {
@@ -440,9 +479,7 @@ func (v *ListSelectionOverlay) jumpBottom() {
 
 // OnCtrlC implements overlayCtrlC.
 func (v *ListSelectionOverlay) OnCtrlC() CancellationEvent {
-	if v.onCancel != nil {
-		v.onCancel(v.sender)
-	}
+	v.queueCallback(v.onCancel)
 	v.completion = CompletionCancelled
 	return CancellationHandled
 }

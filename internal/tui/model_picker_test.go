@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -61,11 +62,20 @@ func TestSlashModelSelectionEmitsEventAndUpdatesFooter(t *testing.T) {
 	next, _ := p.Update(OpenSlashOverlayEvent{Command: SlashModel})
 	p = next.(ChatBottomPane)
 
-	// Move from gpt-5.5 (current/initial) down to glm-5.1 and accept.
+	// Move from gpt-5.5 (current/initial) down to glm-5.1 and accept. The
+	// accept callbacks are DEFERRED into the returned command (running them
+	// inside Update deadlocks bubbletea's unbuffered Program.Send), so the
+	// command must be executed for the event to fire.
 	next, _ = p.Update(tea.KeyMsg{Type: tea.KeyDown})
 	p = next.(ChatBottomPane)
-	next, _ = p.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, acceptCmd := p.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	p = next.(ChatBottomPane)
+	if acceptCmd == nil {
+		t.Fatalf("Enter on picker must return the deferred action command")
+	}
+	if msg := acceptCmd(); msg != nil {
+		t.Fatalf("deferred action cmd returned unexpected msg %T", msg)
+	}
 
 	select {
 	case ev := <-events:
@@ -99,5 +109,49 @@ func TestUnwiredSlashCommandShowsNotice(t *testing.T) {
 	p = next.(ChatBottomPane)
 	if !strings.Contains(p.status, "/status") || !strings.Contains(p.status, "not supported") {
 		t.Errorf("status = %q, want /status not-supported notice", p.status)
+	}
+}
+
+// TestPickerAcceptDoesNotSendSynchronously reproduces the reported TUI hang:
+// the sender is attached to an UNBUFFERED consumer (the shape of bubbletea's
+// Program.Send) with NO reader during Update — exactly the state of the real
+// event loop while it is blocked inside Update. If the overlay ran its action
+// callbacks synchronously, Update would block forever; the deferred-command
+// fix makes Update return immediately and deliver via the command goroutine.
+func TestPickerAcceptDoesNotSendSynchronously(t *testing.T) {
+	p, sender := pickerBottomPane()
+	blocked := make(chan tea.Msg) // unbuffered, mirrors Program.msgs
+	sender.attachFunc(func(msg tea.Msg) { blocked <- msg })
+
+	next, _ := p.Update(OpenSlashOverlayEvent{Command: SlashModel})
+	p = next.(ChatBottomPane)
+
+	done := make(chan tea.Cmd, 1)
+	go func() {
+		_, cmd := p.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		done <- cmd
+	}()
+
+	var cmd tea.Cmd
+	select {
+	case cmd = <-done:
+		// Update returned without delivering — the deadlock is fixed.
+	case <-time.After(3 * time.Second):
+		t.Fatalf("Update blocked: overlay action sent synchronously into an unbuffered sender (TUI deadlock)")
+	}
+
+	// The deferred command delivers once a reader exists (the event loop after
+	// Update returns).
+	if cmd == nil {
+		t.Fatalf("expected deferred action command")
+	}
+	go cmd()
+	select {
+	case msg := <-blocked:
+		if sel, ok := msg.(ModelSelectedEvent); !ok || sel.Slug == "" {
+			t.Errorf("delivered msg = %#v, want ModelSelectedEvent", msg)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatalf("deferred command never delivered the selection event")
 	}
 }

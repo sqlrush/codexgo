@@ -293,7 +293,13 @@ func TestListSelectionAcceptRunsAction(t *testing.T) {
 		},
 		InitialSelected: 0,
 	}, sender)
-	v.HandleKey(keyMsg("enter"))
+	// Actions are deferred into the returned command (synchronous execution
+	// inside Update deadlocks bubbletea's unbuffered Program.Send).
+	cmd := v.HandleKey(keyMsg("enter"))
+	if cmd == nil {
+		t.Fatalf("enter should return the deferred action command")
+	}
+	cmd()
 	if !ran {
 		t.Fatalf("accept should run the item action")
 	}
@@ -316,6 +322,10 @@ func TestListSelectionEscCancels(t *testing.T) {
 	}, sender)
 	if v.OnCtrlC() != CancellationHandled {
 		t.Fatalf("OnCtrlC should be handled")
+	}
+	// The cancel callback is deferred (see PendingCmd); drain and run it.
+	if cmd := v.PendingCmd(); cmd != nil {
+		cmd()
 	}
 	if !cancelled || v.Completion() != CompletionCancelled {
 		t.Fatalf("cancel callback should fire and view cancel")
@@ -367,7 +377,11 @@ func TestListSelectionNumberKeyJumps(t *testing.T) {
 		},
 		InitialSelected: -1,
 	}, sender)
-	v.HandleKey(keyMsg("2"))
+	cmd := v.HandleKey(keyMsg("2"))
+	if cmd == nil {
+		t.Fatalf("number key should return the deferred action command")
+	}
+	cmd()
 	if !got2 {
 		t.Fatalf("number key 2 should accept the second item")
 	}
