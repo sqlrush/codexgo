@@ -36,6 +36,26 @@ type Theme struct {
 	BorderStyle      lipgloss.Style
 	ComposerPrompt   lipgloss.Style
 	StatusLine       lipgloss.Style
+
+	// ComposerSurfaceBg is the background painted across the composer block,
+	// derived from the detected terminal background like codex's
+	// user_message_style (style.rs). HasComposerSurface gates it: when the
+	// terminal background is unknown the composer stays unstyled, matching
+	// codex's default_bg() == None fallback.
+	ComposerSurfaceBg  lipgloss.TerminalColor
+	HasComposerSurface bool
+}
+
+// WithTerminalBackground derives the composer surface color from the detected
+// terminal background. ok=false (no tty / no OSC 11 reply) leaves the theme
+// unchanged, keeping the unstyled fallback.
+func (t Theme) WithTerminalBackground(bg RGB, ok bool) Theme {
+	if !ok {
+		return t
+	}
+	t.ComposerSurfaceBg = lipgloss.Color(userMessageBg(bg).Hex())
+	t.HasComposerSurface = true
+	return t
 }
 
 // builtinTheme is a named set of base colors a Theme is assembled from.

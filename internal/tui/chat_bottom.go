@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 )
 
 // ChatBottomPane is the bottom-pane implementation of [BottomPane]. It wraps a
@@ -172,12 +173,24 @@ func (p ChatBottomPane) View(area Rect) string {
 // the dim idle placeholder on the prompt row.
 //
 // Port of the Min(3) composer_rect with a top=1/bottom=1 textarea inset
-// (chat_composer.rs layout_areas).
+// (chat_composer.rs layout_areas). When the terminal background is known, the
+// whole block is painted with the user-message surface color, mirroring
+// codex's `Block::default().style(user_message_style()).render_ref(
+// composer_rect, ...)` band.
 func (p ChatBottomPane) renderComposerBlock(width int) []string {
-	rows := []string{""} // top padding
+	pad := ""
+	if p.theme.HasComposerSurface {
+		pad = p.surfaceStyle().Render(strings.Repeat(" ", max(width, 0)))
+	}
+	rows := []string{pad} // top padding
 	rows = append(rows, p.renderPromptRows(width)...)
-	rows = append(rows, "") // bottom padding
+	rows = append(rows, pad) // bottom padding
 	return rows
+}
+
+// surfaceStyle returns the composer surface background style.
+func (p ChatBottomPane) surfaceStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Background(p.theme.ComposerSurfaceBg)
 }
 
 // renderPromptRows renders the textarea content rows with the "› " prompt
@@ -197,29 +210,75 @@ func (p ChatBottomPane) renderComposerBlock(width int) []string {
 // (over the placeholder's first glyph when the buffer is empty).
 func (p ChatBottomPane) renderPromptRows(width int) []string {
 	text := p.composer.Text()
+	// Per-span styles: when the terminal background is known every span carries
+	// the surface background (codex paints the bg at the cell layer, so the
+	// prompt/text/cursor spans all sit on the band), and each row is padded to
+	// the full width so the band spans the terminal like composer_rect.
+	promptStyle := p.theme.ComposerPrompt
+	dimStyle := lipglossDim(p.theme)
+	plainStyle := lipgloss.NewStyle()
+	cursorStyle := composerCursorStyle
+	if p.theme.HasComposerSurface {
+		bg := p.theme.ComposerSurfaceBg
+		promptStyle = promptStyle.Background(bg)
+		dimStyle = dimStyle.Background(bg)
+		plainStyle = plainStyle.Background(bg)
+		cursorStyle = cursorStyle.Background(bg)
+	}
 	if text == "" {
-		prompt := p.theme.ComposerPrompt.Render("›") + " "
+		prompt := promptStyle.Render("›") + p.padSurface(" ")
 		first, rest := splitFirstRune(p.composer.Placeholder())
 		if first == "" {
-			return []string{prompt + composerCursorStyle.Render(" ")}
+			return []string{prompt + cursorStyle.Render(" ") + p.surfacePadding(width, 3)}
 		}
-		return []string{prompt + composerCursorStyle.Render(first) + lipglossDim(p.theme).Render(rest)}
+		row := prompt + cursorStyle.Render(first) + dimStyle.Render(rest)
+		used := 2 + runeDisplayWidth(first) + runeDisplayWidth(rest)
+		return []string{row + p.surfacePadding(width, used)}
 	}
 	caretRow, caretCol := caretRowCol(text, p.composer.Cursor())
 	var rows []string
 	for i, line := range strings.Split(text, "\n") {
-		marker := p.theme.ComposerPrompt.Render("›") + " "
+		marker := promptStyle.Render("›") + p.padSurface(" ")
 		if i != 0 {
-			marker = "  "
+			marker = p.padSurface("  ")
 		}
 		visible := truncateTo(line, width-2)
+		used := 2 + runeDisplayWidth(visible)
 		if i == caretRow {
-			rows = append(rows, marker+renderLineWithCursor(visible, caretCol))
+			row := marker + renderLineWithCursorStyled(visible, caretCol, plainStyle, cursorStyle)
+			if caretCol >= len([]rune(visible)) {
+				used++ // appended block cell
+			}
+			rows = append(rows, row+p.surfacePadding(width, used))
 			continue
 		}
-		rows = append(rows, marker+visible)
+		rows = append(rows, marker+plainStyle.Render(visible)+p.surfacePadding(width, used))
 	}
 	return rows
+}
+
+// padSurface renders s with the surface background when active, verbatim
+// otherwise. Used for the prompt gutter spaces.
+func (p ChatBottomPane) padSurface(s string) string {
+	if !p.theme.HasComposerSurface {
+		return s
+	}
+	return p.surfaceStyle().Render(s)
+}
+
+// surfacePadding fills the remainder of a width-wide composer row with the
+// surface background. It renders nothing when the surface is inactive (the
+// historical unpainted layout) or the row is already full.
+func (p ChatBottomPane) surfacePadding(width, used int) string {
+	if !p.theme.HasComposerSurface || used >= width {
+		return ""
+	}
+	return p.surfaceStyle().Render(strings.Repeat(" ", width-used))
+}
+
+// runeDisplayWidth returns the display width of s in terminal cells.
+func runeDisplayWidth(s string) int {
+	return runewidth.StringWidth(s)
 }
 
 // composerCursorStyle is the reverse-video block standing in for the hardware
@@ -243,19 +302,22 @@ func caretRowCol(text string, offset int) (row, col int) {
 	return row, col
 }
 
-// renderLineWithCursor renders line with the block cursor at rune column col.
-// A caret past the last rune (the common end-of-input position) renders as a
-// block on the cell after the text, exactly where the hardware cursor would
-// sit. col is clamped into the visible line.
-func renderLineWithCursor(line string, col int) string {
+// renderLineWithCursorStyled renders line with the block cursor at rune column
+// col, styling the surrounding text with textStyle (which carries the surface
+// background when active). A caret past the last rune (the common end-of-input
+// position) renders as a block on the cell after the text, exactly where the
+// hardware cursor would sit. col is clamped into the visible line.
+func renderLineWithCursorStyled(line string, col int, textStyle, cursorStyle lipgloss.Style) string {
 	runes := []rune(line)
 	if col >= len(runes) {
-		return line + composerCursorStyle.Render(" ")
+		return textStyle.Render(line) + cursorStyle.Render(" ")
 	}
 	if col < 0 {
 		col = 0
 	}
-	return string(runes[:col]) + composerCursorStyle.Render(string(runes[col])) + string(runes[col+1:])
+	return textStyle.Render(string(runes[:col])) +
+		cursorStyle.Render(string(runes[col])) +
+		textStyle.Render(string(runes[col+1:]))
 }
 
 // splitFirstRune splits s into its first rune (as a string) and the remainder.
@@ -295,13 +357,12 @@ func (p ChatBottomPane) renderSearchBar(query, preview string, width int) string
 }
 
 // renderPopup renders the active composer popup (slash or file search).
+// PopupRows already windows the list to the visible rows with a
+// window-relative selection (scroll-follow), so no truncation happens here.
 func (p ChatBottomPane) renderPopup(width int) []string {
 	items, selected, ok := p.composer.PopupRows()
 	if !ok {
 		return nil
-	}
-	if len(items) > p.maxPopupRows {
-		items = items[:p.maxPopupRows]
 	}
 	var rows []string
 	for i, it := range items {

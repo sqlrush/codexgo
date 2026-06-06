@@ -61,7 +61,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 		return fmt.Errorf("tui: run: start thread: %w", err)
 	}
 
-	theme := LoadTheme(cfg.Tui, caps)
+	theme := LoadTheme(cfg.Tui, caps).WithTerminalBackground(DetectTerminalBackground())
 	transcript := NewChatTranscript(theme).WithSessionHeader(
 		cfg.version(),
 		cfg.Model,

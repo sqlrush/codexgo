@@ -69,14 +69,39 @@ const (
 	popupFile
 )
 
+// maxPopupVisibleRows caps the popup's visible window, mirroring the Rust
+// MAX_POPUP_ROWS (bottom_pane/popup_consts.rs).
+const maxPopupVisibleRows = 8
+
 // composerPopup is the state of the slash or file-search popup.
 type composerPopup struct {
 	kind     composerPopupKind
 	items    []popupItem
 	selected int
+	// scrollTop is the index of the first visible row. Selection movement keeps
+	// the selected row inside the visible window, mirroring the Rust
+	// ScrollState{selected_idx, scroll_top} (bottom_pane/scroll_state.rs).
+	scrollTop int
 	// queryStart is the byte offset in text where the popup's query token begins
 	// (the '/' for slash, the '@' for file search).
 	queryStart int
+}
+
+// ensureVisible scrolls the window so the selected row is visible, a port of
+// the Rust ScrollState::ensure_visible with visible_rows =
+// min(MAX_POPUP_ROWS, len).
+func (p composerPopup) ensureVisible() composerPopup {
+	visible := min(maxPopupVisibleRows, len(p.items))
+	if len(p.items) == 0 || visible == 0 {
+		p.scrollTop = 0
+		return p
+	}
+	if p.selected < p.scrollTop {
+		p.scrollTop = p.selected
+	} else if bottom := p.scrollTop + visible - 1; p.selected > bottom {
+		p.scrollTop = p.selected + 1 - visible
+	}
+	return p
 }
 
 // popupItem is one row in a composer popup.
@@ -366,9 +391,11 @@ func (c Composer) handlePopupKey(msg tea.KeyMsg) (ComposerResult, bool) {
 	switch msg.Type {
 	case tea.KeyUp:
 		c.popup.selected = wrapIndex(c.popup.selected-1, len(c.popup.items))
+		c.popup = c.popup.ensureVisible()
 		return ComposerResult{Composer: c}, true
 	case tea.KeyDown, tea.KeyTab:
 		c.popup.selected = wrapIndex(c.popup.selected+1, len(c.popup.items))
+		c.popup = c.popup.ensureVisible()
 		return ComposerResult{Composer: c}, true
 	case tea.KeyEsc:
 		c.popup = composerPopup{}
@@ -524,11 +551,23 @@ func (c Composer) PopupRows() ([]PopupRow, int, bool) {
 	if c.popup.kind == popupNone {
 		return nil, 0, false
 	}
-	rows := make([]PopupRow, len(c.popup.items))
-	for i, it := range c.popup.items {
-		rows[i] = PopupRow{Label: it.label, Detail: it.detail}
+	// Return only the visible window (MAX_POPUP_ROWS), with the selected index
+	// made window-relative, so long lists scroll with the selection instead of
+	// truncating at the top (Rust ScrollState windowing).
+	visible := min(maxPopupVisibleRows, len(c.popup.items))
+	top := c.popup.scrollTop
+	// Defensive clamp: filter changes can shrink the list under the window.
+	if top > len(c.popup.items)-visible {
+		top = len(c.popup.items) - visible
 	}
-	return rows, c.popup.selected, true
+	if top < 0 {
+		top = 0
+	}
+	rows := make([]PopupRow, 0, visible)
+	for _, it := range c.popup.items[top : top+visible] {
+		rows = append(rows, PopupRow{Label: it.label, Detail: it.detail})
+	}
+	return rows, c.popup.selected - top, true
 }
 
 // --- editing primitives (immutable) -----------------------------------------
