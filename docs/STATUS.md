@@ -116,4 +116,4 @@ Remaining toward a literal 100%:
   per-turn policy resolution itself is LIVE: seatbelt on macOS).
 - TUI pixel-fidelity and the documented long-tail deviations (completion
   clap-bytes landed: all 5 shells byte-identical; doctor details: 17/18 exact).
-Rough faithful-and-verified completeness: **~92%**.
+Rough faithful-and-verified completeness: **~93%**.
