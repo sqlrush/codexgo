@@ -2,12 +2,14 @@ package core
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/tools"
 	"github.com/sqlrush/codexgo/internal/unifiedexec"
+	"github.com/sqlrush/codexgo/internal/utils/truncation"
 )
 
 // drainForExecEnd collects events until it sees an exec_command_end (or times
@@ -75,6 +77,91 @@ func TestUnifiedExecLateExecEnd(t *testing.T) {
 	}
 	if end.ProcessID == nil {
 		t.Errorf("late end missing process_id")
+	}
+}
+
+// TestWatcherLateEndTruncatesFormattedOutput verifies that the late
+// exec_command_end formats its FormattedOutput with the originating turn's
+// truncation policy (the Rust format_exec_output_str(turn.truncation_policy)),
+// while the aggregated output stays verbatim. A small byte policy must truncate
+// a large transcript, so FormattedOutput differs from AggregatedOutput and
+// carries the truncation header.
+func TestWatcherLateEndTruncatesFormattedOutput(t *testing.T) {
+	sess, events := newTestSession(t)
+
+	largeOutput := strings.Repeat("abcdefghij\n", 500) // ~5500 bytes, many lines.
+	policy := truncation.BytesPolicy(64)
+
+	sink := &unifiedExecWatcherSink{
+		session:          sess,
+		turnID:           "turn-1",
+		truncationPolicy: policy,
+	}
+	sink.ExecEnd(unifiedexec.ExecEndInfo{
+		CallID:    "call-1",
+		Command:   []string{"cat"},
+		Cwd:       "/tmp",
+		ProcessID: 1234,
+		Output:    largeOutput,
+		ExitCode:  0,
+		Duration:  time.Second,
+	})
+
+	end := drainForExecEnd(t, events)
+	if end.AggregatedOutput != largeOutput {
+		t.Errorf("AggregatedOutput should be verbatim; got %d bytes, want %d", len(end.AggregatedOutput), len(largeOutput))
+	}
+	wantFormatted := truncation.FormattedTruncateText(largeOutput, policy)
+	if end.FormattedOutput != wantFormatted {
+		t.Errorf("FormattedOutput not truncated with policy:\n got: %q\nwant: %q", end.FormattedOutput, wantFormatted)
+	}
+	if end.FormattedOutput == largeOutput {
+		t.Error("FormattedOutput should be truncated, but equals the verbatim output")
+	}
+	if len(end.FormattedOutput) >= len(largeOutput) {
+		t.Errorf("FormattedOutput length %d should be smaller than verbatim %d", len(end.FormattedOutput), len(largeOutput))
+	}
+	if !strings.Contains(end.FormattedOutput, "Total output lines:") {
+		t.Errorf("FormattedOutput missing truncation header: %q", end.FormattedOutput)
+	}
+}
+
+// TestWatcherLateEndFailureTruncatesFormattedOutput verifies the failed-end arm
+// also formats its FormattedOutput with the policy (Rust routes the failed end
+// through the same ToolEventFailure::Output -> format_exec_output_str arm).
+func TestWatcherLateEndFailureTruncatesFormattedOutput(t *testing.T) {
+	sess, events := newTestSession(t)
+
+	largeOutput := strings.Repeat("line-of-text\n", 500)
+	policy := truncation.BytesPolicy(48)
+
+	sink := &unifiedExecWatcherSink{
+		session:          sess,
+		turnID:           "turn-2",
+		truncationPolicy: policy,
+	}
+	sink.ExecEnd(unifiedexec.ExecEndInfo{
+		CallID:    "call-2",
+		Command:   []string{"cat"},
+		Cwd:       "/tmp",
+		ProcessID: 99,
+		Output:    largeOutput,
+		Failure:   "session terminated",
+		Duration:  time.Second,
+	})
+
+	end := drainForExecEnd(t, events)
+	if end.Status != protocol.ExecCommandStatusFailed {
+		t.Errorf("Status = %q, want failed", end.Status)
+	}
+	// The failed-end aggregated output is "stdout\nmessage".
+	wantAggregated := largeOutput + "\n" + "session terminated"
+	if end.AggregatedOutput != wantAggregated {
+		t.Errorf("AggregatedOutput mismatch on failure path")
+	}
+	wantFormatted := truncation.FormattedTruncateText(wantAggregated, policy)
+	if end.FormattedOutput != wantFormatted {
+		t.Errorf("failed FormattedOutput not truncated with policy:\n got: %q\nwant: %q", end.FormattedOutput, wantFormatted)
 	}
 }
 

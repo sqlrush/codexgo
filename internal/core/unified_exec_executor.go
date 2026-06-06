@@ -383,6 +383,7 @@ func buildUnifiedExecRequest(p unifiedExecRequestParams) *unifiedexec.ExecComman
 		HookCommand:             p.HookCommand,
 		CallID:                  p.CallID,
 		TurnID:                  turnID,
+		TruncationPolicy:        turnTruncationPolicy(p.Turn),
 		ProcessID:               p.ProcessID,
 		YieldTimeMS:             p.YieldTimeMS,
 		MaxOutputTokens:         p.MaxOutputTokens,

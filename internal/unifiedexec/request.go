@@ -3,6 +3,7 @@ package unifiedexec
 import (
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/sandbox"
+	"github.com/sqlrush/codexgo/internal/utils/truncation"
 )
 
 // ExecCommandRequest describes a command to open as a unified-exec session.
@@ -24,6 +25,12 @@ type ExecCommandRequest struct {
 	// the late exec-end event the background watcher emits is correlated with the
 	// turn that opened the session, not whatever turn happens to be active later.
 	TurnID string
+	// TruncationPolicy is the originating turn's model-output truncation policy
+	// (the Rust turn.truncation_policy). It is carried to the session-stored hook
+	// so the late exec-end event formats its output exactly like the in-call path
+	// (format_exec_output_str(turn.truncation_policy)). The zero value means the
+	// caller did not resolve a policy; the watcher then leaves the output verbatim.
+	TruncationPolicy truncation.TruncationPolicy
 	// ProcessID is the reserved logical process id for this session.
 	ProcessID int
 	// YieldTimeMS is the requested output-collection window.

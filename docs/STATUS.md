@@ -16,12 +16,12 @@ Legend: ✅ implemented + tested · 🟡 implemented with documented deviation/p
 | 00 | foundation & parity harness | ✅ | module/CI + `internal/paritytest` golden + differential helpers |
 | 01 | foundation utils | ✅ | 19 packages |
 | 02 | protocol (Op/EventMsg/…) | ✅ | drop-in JSON |
-| 03 | execpolicy (Starlark) | 🟡 | matcher complete; **network_rule landed** (builtin + rule type + protocol/decision aliasing + host normalization + compiled allow/deny domains + merge_overlay); amend deferred |
+| 03 | execpolicy (Starlark) | 🟡 | matcher complete; **network_rule landed** (builtin + rule type + protocol/decision aliasing + host normalization + compiled allow/deny domains + merge_overlay); **compiled domains now wired into the network proxy** (ApplyExecPolicyNetworkRules port of apply_exec_policy_network_rules: upsert after config entries, exec-policy wins per host); amend deferred |
 | 04 | config (config.toml) | ✅ | load/merge/precedence/profiles; some sub-schemas as opaque trees |
 | 05 | features | ✅ | |
 | 06 | api client (HTTP/SSE/WS) | ✅ | Responses request + SSE verified via turn parity |
 | 07 | model providers & catalog | ✅ | model catalog slug-identical to codex |
-| 08 | login & auth | 🟡 | OAuth/API-key/keyring/JWT; device-auth wired (device_code_auth.rs port: usercode/token endpoints, polling state machine, byte-identical prompt + messages, auth.json persist); AWS SigV4 stub |
+| 08 | login & auth | 🟡 | OAuth/API-key/keyring/JWT; device-auth wired (device_code_auth.rs port: usercode/token endpoints, polling state machine, byte-identical prompt + messages, auth.json persist); **`--experimental_issuer`/`--experimental_client-id` now parsed + threaded into the device-code ServerOptions** (browser flow keeps defaults, per Rust parity); AWS SigV4 stub |
 | 09 | shell parsing & PTY | ✅ | |
 | 10 | exec-server & filesystem | ✅ | |
 | 11 | apply_patch | ✅ | **byte-identical** to codex (parity) |

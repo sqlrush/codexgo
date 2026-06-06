@@ -88,6 +88,11 @@ type StoredSession struct {
 	Cwd       string
 	ProcessID int
 	StartedAt time.Time
+	// TruncationPolicy is the originating turn's model-output truncation policy,
+	// carried so the late exec-end formats its output like the in-call path
+	// (format_exec_output_str(turn.truncation_policy)). The zero value means the
+	// caller did not resolve a policy.
+	TruncationPolicy truncation.TruncationPolicy
 }
 
 // SessionStoredHook is invoked when a live session is persisted. It hands the
@@ -427,15 +432,16 @@ func (m *ProcessManager) storeProcess(process *Process, req *ExecCommandRequest,
 		// through start_streaming_output and spawn_exit_watcher.
 		command := append([]string(nil), req.Command...)
 		hook(StoredSession{
-			Process:      process,
-			Transcript:   NewDefaultHeadTailBuffer(),
-			TranscriptMu: &sync.Mutex{},
-			CallID:       req.CallID,
-			TurnID:       req.TurnID,
-			Command:      command,
-			Cwd:          req.Cwd,
-			ProcessID:    req.ProcessID,
-			StartedAt:    startedAt,
+			Process:          process,
+			Transcript:       NewDefaultHeadTailBuffer(),
+			TranscriptMu:     &sync.Mutex{},
+			CallID:           req.CallID,
+			TurnID:           req.TurnID,
+			Command:          command,
+			Cwd:              req.Cwd,
+			ProcessID:        req.ProcessID,
+			StartedAt:        startedAt,
+			TruncationPolicy: req.TruncationPolicy,
 		})
 	}
 }

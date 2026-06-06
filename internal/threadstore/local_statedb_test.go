@@ -2,8 +2,11 @@ package threadstore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +14,46 @@ import (
 	"github.com/sqlrush/codexgo/internal/rollout"
 	"github.com/sqlrush/codexgo/internal/state"
 )
+
+// writeStateDBSessionFile writes a real rollout session file (a session_meta
+// head line plus a user message) into the store's sessions tree so the rollout
+// resolver can find it by thread id, returning the file path.
+func writeStateDBSessionFile(t *testing.T, store *LocalThreadStore, threadID protocol.ThreadID) string {
+	t.Helper()
+	uuid := threadID.String()
+	dayDir := filepath.Join(store.config.CodexHome, "sessions", "2025", "01", "03")
+	if err := os.MkdirAll(dayDir, 0o755); err != nil {
+		t.Fatalf("mkdir sessions: %v", err)
+	}
+	path := filepath.Join(dayDir, "rollout-2025-01-03T12-00-00-"+uuid+".jsonl")
+	lines := []string{
+		`{"timestamp":"2025-01-03T12:00:00Z","type":"session_meta","payload":{"id":"` + uuid + `","timestamp":"2025-01-03T12:00:00Z","cwd":".","originator":"o","cli_version":"v","source":"cli","model_provider":"p"}}`,
+		`{"timestamp":"2025-01-03T12:00:00Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}}`,
+	}
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		t.Fatalf("write session file: %v", err)
+	}
+	return path
+}
+
+// lastRolloutItem reads the final JSONL line of a rollout file and returns it as
+// a generic map, mirroring the Rust test helper of the same name.
+func lastRolloutItem(t *testing.T, path string) map[string]any {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read rollout: %v", err)
+	}
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	if len(lines) == 0 {
+		t.Fatal("rollout file is empty")
+	}
+	var item map[string]any
+	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &item); err != nil {
+		t.Fatalf("decode last rollout line %q: %v", lines[len(lines)-1], err)
+	}
+	return item
+}
 
 // newStateDBStore builds a local store backed by an initialized state runtime
 // rooted at a temp Codex home.
@@ -39,7 +82,7 @@ func seedThreadRow(t *testing.T, store *LocalThreadStore, runtime *state.StateRu
 	t.Helper()
 	ctx := context.Background()
 	threadID := protocol.NewThreadID(uuidFor(n))
-	rolloutPath := filepath.Join(store.config.CodexHome, "rollout-"+uuidFor(n)+".jsonl")
+	rolloutPath := writeStateDBSessionFile(t, store, threadID)
 
 	builder := state.NewThreadMetadataBuilder(threadID, rolloutPath, createdAt, rollout.NewCliSource())
 	builder.Cwd = store.config.CodexHome
@@ -138,6 +181,165 @@ func TestLocalUpdateThreadMetadataStateDB(t *testing.T) {
 	if stored.GitBranch == nil || *stored.GitBranch != "feature" {
 		t.Fatalf("stored git branch mismatch: %+v", stored.GitBranch)
 	}
+}
+
+// TestUpdateThreadMetadataAppendsMemoryModeSessionMeta asserts a memory-mode
+// patch appends a session_meta line carrying the new memory mode (and no git
+// marker), mirroring the Rust update_thread_metadata_sets_memory_mode_on_active_rollout.
+func TestUpdateThreadMetadataAppendsMemoryModeSessionMeta(t *testing.T) {
+	store, runtime := newStateDBStore(t)
+	ctx := context.Background()
+
+	threadID := seedThreadRow(t, store, runtime, 61, "first", time.Date(2025, 2, 2, 9, 0, 0, 0, time.UTC))
+	path := store.readSQLiteMetadata(ctx, threadID).RolloutPath
+
+	mode := protocol.ThreadMemoryModeDisabled
+	if _, err := store.UpdateThreadMetadata(ctx, UpdateThreadMetadataParams{
+		ThreadID: threadID,
+		Patch:    ThreadMetadataPatch{MemoryMode: &mode},
+	}); err != nil {
+		t.Fatalf("update memory mode: %v", err)
+	}
+
+	appended := lastRolloutItem(t, path)
+	if appended["type"] != "session_meta" {
+		t.Fatalf("appended type = %v, want session_meta", appended["type"])
+	}
+	payload, ok := appended["payload"].(map[string]any)
+	if !ok {
+		t.Fatalf("payload not an object: %T", appended["payload"])
+	}
+	if payload["id"] != threadID.String() {
+		t.Errorf("payload id = %v, want %s", payload["id"], threadID)
+	}
+	if payload["memory_mode"] != "disabled" {
+		t.Errorf("payload memory_mode = %v, want disabled", payload["memory_mode"])
+	}
+	if _, hasGit := payload["git"]; hasGit {
+		t.Errorf("memory-mode-only session meta should omit git, got %v", payload["git"])
+	}
+
+	stored, err := runtime.GetThreadMemoryMode(ctx, threadID)
+	if err != nil {
+		t.Fatalf("get memory mode: %v", err)
+	}
+	if stored == nil || *stored != "disabled" {
+		t.Errorf("stored memory mode = %v, want disabled", stored)
+	}
+}
+
+// TestUpdateThreadMetadataAppendsGitInfoSessionMeta asserts a git-info patch
+// appends a session_meta line carrying the resolved git marker, mirroring the
+// Rust update_thread_metadata_sets_git_info rollout write.
+func TestUpdateThreadMetadataAppendsGitInfoSessionMeta(t *testing.T) {
+	store, runtime := newStateDBStore(t)
+	ctx := context.Background()
+
+	threadID := seedThreadRow(t, store, runtime, 62, "first", time.Date(2025, 2, 2, 9, 0, 0, 0, time.UTC))
+	path := store.readSQLiteMetadata(ctx, threadID).RolloutPath
+
+	if _, err := store.UpdateThreadMetadata(ctx, UpdateThreadMetadataParams{
+		ThreadID: threadID,
+		Patch: ThreadMetadataPatch{GitInfo: &GitInfoPatch{
+			SHA:       SetClearable("abc123"),
+			Branch:    SetClearable("main"),
+			OriginURL: SetClearable("https://github.com/openai/codex"),
+		}},
+	}); err != nil {
+		t.Fatalf("update git info: %v", err)
+	}
+
+	appended := lastRolloutItem(t, path)
+	payload := appended["payload"].(map[string]any)
+	git, ok := payload["git"].(map[string]any)
+	if !ok {
+		t.Fatalf("payload git not an object: %T", payload["git"])
+	}
+	if git["commit_hash"] != "abc123" {
+		t.Errorf("git commit_hash = %v, want abc123", git["commit_hash"])
+	}
+	if git["branch"] != "main" {
+		t.Errorf("git branch = %v, want main", git["branch"])
+	}
+	if git["repository_url"] != "https://github.com/openai/codex" {
+		t.Errorf("git repository_url = %v, want the origin url", git["repository_url"])
+	}
+	_ = runtime
+}
+
+// TestUpdateThreadMetadataCombinedAppendsBothSessionMeta asserts a combined
+// memory-mode + git-info patch appends two session_meta lines (memory mode then
+// git info), with the last carrying the git marker plus the memory mode, mirroring
+// the Rust update_thread_metadata_applies_combined_explicit_patch rollout writes.
+func TestUpdateThreadMetadataCombinedAppendsBothSessionMeta(t *testing.T) {
+	store, runtime := newStateDBStore(t)
+	ctx := context.Background()
+
+	threadID := seedThreadRow(t, store, runtime, 63, "first", time.Date(2025, 2, 2, 9, 0, 0, 0, time.UTC))
+	path := store.readSQLiteMetadata(ctx, threadID).RolloutPath
+
+	mode := protocol.ThreadMemoryModeDisabled
+	if _, err := store.UpdateThreadMetadata(ctx, UpdateThreadMetadataParams{
+		ThreadID: threadID,
+		Patch: ThreadMetadataPatch{
+			MemoryMode: &mode,
+			GitInfo:    &GitInfoPatch{Branch: SetClearable("combined")},
+		},
+	}); err != nil {
+		t.Fatalf("combined update: %v", err)
+	}
+
+	// The git write runs last, so the final line carries the git marker and the
+	// current memory mode (read back from the just-updated SQLite row).
+	appended := lastRolloutItem(t, path)
+	payload := appended["payload"].(map[string]any)
+	if payload["memory_mode"] != "disabled" {
+		t.Errorf("payload memory_mode = %v, want disabled", payload["memory_mode"])
+	}
+	git, ok := payload["git"].(map[string]any)
+	if !ok {
+		t.Fatalf("payload git not an object: %T", payload["git"])
+	}
+	if git["branch"] != "combined" {
+		t.Errorf("git branch = %v, want combined", git["branch"])
+	}
+	_ = runtime
+}
+
+// TestUpdateThreadMetadataRejectsMismatchedSessionMetaID asserts a session-meta
+// id mismatch fails with an internal error, mirroring the Rust
+// update_thread_metadata_rejects_mismatched_session_meta_id.
+func TestUpdateThreadMetadataRejectsMismatchedSessionMetaID(t *testing.T) {
+	store, runtime := newStateDBStore(t)
+	ctx := context.Background()
+
+	threadID := seedThreadRow(t, store, runtime, 64, "first", time.Date(2025, 2, 2, 9, 0, 0, 0, time.UTC))
+	path := store.readSQLiteMetadata(ctx, threadID).RolloutPath
+
+	// Rewrite the session-meta id to a different (but valid) thread id.
+	otherID := uuidFor(640)
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read rollout: %v", err)
+	}
+	rewritten := strings.Replace(string(content), threadID.String(), otherID, 1)
+	if err := os.WriteFile(path, []byte(rewritten), 0o644); err != nil {
+		t.Fatalf("rewrite rollout: %v", err)
+	}
+
+	mode := protocol.ThreadMemoryModeEnabled
+	_, err = store.UpdateThreadMetadata(ctx, UpdateThreadMetadataParams{
+		ThreadID: threadID,
+		Patch:    ThreadMetadataPatch{MemoryMode: &mode},
+	})
+	var storeErr *Error
+	if !errors.As(err, &storeErr) || storeErr.Kind != ErrorKindInternal {
+		t.Fatalf("expected internal error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "metadata id mismatch") {
+		t.Errorf("error = %q, want substring metadata id mismatch", err.Error())
+	}
+	_ = runtime
 }
 
 // TestLocalUpdateThreadMetadataMissingThread verifies an unknown thread yields an

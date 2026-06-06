@@ -127,12 +127,14 @@ func touchModifiedTime(path string) error {
 }
 
 // updateThreadMetadata applies the metadata patch to the thread's state-DB row
-// and returns the updated StoredThread via readThread.
+// and, for legacy-compatibility patches (memory mode / git info), appends the
+// matching rollout session-meta line so unloaded threads replay the new values.
+// It returns the updated StoredThread via readThread.
 //
-// Deviation: the upstream crate also rewrites rollout session-meta lines (thread
-// name, memory mode, git info) for legacy compatibility. That rollout-compat
-// surface is out of scope here; this port applies the patch to the SQLite row
-// (the source of truth for listing/reads) and returns the refreshed summary.
+// Deviation: the upstream crate also rewrites the rollout thread-name index for a
+// name patch. That index is not yet ported, so a name change only updates the
+// SQLite title; the memory-mode and git-info rollout session-meta lines (the
+// STATUS spec 19 residual) are written here.
 // When no state DB is configured, metadata cannot be persisted, so the operation
 // fails with an invalid-request error rather than reporting unsupported.
 func (s *LocalThreadStore) updateThreadMetadata(ctx context.Context, params UpdateThreadMetadataParams) (StoredThread, error) {
@@ -166,6 +168,23 @@ func (s *LocalThreadStore) updateThreadMetadata(ctx context.Context, params Upda
 		mode := memoryModeAsString(*params.Patch.MemoryMode)
 		if _, err := s.stateDB.SetThreadMemoryMode(ctx, threadID, mode); err != nil {
 			return StoredThread{}, internalError(err, "failed to update memory mode for %s", threadID)
+		}
+	}
+
+	// Append the rollout session-meta line(s) for memory-mode / git-info patches
+	// so unloaded threads replay the new values (mirrors the rollout-compat
+	// section of the Rust update_thread_metadata).
+	if needsRolloutCompatibilityUpdate(params.Patch) &&
+		(params.Patch.MemoryMode != nil || params.Patch.GitInfo != nil) {
+		rolloutPath, pathErr := s.resolveRolloutPath(ctx, threadID, params.IncludeArchived)
+		if pathErr != nil {
+			return StoredThread{}, pathErr
+		}
+		if rolloutPath == "" {
+			return StoredThread{}, invalidRequestError("thread not found: %s", threadID)
+		}
+		if err := s.applyRolloutCompatibilityUpdate(ctx, threadID, rolloutPath, params.Patch); err != nil {
+			return StoredThread{}, err
 		}
 	}
 

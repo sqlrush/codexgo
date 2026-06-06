@@ -7,6 +7,7 @@ import (
 
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/unifiedexec"
+	"github.com/sqlrush/codexgo/internal/utils/truncation"
 )
 
 // This file is the core bridge for the unified-exec background watcher
@@ -59,7 +60,11 @@ func armUnifiedExecWatcher(sess *Session, executor *unifiedexec.Executor) {
 		return
 	}
 	executor.SetSessionStoredHook(func(stored unifiedexec.StoredSession) {
-		sink := &unifiedExecWatcherSink{session: sess, turnID: stored.TurnID}
+		sink := &unifiedExecWatcherSink{
+			session:          sess,
+			turnID:           stored.TurnID,
+			truncationPolicy: stored.TruncationPolicy,
+		}
 		unifiedexec.StartSessionWatcher(
 			stored.Process,
 			stored.Transcript,
@@ -85,6 +90,10 @@ type unifiedExecWatcherSink struct {
 	// turnID correlates the emitted events with the turn that opened the session
 	// (the Rust turn.sub_id captured by spawn_exit_watcher), not the active turn.
 	turnID string
+	// truncationPolicy is the originating turn's model-output truncation policy
+	// (the Rust ctx.turn.truncation_policy the emitter reads). The late end formats
+	// its FormattedOutput with it, exactly like the in-call path.
+	truncationPolicy truncation.TruncationPolicy
 }
 
 // OutputDelta emits a late ExecCommandOutputDelta for streamed session output.
@@ -136,6 +145,14 @@ func (s *unifiedExecWatcherSink) ExecEnd(info unifiedexec.ExecEndInfo) {
 		status = protocol.ExecCommandStatusFailed
 	}
 
+	// codex computes formatted_output via format_exec_output_str(&output,
+	// turn.truncation_policy) inside the emitter, which truncates the aggregated
+	// output with the originating turn's policy (timed_out is always false here,
+	// so build_content_with_timeout is just the aggregated output). The policy was
+	// captured at store time and threaded through the session-stored hook, so the
+	// late end now formats exactly like the in-call path.
+	formatted := truncation.FormattedTruncateText(aggregated, s.truncationPolicy)
+
 	processID := fmt.Sprintf("%d", info.ProcessID)
 	s.session.SendEvent(s.turnID, protocol.EventMsg{
 		Type: protocol.EventMsgKindExecCommandEnd,
@@ -152,14 +169,8 @@ func (s *unifiedExecWatcherSink) ExecEnd(info unifiedexec.ExecEndInfo) {
 			AggregatedOutput: aggregated,
 			ExitCode:         exitCode,
 			Duration:         stdDurationRaw(info.Duration),
-			// STUB: codex runs format_exec_output_str with the originating turn's
-			// truncation policy (captured by spawn_exit_watcher). The reduced
-			// bridge does not thread that policy through the unifiedexec hook, so
-			// the aggregated output is reported verbatim, matching the existing
-			// in-call emitExecCommandEnd. See DEVIATIONS.md "28 unified-exec
-			// bridge".
-			FormattedOutput: aggregated,
-			Status:          status,
+			FormattedOutput:  formatted,
+			Status:           status,
 		},
 	})
 }

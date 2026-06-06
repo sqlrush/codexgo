@@ -23,6 +23,12 @@ type loginArgs struct {
 	useDeviceCode   bool
 	deprecatedKey   bool
 	help            bool
+	// issuerBaseURL overrides the OAuth issuer base URL when set
+	// (--experimental_issuer). Empty means "use the default".
+	issuerBaseURL string
+	// clientID overrides the OAuth client id when set
+	// (--experimental_client-id). Empty means "use the default".
+	clientID string
 }
 
 // runLoginSubcommand handles `codex login [status] [--with-api-key] [--with-access-token] [--device-auth]`.
@@ -52,7 +58,7 @@ func runLoginSubcommand(ctx context.Context, parsed ParsedCommandLine, streams S
 		fmt.Fprintln(streams.Stderr, "Choose one login credential source: --with-api-key or --with-access-token.")
 		return 1
 	case args.useDeviceCode:
-		return runLoginWithDeviceCode(ctx, cfg, streams)
+		return runLoginWithDeviceCode(ctx, cfg, streams, args.issuerBaseURL, args.clientID)
 	case args.deprecatedKey:
 		fmt.Fprintln(streams.Stderr, "The --api-key flag is no longer supported. Pipe the key instead, e.g. `printenv OPENAI_API_KEY | codex login --with-api-key`.")
 		return 1
@@ -162,19 +168,36 @@ func runLoginWithChatGPT(streams Streams, cfg loadedConfig) int {
 // code, prints the sign-in prompt to stdout, polls for completion, and persists
 // credentials. The prompt uses stdout (Rust println!), status messages stderr
 // (Rust eprintln!).
-func runLoginWithDeviceCode(ctx context.Context, cfg loadedConfig, streams Streams) int {
+func runLoginWithDeviceCode(ctx context.Context, cfg loadedConfig, streams Streams, issuerBaseURL, clientID string) int {
 	httpClient, err := login.NewHTTPClient()
 	if err != nil {
 		fmt.Fprintf(streams.Stderr, "Error logging in with device code: %v\n", err)
 		return 1
 	}
-	opts := login.NewServerOptions(cfg.CodexHome, login.ClientID, nil, cfg.StoreMode)
+	opts := deviceCodeServerOptions(cfg, issuerBaseURL, clientID)
 	if err := login.RunDeviceCodeLogin(ctx, httpClient, opts, streams.Stdout, modelproviderinfo.CodexPkgVersion); err != nil {
 		fmt.Fprintf(streams.Stderr, "Error logging in with device code: %v\n", err)
 		return 1
 	}
 	fmt.Fprintln(streams.Stderr, loginSuccessMessage)
 	return 0
+}
+
+// deviceCodeServerOptions builds the device-code ServerOptions, applying the
+// experimental issuer/client-id overrides. Mirrors run_login_with_device_code:
+// the client id falls back to login.ClientID when not overridden, and the issuer
+// is only replaced when an override is provided. An empty string means "no
+// override" (the flag was not supplied).
+func deviceCodeServerOptions(cfg loadedConfig, issuerBaseURL, clientID string) login.ServerOptions {
+	effectiveClientID := login.ClientID
+	if clientID != "" {
+		effectiveClientID = clientID
+	}
+	opts := login.NewServerOptions(cfg.CodexHome, effectiveClientID, nil, cfg.StoreMode)
+	if issuerBaseURL != "" {
+		opts.Issuer = issuerBaseURL
+	}
+	return opts
 }
 
 // readStdinSecret reads a trimmed secret from stdin, mirroring read_stdin_secret.
@@ -209,31 +232,60 @@ func safeFormatKey(key string) string {
 }
 
 // parseLoginArgs parses the login flags and optional `status` subcommand.
+// The experimental issuer/client-id flags accept a value either as the next
+// argument (`--experimental_issuer URL`) or inline (`--experimental_issuer=URL`),
+// mirroring clap's value parsing for these flags.
 func parseLoginArgs(args []string) (loginArgs, error) {
 	var out loginArgs
-	for _, arg := range args {
-		switch arg {
-		case "status":
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "status":
 			out.status = true
-		case "--with-api-key":
+		case arg == "--with-api-key":
 			out.withAPIKey = true
-		case "--with-access-token":
+		case arg == "--with-access-token":
 			out.withAccessToken = true
-		case "--device-auth":
+		case arg == "--device-auth":
 			out.useDeviceCode = true
-		case "--api-key":
+		case arg == "--api-key":
 			out.deprecatedKey = true
-		case "-h", "--help":
+		case arg == "-h" || arg == "--help":
 			out.help = true
-		default:
-			if strings.HasPrefix(arg, "--api-key=") {
-				out.deprecatedKey = true
-				continue
+		case strings.HasPrefix(arg, "--api-key="):
+			out.deprecatedKey = true
+		case arg == "--experimental_issuer":
+			value, next, err := loginFlagValue(args, i, arg)
+			if err != nil {
+				return loginArgs{}, err
 			}
+			out.issuerBaseURL = value
+			i = next
+		case strings.HasPrefix(arg, "--experimental_issuer="):
+			out.issuerBaseURL = strings.TrimPrefix(arg, "--experimental_issuer=")
+		case arg == "--experimental_client-id":
+			value, next, err := loginFlagValue(args, i, arg)
+			if err != nil {
+				return loginArgs{}, err
+			}
+			out.clientID = value
+			i = next
+		case strings.HasPrefix(arg, "--experimental_client-id="):
+			out.clientID = strings.TrimPrefix(arg, "--experimental_client-id=")
+		default:
 			return loginArgs{}, fmt.Errorf("unexpected argument: %s", arg)
 		}
 	}
 	return out, nil
+}
+
+// loginFlagValue returns the value for a flag whose value is the next argument,
+// the new loop index to skip past that value, and an error if it is missing.
+func loginFlagValue(args []string, i int, flag string) (string, int, error) {
+	if i+1 >= len(args) {
+		return "", i, fmt.Errorf("%s requires a value", flag)
+	}
+	return args[i+1], i + 1, nil
 }
 
 func printLoginHelp(w io.Writer) {
