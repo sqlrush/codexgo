@@ -112,8 +112,8 @@ Remaining toward a literal 100%:
   behind WithProjectLayer until the trust decision is ported (admin
   /etc/codex/skills + workspace-write/danger filesystem XML now landed,
   byte-verified). Collab is fully live incl. full-history fork_context.
-- Sandbox-denial approval escalation + legacy workspace-write knobs (the
-  per-turn policy resolution itself is LIVE: seatbelt on macOS).
+- Legacy workspace-write knobs + per-call sandbox_permissions (denial
+  escalation is LIVE: prompt -> approved unsandboxed retry).
 - TUI pixel-fidelity and the documented long-tail deviations (completion
   clap-bytes landed: all 5 shells byte-identical; doctor details: 17/18 exact).
-Rough faithful-and-verified completeness: **~93%**.
+Rough faithful-and-verified completeness: **~94%**.
