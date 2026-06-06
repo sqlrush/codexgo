@@ -52,6 +52,13 @@ type ModelProviderInfo struct {
 	// SupportsWebsockets indicates the provider supports the Responses API
 	// WebSocket transport.
 	SupportsWebsockets bool
+	// Models is the codexgo extension listing the model slugs this provider
+	// serves. It powers model→provider routing (selecting glm-5.1 routes
+	// requests to the glm provider without touching `model_provider`) and the
+	// /model picker's custom-provider entries. Upstream codex has no such
+	// field; it is omitted from the wire form when empty so provider JSON
+	// stays byte-identical for configs that do not use it.
+	Models []string
 }
 
 // DefaultModelProviderInfo returns the zero-value provider with serde defaults
@@ -81,6 +88,9 @@ type providerInfoJSON struct {
 	WebsocketConnectTimeoutMS *uint64                   `json:"websocket_connect_timeout_ms"`
 	RequiresOpenAIAuth        bool                      `json:"requires_openai_auth"`
 	SupportsWebsockets        bool                      `json:"supports_websockets"`
+	// Models is the codexgo routing extension; omitted when empty so the wire
+	// shape matches Rust serde output for configs that do not use it.
+	Models []string `json:"models,omitempty"`
 }
 
 // MarshalJSON encodes the provider, emitting every field (null for absent
@@ -108,6 +118,7 @@ func (p ModelProviderInfo) MarshalJSON() ([]byte, error) {
 		WebsocketConnectTimeoutMS: p.WebsocketConnectTimeoutMS,
 		RequiresOpenAIAuth:        p.RequiresOpenAIAuth,
 		SupportsWebsockets:        p.SupportsWebsockets,
+		Models:                    p.Models,
 	})
 }
 
@@ -134,6 +145,7 @@ func (p *ModelProviderInfo) UnmarshalJSON(data []byte) error {
 		WebsocketConnectTimeoutMS *uint64                   `json:"websocket_connect_timeout_ms"`
 		RequiresOpenAIAuth        *bool                     `json:"requires_openai_auth"`
 		SupportsWebsockets        *bool                     `json:"supports_websockets"`
+		Models                    []string                  `json:"models"`
 	}
 	var raw rawProviderInfo
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -166,6 +178,7 @@ func (p *ModelProviderInfo) UnmarshalJSON(data []byte) error {
 	if raw.SupportsWebsockets != nil {
 		out.SupportsWebsockets = *raw.SupportsWebsockets
 	}
+	out.Models = raw.Models
 	*p = out
 	return nil
 }
@@ -190,6 +203,14 @@ func (p ModelProviderInfo) Equal(other ModelProviderInfo) bool {
 	}
 	if !authEqual(p.Auth, other.Auth) || !awsEqual(p.Aws, other.Aws) {
 		return false
+	}
+	if len(p.Models) != len(other.Models) {
+		return false
+	}
+	for i := range p.Models {
+		if p.Models[i] != other.Models[i] {
+			return false
+		}
 	}
 	return stringMapEqual(p.QueryParams, other.QueryParams) &&
 		stringMapEqual(p.HTTPHeaders, other.HTTPHeaders) &&

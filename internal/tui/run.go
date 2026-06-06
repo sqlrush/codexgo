@@ -39,6 +39,12 @@ type RunConfig struct {
 	// upstream codex version codexgo impersonates as a drop-in, so the first frame
 	// matches real codex (which renders its own CARGO_PKG_VERSION).
 	Version string
+	// Models is the /model picker entry list (bundled catalog + custom-provider
+	// models). Empty disables the picker.
+	Models []ModelPickerEntry
+	// PersistModelSelection persists a /model picker selection (e.g. writes
+	// `model = "<slug>"` into config.toml). May be nil.
+	PersistModelSelection func(slug string) error
 }
 
 // Run launches the interactive TUI against the engine reachable through
@@ -68,16 +74,19 @@ func Run(ctx context.Context, cfg RunConfig) error {
 		FormatDirectoryDisplay(cfg.workdir()),
 	)
 	model := NewModel(ModelConfig{
-		Caps:       caps,
-		Tui:        cfg.Tui,
-		Sender:     sender,
-		Engine:     engine,
-		Transcript: transcript,
-		Inline:     true,
+		Caps:                  caps,
+		Tui:                   cfg.Tui,
+		Sender:                sender,
+		Engine:                engine,
+		Transcript:            transcript,
+		Inline:                true,
+		PersistModelSelection: cfg.PersistModelSelection,
 		Bottom: NewChatBottomPane(ChatBottomPaneConfig{
 			Theme:      theme,
 			FileSearch: cfg.fileSearch(),
 			ColorLevel: caps.ColorLevel,
+			Sender:     sender,
+			Models:     cfg.Models,
 			Footer: ComposerFooter{
 				Model:     cfg.Model,
 				Directory: FormatDirectoryDisplay(cfg.workdir()),

@@ -58,17 +58,25 @@ func buildAssemblyWithDefaults() (*appserver.Assembly, appserver.Defaults, error
 	model := configDefaultModel(cfg)
 	trustGate := buildProjectTrustGate(cfg)
 
+	// codexgo model→provider routing: configured providers that declare a
+	// `models` list serve those slugs regardless of the `model_provider`
+	// selection, so switching the model alone switches the backend.
+	routes := buildModelProviderRoutes(cfg, fallback)
+
 	selected, err := resolveSelectedProvider(cfg)
 	if err != nil {
 		// A bad provider selection must not break the offline paths; fall back to
 		// the mock so the engine still runs.
-		return assembleResult(fallback, cfg.CodexHome, model, defaultModelProviderID, derefSandboxMode(cfg.SandboxMode), trustGate)
+		routed := appserver.NewModelRoutedClientFactory(routes, fallback)
+		return assembleResult(routed, cfg.CodexHome, model, defaultModelProviderID, derefSandboxMode(cfg.SandboxMode), trustGate)
 	}
 
 	resolver, ok := buildProviderAuthResolver(cfg, selected)
 	if !ok {
-		// No credential source applies to the selected provider; use the mock.
-		return assembleResult(fallback, cfg.CodexHome, model, selected.ID, derefSandboxMode(cfg.SandboxMode), trustGate)
+		// No credential source applies to the selected provider; use the mock for
+		// unrouted models (routed custom-provider models still work).
+		routed := appserver.NewModelRoutedClientFactory(routes, fallback)
+		return assembleResult(routed, cfg.CodexHome, model, selected.ID, derefSandboxMode(cfg.SandboxMode), trustGate)
 	}
 
 	factory, err := appserver.NewModelClientFactory(appserver.RealModelClientFactoryConfig{
@@ -96,7 +104,44 @@ func buildAssemblyWithDefaults() (*appserver.Assembly, appserver.Defaults, error
 			model = slug
 		}
 	}
-	return assembleResult(factory, cfg.CodexHome, model, selected.ID, derefSandboxMode(cfg.SandboxMode), trustGate)
+	routed := appserver.NewModelRoutedClientFactory(routes, factory)
+	return assembleResult(routed, cfg.CodexHome, model, selected.ID, derefSandboxMode(cfg.SandboxMode), trustGate)
+}
+
+// buildModelProviderRoutes builds the codexgo model→provider routing table from
+// the configured [model_providers] entries that declare a `models` list AND a
+// usable credential source (experimental_bearer_token or env_key). Providers
+// without credentials are skipped so their models fall through to the default
+// factory (and ultimately the mock) rather than failing the assembly.
+func buildModelProviderRoutes(cfg loadedConfig, fallback appserver.ModelClientFactory) map[string]appserver.ModelClientFactory {
+	routes := map[string]appserver.ModelClientFactory{}
+	for id, info := range cfg.ModelProviders {
+		if len(info.Models) == 0 {
+			continue
+		}
+		resolver, ok := buildProviderAuthResolver(cfg, selectedProvider{ID: id, Info: info})
+		if !ok {
+			fmt.Fprintf(os.Stderr, "warning: model provider %q declares models but no credential source; its models fall back to the default provider\n", id)
+			continue
+		}
+		factory, err := appserver.NewModelClientFactory(appserver.RealModelClientFactoryConfig{
+			AuthResolver:   resolver,
+			Provider:       info,
+			InstallationID: resolveInstallationID(),
+			Fallback:       fallback,
+			ModelCatalog:   bundledModelCatalog(),
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: model provider %q unavailable: %v\n", id, err)
+			continue
+		}
+		for _, slug := range info.Models {
+			if slug != "" {
+				routes[slug] = factory
+			}
+		}
+	}
+	return routes
 }
 
 // bundledDefaultModelSlug resolves the default model slug from the bundled
@@ -142,9 +187,9 @@ func derefSandboxMode(mode *protocol.SandboxMode) protocol.SandboxMode {
 // buildProviderAuthResolver selects the credential resolver for the active
 // provider. requires_openai_auth providers (e.g. the built-in OpenAI provider)
 // use the login-backed resolver, which honors OPENAI_API_KEY / CODEXGO_API_KEY /
-// auth.json / ChatGPT login. Other providers authenticate from their declared
-// env_key. It returns ok == false when no credential source applies, so the
-// caller selects the mock fallback.
+// auth.json / ChatGPT login. Other providers authenticate from a literal
+// experimental_bearer_token or their declared env_key. It returns ok == false
+// when no credential source applies, so the caller selects the mock fallback.
 func buildProviderAuthResolver(cfg loadedConfig, selected selectedProvider) (appserver.AuthResolver, bool) {
 	if isOpenAIAuthProvider(selected.Info) {
 		return newLoginAuthResolver(authResolverConfig{
@@ -153,6 +198,9 @@ func buildProviderAuthResolver(cfg loadedConfig, selected selectedProvider) (app
 			ChatgptBaseURL:       cfg.ChatgptBaseURL,
 			EnableCodexAPIKeyEnv: true,
 		}), true
+	}
+	if token := selected.Info.ExperimentalBearerToken; token != nil && *token != "" {
+		return &bearerTokenAuthResolver{token: *token}, true
 	}
 	if envKeyDefined(selected.Info) {
 		return &envKeyAuthResolver{info: selected.Info}, true

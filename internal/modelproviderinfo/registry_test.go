@@ -1,7 +1,6 @@
 package modelproviderinfo
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -294,8 +293,12 @@ func TestWireApiStringAndMarshal(t *testing.T) {
 	if err := w.UnmarshalJSON([]byte(`"responses"`)); err != nil || w != WireApiResponses {
 		t.Fatalf("unmarshal: %v %q", err, w)
 	}
-	if err := w.UnmarshalJSON([]byte(`"chat"`)); err == nil || !strings.Contains(err.Error(), "no longer supported") {
-		t.Fatalf("chat error: %v", err)
+	// codexgo divergence: chat is supported again (DEVIATIONS.md "wire_api chat").
+	if err := w.UnmarshalJSON([]byte(`"chat"`)); err != nil || w != WireApiChat {
+		t.Fatalf("chat unmarshal: %v %q, want WireApiChat", err, w)
+	}
+	if got := WireApiChat.String(); got != "chat" {
+		t.Fatalf("chat string: %q", got)
 	}
 }
 

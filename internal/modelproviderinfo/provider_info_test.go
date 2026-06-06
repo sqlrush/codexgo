@@ -73,14 +73,18 @@ func TestDeserializeProviders(t *testing.T) {
 	}
 }
 
-func TestDeserializeChatWireAPIError(t *testing.T) {
-	in := `{"name":"OpenAI using Chat Completions","wire_api":"chat"}`
-	err := json.Unmarshal([]byte(in), new(ModelProviderInfo))
-	if err == nil {
-		t.Fatalf("expected error for wire_api=chat")
+// TestDeserializeChatWireAPI locks codexgo's deliberate divergence from
+// upstream 0.136 (which removed wire_api="chat"): chat is a supported wire
+// protocol again so third-party OpenAI-compatible backends (GLM, DeepSeek, …)
+// can be configured. See DEVIATIONS.md "wire_api chat".
+func TestDeserializeChatWireAPI(t *testing.T) {
+	in := `{"name":"GLM using Chat Completions","wire_api":"chat"}`
+	var p ModelProviderInfo
+	if err := json.Unmarshal([]byte(in), &p); err != nil {
+		t.Fatalf("wire_api=chat must deserialize, got error: %v", err)
 	}
-	if !strings.Contains(err.Error(), chatWireAPIRemovedError) {
-		t.Fatalf("error %q does not contain removal message", err.Error())
+	if p.WireApi != WireApiChat {
+		t.Fatalf("WireApi = %q, want %q", p.WireApi, WireApiChat)
 	}
 }
 

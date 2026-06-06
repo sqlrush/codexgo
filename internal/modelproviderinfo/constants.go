@@ -67,11 +67,6 @@ const openaiDefaultBaseURL = "https://api.openai.com/v1"
 
 // Error and removal messages surfaced to users.
 const (
-	// chatWireAPIRemovedError is returned when a config sets wire_api = "chat".
-	chatWireAPIRemovedError = "`wire_api = \"chat\"` is no longer supported.\n" +
-		"How to fix: set `wire_api = \"responses\"` in your provider config.\n" +
-		"More info: https://github.com/openai/codex/discussions/7782"
-
 	// LegacyOllamaChatProviderID is the removed legacy ollama-chat provider id.
 	LegacyOllamaChatProviderID = "ollama-chat"
 	// OllamaChatProviderRemovedError is shown when ollama-chat is referenced.

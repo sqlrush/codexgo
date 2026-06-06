@@ -31,6 +31,14 @@ type ChatBottomPane struct {
 	colorLevel StdoutColorLevel
 	// maxPopupRows caps popup height so the pane never grows unbounded.
 	maxPopupRows int
+	// overlays is the stack of picker/list overlays opened by slash commands
+	// (/model and friends). While non-empty, the top overlay owns key input and
+	// the pane renders it instead of the composer.
+	overlays OverlayStack
+	// sender delivers app events from overlay action closures.
+	sender *AppEventSender
+	// models is the /model picker entry list supplied by the host.
+	models []ModelPickerEntry
 }
 
 // ChatBottomPaneConfig parameterizes a [ChatBottomPane].
@@ -47,6 +55,12 @@ type ChatBottomPaneConfig struct {
 	// footer's softened theme accent colors. Defaults to the no-color level (the
 	// footer renders without accent colors) when unset.
 	ColorLevel StdoutColorLevel
+	// Sender delivers app events from overlay action closures (required for
+	// slash-command overlays such as /model; nil disables them).
+	Sender *AppEventSender
+	// Models is the /model picker entry list (bundled catalog + custom-provider
+	// models). Empty disables the /model picker.
+	Models []ModelPickerEntry
 }
 
 // NewChatBottomPane builds a bottom pane.
@@ -57,11 +71,13 @@ func NewChatBottomPane(cfg ChatBottomPaneConfig) ChatBottomPane {
 		footer:       cfg.Footer,
 		colorLevel:   cfg.ColorLevel,
 		maxPopupRows: 8,
+		sender:       cfg.Sender,
+		models:       cfg.Models,
 	}
 }
 
-// Update implements BottomPane. It routes key events to the composer and turns
-// the composer's result into app events.
+// Update implements BottomPane. It routes key events to the composer (or the
+// active overlay) and turns the composer's result into app events.
 func (p ChatBottomPane) Update(msg tea.Msg) (BottomPane, tea.Cmd) {
 	switch m := msg.(type) {
 	case TaskRunningMsg:
@@ -70,10 +86,45 @@ func (p ChatBottomPane) Update(msg tea.Msg) (BottomPane, tea.Cmd) {
 	case StatusMsg:
 		p.status = string(m)
 		return p, nil
+	case OpenSlashOverlayEvent:
+		return p.handleSlashOverlay(m)
+	case ModelSelectedEvent:
+		// Keep the footer's model display in sync with the new selection.
+		p.footer.Model = m.Slug
+		return p, nil
 	case tea.KeyMsg:
+		if !p.overlays.IsEmpty() {
+			stack, cmd := p.overlays.HandleKey(m)
+			p.overlays = stack
+			return p, cmd
+		}
 		return p.handleKey(m)
 	}
 	return p, nil
+}
+
+// handleSlashOverlay opens the picker/overlay owned by a delegated slash
+// command. Commands without a wired overlay surface a status notice instead of
+// silently doing nothing.
+func (p ChatBottomPane) handleSlashOverlay(ev OpenSlashOverlayEvent) (BottomPane, tea.Cmd) {
+	switch ev.Command {
+	case SlashModel:
+		if len(p.models) == 0 || p.sender == nil {
+			p.status = "no models available to pick from"
+			return p, nil
+		}
+		params := BuildModelPickerParams(p.models, p.footer.Model)
+		p.overlays = p.overlays.Push(NewListSelectionOverlay(params, p.sender))
+		p.status = ""
+		return p, nil
+	default:
+		name := slashCommandName[ev.Command]
+		if name == "" {
+			name = "command"
+		}
+		p.status = "/" + name + " is not supported yet"
+		return p, nil
+	}
 }
 
 // handleKey processes a key event through the composer and dispatches the result.
@@ -146,6 +197,11 @@ func (p ChatBottomPane) dispatchSlash(parsed DispatchedInput) tea.Cmd {
 func (p ChatBottomPane) View(area Rect) string {
 	if area.Width <= 0 || area.Height <= 0 {
 		return ""
+	}
+	// An active overlay (e.g. the /model picker) replaces the composer block,
+	// mirroring codex's bottom-pane view stack.
+	if !p.overlays.IsEmpty() {
+		return p.overlays.View(p.theme, area)
 	}
 	var rows []string
 
@@ -385,6 +441,9 @@ func (p ChatBottomPane) renderPopup(width int) []string {
 // (top-pad + prompt + bottom-pad + footer), matching codex's
 // desired_height_with_textarea_right_reserve (textarea height + 2 + footer).
 func (p ChatBottomPane) DesiredHeight(width int) int {
+	if !p.overlays.IsEmpty() {
+		return p.overlays.DesiredHeight(width)
+	}
 	if _, _, active := p.composer.CurrentSearch(); active {
 		// Reverse-search collapses to a single bar row.
 		return 1

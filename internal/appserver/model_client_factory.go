@@ -92,6 +92,24 @@ type RealModelClientFactoryConfig struct {
 	Fallback ModelClientFactory
 }
 
+// NewModelRoutedClientFactory wraps per-model-slug factories around a default
+// factory: a session whose model slug appears in routes streams through that
+// provider's factory; every other slug uses def. This is the codexgo
+// model→provider routing extension — selecting "glm-5.1" reaches the glm
+// provider while "gpt-5.5" keeps using the default (login-backed) provider,
+// with no `model_provider` switch needed.
+func NewModelRoutedClientFactory(routes map[string]ModelClientFactory, def ModelClientFactory) ModelClientFactory {
+	if len(routes) == 0 {
+		return def
+	}
+	return func(ctx context.Context, threadID protocol.ThreadID, sessionCfg core.SessionConfiguration) (core.ModelClient, error) {
+		if factory, ok := routes[sessionCfg.Model()]; ok {
+			return factory(ctx, threadID, sessionCfg)
+		}
+		return def(ctx, threadID, sessionCfg)
+	}
+}
+
 // NewModelClientFactory builds a [ModelClientFactory] that selects a real
 // provider-backed [core.ResponsesModelClient] when [AuthResolver] reports
 // credentials and otherwise delegates to the configured mock Fallback. It is the
@@ -126,6 +144,17 @@ func NewModelClientFactory(cfg RealModelClientFactoryConfig) (ModelClientFactory
 		clientCfg, err := buildResponsesClientConfig(provider, resolved, sessionCfg, threadID, cfg)
 		if err != nil {
 			return nil, fmt.Errorf("appserver: build responses client config for thread %s: %w", threadID.String(), err)
+		}
+
+		// codexgo extension: providers declaring wire_api = "chat" stream over
+		// the chat-completions protocol (GLM, DeepSeek, …). See DEVIATIONS.md
+		// "wire_api chat".
+		if provider.WireApi == modelproviderinfo.WireApiChat {
+			chatClient, err := core.NewChatModelClient(clientCfg)
+			if err != nil {
+				return nil, fmt.Errorf("appserver: build chat model client for thread %s: %w", threadID.String(), err)
+			}
+			return chatClient, nil
 		}
 
 		client, err := core.NewResponsesModelClient(clientCfg)

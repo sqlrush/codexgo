@@ -53,6 +53,10 @@ type Model struct {
 	quitting bool
 	// exitMode records the requested exit strategy.
 	exitMode ExitMode
+
+	// persistModel persists a /model picker selection (host callback writing
+	// `model = "<slug>"` into config.toml). Nil disables persistence.
+	persistModel func(slug string) error
 }
 
 // ModelConfig parameterizes a root [Model].
@@ -79,6 +83,9 @@ type ModelConfig struct {
 	// scrollback purge). When nil it defaults to os.Stdout, matching
 	// tea.NewProgram's default output. Tests override it to capture the bytes.
 	Output io.Writer
+	// PersistModelSelection persists a /model picker selection to the host's
+	// configuration. May be nil to disable persistence.
+	PersistModelSelection func(slug string) error
 }
 
 // NewModel constructs the root model from configuration, applying defaults for
@@ -101,14 +108,15 @@ func NewModel(cfg ModelConfig) Model {
 		output = os.Stdout
 	}
 	return Model{
-		caps:       cfg.Caps,
-		theme:      LoadTheme(cfg.Tui, cfg.Caps),
-		sender:     sender,
-		engine:     cfg.Engine,
-		transcript: transcript,
-		bottom:     bottom,
-		output:     output,
-		inline:     cfg.Inline,
+		caps:         cfg.Caps,
+		theme:        LoadTheme(cfg.Tui, cfg.Caps),
+		sender:       sender,
+		engine:       cfg.Engine,
+		transcript:   transcript,
+		bottom:       bottom,
+		output:       output,
+		inline:       cfg.Inline,
+		persistModel: cfg.PersistModelSelection,
 	}
 }
 
@@ -236,6 +244,12 @@ func (m Model) handleAppEvent(ev AppEvent) (tea.Model, tea.Cmd) {
 
 	case ClearUIEvent:
 		return m.handleClearUI()
+
+	case NewSessionEvent:
+		return m.handleNewSession()
+
+	case ModelSelectedEvent:
+		return m.handleModelSelected(ev)
 
 	case CodexOpEvent:
 		return m, m.submitCommand(ev.Command, "")

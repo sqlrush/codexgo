@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/sqlrush/codexgo/internal/appserverclient"
+	"github.com/sqlrush/codexgo/internal/config"
 	"github.com/sqlrush/codexgo/internal/tui"
 )
 
@@ -34,6 +35,22 @@ func runDefaultNoSubcommand(ctx context.Context, _ ParsedCommandLine, streams St
 	})
 	defer client.Shutdown(context.WithoutCancel(ctx))
 
+	// /model picker wiring: the entry list combines the bundled catalog with
+	// the configured custom-provider models; selections persist into
+	// config.toml's `model` key.
+	pickerCfg, havePickerCfg := loadProviderConfig()
+	persistModel := func(slug string) error {
+		home := pickerCfg.CodexHome
+		if home == "" {
+			resolved, err := config.FindCodexHome()
+			if err != nil {
+				return err
+			}
+			home = resolved
+		}
+		return persistModelSelection(home, slug)
+	}
+
 	if err := tui.Run(ctx, tui.RunConfig{
 		Client:  client,
 		Workdir: resolveCwd(),
@@ -43,7 +60,9 @@ func runDefaultNoSubcommand(ctx context.Context, _ ParsedCommandLine, streams St
 		// codex which shows its own CARGO_PKG_VERSION — not codexgo's build
 		// identity (cli.Version). Leaving Version empty would default to the same
 		// value; passing it explicitly documents the intent.
-		Version: tui.CodexVersion,
+		Version:               tui.CodexVersion,
+		Models:                buildModelPickerEntries(pickerCfg, havePickerCfg),
+		PersistModelSelection: persistModel,
 	}); err != nil {
 		fmt.Fprintln(streams.Stderr, "codex:", err)
 		return 1

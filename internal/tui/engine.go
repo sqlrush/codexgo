@@ -143,6 +143,29 @@ func (e *Engine) startOrResume(ctx context.Context, resumeID string) (string, er
 	return threadIDFromAggregate(threadAgg)
 }
 
+// StartNewThread spawns a fresh thread, optionally overriding the model slug
+// (thread/start params.Model). The new thread becomes the active thread. It
+// backs /new (empty model keeps the configured default) and the /model picker
+// (the override makes the model→provider routing take effect immediately).
+func (e *Engine) StartNewThread(ctx context.Context, model string) (string, error) {
+	params := appserverproto.ThreadStartParams{}
+	if model != "" {
+		params.Model = &model
+	}
+	var resp appserverproto.ThreadStartResponse
+	if err := e.client.RequestTyped(ctx, "thread/start", params, &resp); err != nil {
+		return "", fmt.Errorf("tui: thread/start: %w", err)
+	}
+	threadID, err := threadIDFromAggregate(resp.Thread)
+	if err != nil {
+		return "", err
+	}
+	e.mu.Lock()
+	e.threadID = threadID
+	e.mu.Unlock()
+	return threadID, nil
+}
+
 // SubmitTurn submits user input as a new turn on the active thread.
 func (e *Engine) SubmitTurn(ctx context.Context, items []appserverproto.UserInput, outputSchema json.RawMessage) error {
 	threadID := e.ThreadID()

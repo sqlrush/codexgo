@@ -148,3 +148,27 @@ func (p staticBearerAuthProvider) ApplyAuth(_ context.Context, req client.Reques
 func envKeyDefined(info modelproviderinfo.ModelProviderInfo) bool {
 	return info.EnvKey != nil && *info.EnvKey != ""
 }
+
+// bearerTokenAuthResolver resolves credentials from a provider's literal
+// `experimental_bearer_token` config value. It lets a custom provider (GLM,
+// DeepSeek, …) carry its API key inside config.toml without requiring an
+// environment variable.
+type bearerTokenAuthResolver struct {
+	token string
+}
+
+// compile-time assertion that bearerTokenAuthResolver satisfies appserver.AuthResolver.
+var _ appserver.AuthResolver = (*bearerTokenAuthResolver)(nil)
+
+// Resolve returns a static bearer auth provider for the configured token.
+func (r *bearerTokenAuthResolver) Resolve(_ context.Context, _ protocol.ThreadID, _ core.SessionConfiguration) (appserver.ResolvedAuth, error) {
+	if r.token == "" {
+		return appserver.ResolvedAuth{}, nil
+	}
+	mode := appserverproto.AuthModeApiKey
+	return appserver.ResolvedAuth{
+		HasCredentials: true,
+		AuthProvider:   staticBearerAuthProvider{token: r.token},
+		AuthMode:       &mode,
+	}, nil
+}
