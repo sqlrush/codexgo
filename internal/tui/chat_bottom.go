@@ -3,11 +3,14 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
+
+	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
 // ChatBottomPane is the bottom-pane implementation of [BottomPane]. It wraps a
@@ -39,6 +42,15 @@ type ChatBottomPane struct {
 	sender *AppEventSender
 	// models is the /model picker entry list supplied by the host.
 	models []ModelPickerEntry
+
+	// taskRunning tracks whether a turn is in flight; while true the pane
+	// renders the live "Working (…)" status row above the composer (port of
+	// StatusIndicatorWidget) and Esc interrupts the turn.
+	taskRunning bool
+	// taskStartedAt anchors the elapsed display.
+	taskStartedAt time.Time
+	// spinner is the working-status row state (blink frame + elapsed).
+	spinner RunningSpinner
 }
 
 // ChatBottomPaneConfig parameterizes a [ChatBottomPane].
@@ -86,6 +98,14 @@ func (p ChatBottomPane) Update(msg tea.Msg) (BottomPane, tea.Cmd) {
 	case StatusMsg:
 		p.status = string(m)
 		return p, nil
+	case CoreEventMsg:
+		return p.handleCoreEvent(m)
+	case SpinnerTickMsg:
+		if !p.taskRunning {
+			return p, nil // task ended; let the tick loop die
+		}
+		p.spinner = p.spinner.Tick().WithElapsed(time.Since(p.taskStartedAt))
+		return p, SpinnerTickCmd()
 	case OpenSlashOverlayEvent:
 		return p.handleSlashOverlay(m)
 	case ModelSelectedEvent:
@@ -98,7 +118,35 @@ func (p ChatBottomPane) Update(msg tea.Msg) (BottomPane, tea.Cmd) {
 			p.overlays = stack
 			return p, cmd
 		}
+		// Esc interrupts the running turn (codex's interrupt_turn default
+		// binding) when no popup/search owns the key.
+		if m.Type == tea.KeyEsc && p.taskRunning &&
+			!p.composer.PopupVisible() && !p.composer.SearchActive() {
+			return p, EventCmd(CodexOpEvent{Command: NewInterruptCommand()})
+		}
 		return p.handleKey(m)
+	}
+	return p, nil
+}
+
+// handleCoreEvent tracks turn lifecycle events to drive the working-status row
+// (the Rust ChatWidget flips its StatusIndicatorWidget on TaskStarted /
+// TaskComplete; errors and aborts also clear it).
+func (p ChatBottomPane) handleCoreEvent(ev CoreEventMsg) (BottomPane, tea.Cmd) {
+	switch ev.Event.Msg.Type {
+	case protocol.EventMsgKindTurnStarted:
+		p.taskRunning = true
+		p.taskStartedAt = time.Now()
+		p.spinner = NewRunningSpinner(true).WithTrueColor(p.colorLevel == ColorLevelTrueColor)
+		p.composer = p.composer.SetTaskRunning(true)
+		return p, SpinnerTickCmd()
+	case protocol.EventMsgKindTurnComplete,
+		protocol.EventMsgKindTurnAborted,
+		protocol.EventMsgKindError,
+		protocol.EventMsgKindStreamError:
+		p.taskRunning = false
+		p.composer = p.composer.SetTaskRunning(false)
+		return p, nil
 	}
 	return p, nil
 }
@@ -204,6 +252,12 @@ func (p ChatBottomPane) View(area Rect) string {
 		return p.overlays.View(p.theme, area)
 	}
 	var rows []string
+
+	// Live working-status row above the composer while a turn runs (port of
+	// the StatusIndicatorWidget placement: status row → composer → footer).
+	if p.taskRunning {
+		rows = append(rows, p.spinner.Line(p.theme))
+	}
 
 	if query, preview, active := p.composer.CurrentSearch(); active {
 		rows = append(rows, p.renderSearchBar(query, preview, area.Width))
@@ -455,6 +509,9 @@ func (p ChatBottomPane) DesiredHeight(width int) int {
 	}
 	// Composer block: top padding + textarea rows + bottom padding.
 	h := textRows + 2
+	if p.taskRunning {
+		h++ // live working-status row above the composer
+	}
 
 	if items, _, ok := p.composer.PopupRows(); ok {
 		n := len(items)

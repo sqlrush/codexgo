@@ -5,6 +5,8 @@ import (
 	"strings"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
@@ -239,6 +241,24 @@ type RunningSpinner struct {
 	InlineMessage string
 	// frame advances the blink animation.
 	frame int
+	// trueColor enables the RGB shimmer path on the header.
+	trueColor bool
+}
+
+// WithTrueColor returns a copy with the RGB shimmer path toggled.
+func (s RunningSpinner) WithTrueColor(on bool) RunningSpinner {
+	s.trueColor = on
+	return s
+}
+
+// SpinnerTickMsg drives the working-status animation; the bottom pane
+// reschedules it via SpinnerTickCmd while a task is running.
+type SpinnerTickMsg struct{}
+
+// SpinnerTickCmd schedules the next animation frame (32ms cadence, matching
+// the Rust schedule_frame_in).
+func SpinnerTickCmd() tea.Cmd {
+	return tea.Tick(SpinnerTickInterval, func(time.Time) tea.Msg { return SpinnerTickMsg{} })
 }
 
 // NewRunningSpinner returns a spinner with upstream defaults (port of
@@ -297,7 +317,13 @@ func (s RunningSpinner) Line(theme Theme) string {
 		b.WriteString(lipFg(theme.Primary).Render(ind))
 		b.WriteString(" ")
 	}
-	b.WriteString(lipFg(theme.Primary).Render(s.Header))
+	// The header carries codex's shimmer sweep (shimmer.rs): highlight toward
+	// the detected terminal background on truecolor, modifier ladder otherwise.
+	shimmerBg := theme.TerminalBgRGB
+	if !theme.HasTerminalBg {
+		shimmerBg = RGB{255, 255, 255}
+	}
+	b.WriteString(ShimmerRender(s.Header, theme.ForegroundRGB, shimmerBg, s.trueColor && theme.HasTerminalBg))
 	b.WriteString(" ")
 
 	pretty := FmtElapsedCompact(int64(s.Elapsed.Seconds()))

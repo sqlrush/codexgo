@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -49,6 +50,12 @@ type ChatTranscript struct {
 	// inter-cell leading blank line is only inserted between cells (matching
 	// codex's display_lines_for_history_insert in app/resize_reflow.rs).
 	scrollbackEmitted bool
+
+	// turnStartedAt anchors the elapsed time for the completed-turn separator;
+	// hadWorkActivity gates the separator to turns that ran exec/tool calls
+	// (port of turn_runtime.rs had_work_activity).
+	turnStartedAt   time.Time
+	hadWorkActivity bool
 
 	// header retains the session-header seed (version/model/directory) supplied to
 	// WithSessionHeader so a fresh session after /clear can re-seed the same
@@ -177,6 +184,12 @@ func (t ChatTranscript) AppendUserMessage(text string) TranscriptView {
 // applyEvent dispatches on the event's message type.
 func (t ChatTranscript) applyEvent(ev protocol.Event) ChatTranscript {
 	switch ev.Msg.Type {
+	case protocol.EventMsgKindTurnStarted:
+		// Anchor the turn duration and reset the work-activity flag that gates
+		// the completed-turn separator (turn_runtime.rs had_work_activity).
+		t.turnStartedAt = time.Now()
+		t.hadWorkActivity = false
+
 	case protocol.EventMsgKindUserMessage:
 		if ev.Msg.UserMessage != nil && strings.TrimSpace(ev.Msg.UserMessage.Message) != "" {
 			t = t.commitStream()
@@ -217,6 +230,7 @@ func (t ChatTranscript) applyEvent(ev protocol.Event) ChatTranscript {
 			t.cells = t.appendCell(cell)
 			t.execIndex = cloneIndex(t.execIndex)
 			t.execIndex[ev.Msg.ExecCommandBegin.CallID] = len(t.cells) - 1
+			t.hadWorkActivity = true
 		}
 
 	case protocol.EventMsgKindExecCommandOutputDelta:
@@ -236,6 +250,7 @@ func (t ChatTranscript) applyEvent(ev protocol.Event) ChatTranscript {
 			t.cells = t.appendCell(NewToolCallCell(t.theme, title))
 			t.toolIndex = cloneIndex(t.toolIndex)
 			t.toolIndex[ev.Msg.McpToolCallBegin.CallID] = len(t.cells) - 1
+			t.hadWorkActivity = true
 		}
 
 	case protocol.EventMsgKindMcpToolCallEnd:
@@ -273,6 +288,20 @@ func (t ChatTranscript) applyEvent(ev protocol.Event) ChatTranscript {
 
 	case protocol.EventMsgKindTurnComplete, protocol.EventMsgKindTurnAborted:
 		t = t.commitStream()
+		// Completed-turn separator (FinalMessageSeparator): only after a turn
+		// that performed real work (exec/tool calls), labeled with the elapsed
+		// time when over a minute.
+		if t.hadWorkActivity {
+			elapsed := int64(0)
+			if ev.Msg.Type == protocol.EventMsgKindTurnComplete &&
+				ev.Msg.TurnComplete != nil && ev.Msg.TurnComplete.DurationMs != nil {
+				elapsed = *ev.Msg.TurnComplete.DurationMs / 1000
+			} else if !t.turnStartedAt.IsZero() {
+				elapsed = int64(time.Since(t.turnStartedAt).Seconds())
+			}
+			t.cells = t.appendCell(NewWorkedForSeparatorCell(elapsed))
+		}
+		t.hadWorkActivity = false
 	}
 	return t
 }

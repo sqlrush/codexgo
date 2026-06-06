@@ -44,6 +44,14 @@ type Theme struct {
 	// codex's default_bg() == None fallback.
 	ComposerSurfaceBg  lipgloss.TerminalColor
 	HasComposerSurface bool
+
+	// ForegroundRGB is the palette foreground as raw RGB (the shimmer base).
+	ForegroundRGB RGB
+	// TerminalBgRGB is the detected terminal background (the shimmer
+	// highlight target); HasTerminalBg gates it. Set by
+	// WithTerminalBackground alongside the composer surface.
+	TerminalBgRGB RGB
+	HasTerminalBg bool
 }
 
 // WithTerminalBackground derives the composer surface color from the detected
@@ -55,6 +63,8 @@ func (t Theme) WithTerminalBackground(bg RGB, ok bool) Theme {
 	}
 	t.ComposerSurfaceBg = lipgloss.Color(userMessageBg(bg).Hex())
 	t.HasComposerSurface = true
+	t.TerminalBgRGB = bg
+	t.HasTerminalBg = true
 	return t
 }
 
@@ -144,15 +154,16 @@ func buildTheme(base builtinTheme, caps Capabilities) Theme {
 	base.name = orDefault(base.name, "default")
 
 	return Theme{
-		Name:       base.name,
-		Foreground: fg,
-		Background: col(base.background),
-		Dim:        dim,
-		Primary:    primary,
-		Success:    success,
-		Warning:    warning,
-		Error:      errc,
-		Info:       info,
+		Name:          base.name,
+		Foreground:    fg,
+		ForegroundRGB: base.foreground,
+		Background:    col(base.background),
+		Dim:           dim,
+		Primary:       primary,
+		Success:       success,
+		Warning:       warning,
+		Error:         errc,
+		Info:          info,
 
 		UserMessage:      lipgloss.NewStyle().Foreground(fg).Bold(true),
 		AgentMessage:     lipgloss.NewStyle().Foreground(fg),

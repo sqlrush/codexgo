@@ -450,3 +450,40 @@ func splitTrimmed(s string) []string {
 	}
 	return strings.Split(s, "\n")
 }
+
+// WorkedForSeparatorCell is the completed-turn separator inserted after a turn
+// that performed real work (port of history_cell/separators.rs
+// FinalMessageSeparator, minus the runtime-metrics label which codexgo does
+// not collect): a full-width dim rule, labeled "─ Worked for <elapsed> ─" when
+// the turn ran longer than 60 seconds.
+type WorkedForSeparatorCell struct {
+	// ElapsedSeconds is the turn duration; values <= 60 render an unlabeled rule.
+	ElapsedSeconds int64
+}
+
+// NewWorkedForSeparatorCell builds the separator for a completed turn.
+func NewWorkedForSeparatorCell(elapsedSeconds int64) WorkedForSeparatorCell {
+	return WorkedForSeparatorCell{ElapsedSeconds: elapsedSeconds}
+}
+
+// Lines implements HistoryCell.
+func (c WorkedForSeparatorCell) Lines(width int) []Line {
+	if width <= 0 {
+		return nil
+	}
+	dim := Style{Dim: true}
+	if c.ElapsedSeconds <= 60 {
+		return []Line{{Spans: []Span{StyledSpan(strings.Repeat("─", width), dim)}}}
+	}
+	label := fmt.Sprintf("─ Worked for %s ─", FmtElapsedCompact(c.ElapsedSeconds))
+	labelRunes := []rune(label)
+	if len(labelRunes) > width {
+		labelRunes = labelRunes[:width]
+	}
+	fill := width - len(labelRunes)
+	text := string(labelRunes)
+	if fill > 0 {
+		text += strings.Repeat("─", fill)
+	}
+	return []Line{{Spans: []Span{StyledSpan(text, dim)}}}
+}
