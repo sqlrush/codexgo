@@ -85,7 +85,12 @@ func (r MarkdownRenderer) renderBlock(n ast.Node, src []byte, out *[]Line, prefi
 		*out = append(*out, prefixLine(line, prefix))
 
 	case *ast.Paragraph, *ast.TextBlock:
-		para := r.renderInline(n, src, Style{Fg: r.theme.Foreground})
+		// Plain paragraph text carries NO foreground color: codex's markdown
+		// renderer builds text with Style::default() (markdown_render.rs
+		// current_line_style), so the body inherits the terminal's default fg and
+		// reads as "·" in the captured cell attributes. Emphasis/code/link spans
+		// override the fg explicitly below, so they are unaffected.
+		para := r.renderInline(n, src, Style{})
 		for _, l := range splitOnHardBreaks(para) {
 			*out = append(*out, prefixLine(l, prefix))
 		}

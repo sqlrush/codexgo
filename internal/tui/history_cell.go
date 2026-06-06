@@ -22,12 +22,29 @@ type HistoryCell interface {
 
 // --- User message cell ------------------------------------------------------
 
-// UserCell renders a user message. User text is shown verbatim (not parsed as
-// markdown) with a leading prompt marker, matching the Rust user_message style.
+// UserCell renders a user message echoed into history on submit. User text is
+// shown verbatim (not parsed as markdown), wrapped, then prefixed with a "› "
+// marker on the first line and a two-space indent on continuation lines, with a
+// blank line before and after the message block.
+//
+// This is the Go analogue of UserHistoryCell::display_lines in codex-rs/tui/src/
+// history_cell/messages.rs: a leading blank line, the wrapped message body run
+// through prefix_lines("› " bold+dim, "  "), then a trailing blank line. The
+// body itself carries no style (user_message_style() resolves to the terminal
+// default when no terminal background is known), so only the marker glyph and
+// its trailing gutter space are bold+dim — matching codex's captured cell
+// attributes (marker "[bold,dim]", body "[·]").
 type UserCell struct {
 	theme Theme
 	text  string
 }
+
+// userMarker is codex's user-prompt marker glyph followed by a gutter space
+// ("› "), styled bold+dim; userIndent is the two-space continuation prefix.
+const (
+	userMarker = "› "
+	userIndent = "  "
+)
 
 // NewUserCell builds a user message cell.
 func NewUserCell(theme Theme, text string) UserCell {
@@ -35,21 +52,48 @@ func NewUserCell(theme Theme, text string) UserCell {
 }
 
 // Lines implements HistoryCell.
+//
+// The wrapping order mirrors codex: the message body is wrapped FIRST (so the
+// prefix columns are accounted for as a right margin), THEN the marker/indent is
+// prepended to each wrapped line. The leading/trailing blank lines and the body
+// spans carry no style; only the marker span is bold+dim.
 func (c UserCell) Lines(width int) []Line {
-	prompt := Style{Fg: c.theme.Primary, Bold: true}
-	body := Style{Fg: c.theme.Foreground}
-	var out []Line
-	for i, raw := range strings.Split(c.text, "\n") {
-		marker := "  "
-		if i == 0 {
-			marker = "> "
-		}
-		line := Line{Spans: []Span{{Text: marker, Style: prompt}, {Text: raw, Style: body}}}
-		out = append(out, line)
+	// Trim trailing blank lines from the source the way codex does before
+	// wrapping, so an empty submission renders nothing.
+	body := strings.TrimRight(c.text, "\r\n")
+	if strings.TrimSpace(body) == "" {
+		return nil
+	}
+
+	marker := Style{Bold: true, Dim: true}
+
+	// Build the raw (unprefixed) body lines, then wrap to the content width
+	// (width minus the two prefix columns and a one-column right margin, matching
+	// codex's wrap_width = width - (LIVE_PREFIX_COLS + 1)).
+	var bodyLines []Line
+	for _, raw := range strings.Split(body, "\n") {
+		bodyLines = append(bodyLines, Line{Spans: []Span{{Text: raw}}})
 	}
 	if width > 0 {
-		out = WordWrapLines(out, width)
+		wrapWidth := width - 3 // 2 prefix cols + 1 right margin
+		if wrapWidth < 1 {
+			wrapWidth = 1
+		}
+		bodyLines = WordWrapLines(bodyLines, wrapWidth)
 	}
+
+	out := []Line{{}} // leading blank line
+	for i, bl := range bodyLines {
+		prefix := userIndent
+		var prefixStyle Style
+		if i == 0 {
+			prefix = userMarker
+			prefixStyle = marker
+		}
+		spans := append([]Span{{Text: prefix, Style: prefixStyle}}, bl.Spans...)
+		out = append(out, Line{Spans: spans})
+	}
+	out = append(out, Line{}) // trailing blank line
 	return out
 }
 
@@ -80,13 +124,48 @@ func (c AgentCell) WithSource(source string) AgentCell {
 // Source returns the cell's committed markdown source.
 func (c AgentCell) Source() string { return c.source }
 
+// agentBullet is codex's assistant-message bullet glyph followed by a gutter
+// space ("• "), styled dim; agentIndent is the two-space continuation prefix.
+const (
+	agentBullet = "• "
+	agentIndent = "  "
+)
+
 // Lines implements HistoryCell.
+//
+// The rendered markdown is wrapped to the content width (reserving the two
+// prefix columns), then prefixed with a dim "• " bullet on the first line and a
+// two-space indent on continuation lines — the Go analogue of
+// AgentMarkdownCell::display_lines's prefix_hyperlink_lines("• " dim, "  ") in
+// codex-rs/tui/src/history_cell/messages.rs. Only the bullet span is dim; the
+// body inherits the markdown renderer's own styling.
 func (c AgentCell) Lines(width int) []Line {
 	lines := c.renderer.Render(c.source)
 	if width > 0 {
-		lines = WordWrapLines(lines, width)
+		wrapWidth := width - 2 // reserve the two prefix columns
+		if wrapWidth < 1 {
+			wrapWidth = 1
+		}
+		lines = WordWrapLines(lines, wrapWidth)
 	}
-	return lines
+	return prefixAgentLines(lines)
+}
+
+// prefixAgentLines prepends the dim "• " bullet to the first line and a
+// two-space indent to the rest, mirroring codex's prefix_hyperlink_lines.
+func prefixAgentLines(lines []Line) []Line {
+	out := make([]Line, 0, len(lines))
+	for i, l := range lines {
+		prefix := agentIndent
+		var prefixStyle Style
+		if i == 0 {
+			prefix = agentBullet
+			prefixStyle = Style{Dim: true}
+		}
+		spans := append([]Span{{Text: prefix, Style: prefixStyle}}, l.Spans...)
+		out = append(out, Line{Spans: spans})
+	}
+	return out
 }
 
 // --- Reasoning cell ---------------------------------------------------------

@@ -208,6 +208,13 @@ func (m Model) handleAppEvent(ev AppEvent) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case SubmitUserMessageEvent:
+		// Echo the submitted message into history TUI-side (codex's
+		// on_user_message_display), then forward the turn to the engine. The
+		// withScrollback wrapper applied to the returned cmd drains the new user
+		// cell into native scrollback.
+		if strings.TrimSpace(ev.Text) != "" {
+			m.transcript = m.transcript.AppendUserMessage(ev.Text)
+		}
 		return m, m.submitUserMessage(ev.Text)
 
 	case CodexOpEvent:

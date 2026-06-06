@@ -125,6 +125,22 @@ func (t ChatTranscript) AppendCoreEvent(ev CoreEventMsg) TranscriptView {
 	return t.applyEvent(ev.Event)
 }
 
+// AppendUserMessage echoes a submitted user message into history as a user cell,
+// mirroring codex's on_user_message_display (chatwidget.rs): the submitted text
+// is inserted as a UserHistoryCell at submit time, TUI-side, rather than waiting
+// for a core event. An empty (whitespace-only) message is ignored.
+//
+// Any active stream is committed first so the echo lands after the prior turn's
+// finalized output, matching add_to_history ordering.
+func (t ChatTranscript) AppendUserMessage(text string) TranscriptView {
+	if strings.TrimSpace(text) == "" {
+		return t
+	}
+	t = t.commitStream()
+	t.cells = t.appendCell(NewUserCell(t.theme, text))
+	return t
+}
+
 // applyEvent dispatches on the event's message type.
 func (t ChatTranscript) applyEvent(ev protocol.Event) ChatTranscript {
 	switch ev.Msg.Type {

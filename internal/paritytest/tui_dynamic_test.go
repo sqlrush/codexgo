@@ -24,25 +24,28 @@ package paritytest
 // the assistant text never appears within the deadline (e.g. a CI host where the
 // interactive turn cannot complete), the scenario SKIPS rather than flakes.
 //
-// STRICTNESS — this test is LOG-ONLY by default and is NOT governed by
-// CODEX_TUI_FRAME_STRICT. The idle-frame harness drives that flag to zero
-// divergences; the dynamic path, by contrast, currently REVEALS real codexgo
-// rendering gaps that are out of this wave's scope (verified against codex
-// 0.136.0 in a PTY):
+// STRICTNESS — this test participates in the SAME strict ladder as the idle
+// frames (CODEX_TUI_FRAME_STRICT): level >= 1 fails on any non-masked character
+// (row) divergence, level >= 2 additionally fails on any non-masked per-cell SGR
+// attribute divergence. The diff is always LOGGED regardless; the env only flips
+// it from log-only to hard failure.
 //
-//   - codexgo does NOT echo the submitted user message into scrollback, whereas
-//     codex renders it as a "› <text>" user history cell;
-//   - codexgo's agent message has no leading bullet, whereas codex prefixes the
-//     assistant message with "• " (history_cell agent bullet);
-//   - codexgo's user-cell marker is "> " while codex uses "› ".
+// Wave 4 closed the three history-rendering gaps this scenario originally
+// revealed (verified against codex 0.136.0 in a PTY), so the dynamic frame now
+// passes strict at both sizes:
 //
-// Gating this on the global strict flag would turn the existing-green idle
-// strict run RED, violating the wave constraint. So the dynamic diff (rows +
-// attributes) is always LOGGED, and only fails when its OWN opt-in flag
-// CODEX_TUI_DYNAMIC_STRICT is set — the bar a future wave drives to zero once the
-// user-echo / agent-bullet history cells are aligned. The harness machinery
-// (scripted turn, post-reply capture, grid diff) is fully landed and exercises
-// the inline history-insertion path end-to-end today.
+//   - the submitted user message is echoed into scrollback as a "› <text>" user
+//     history cell (TUI-side at submit time, like codex's on_user_message_display);
+//   - the assistant message renders with a dim "• " bullet prefix
+//     (history_cell::AgentMarkdownCell);
+//   - the user-cell marker glyph is "› " (bold+dim) and plain markdown body text
+//     carries the terminal default foreground (no theme color), matching codex's
+//     captured cell attributes.
+//
+// Because the gaps are closed, this test no longer needs a separate opt-in flag;
+// gating it on the global strict ladder keeps the dynamic and idle frames held to
+// the same bar. The harness machinery (scripted turn, post-reply capture, grid
+// diff) exercises the inline history-insertion path end-to-end.
 
 import (
 	"bytes"
@@ -65,20 +68,6 @@ import (
 // short and free of volatile content so it renders identically in both binaries
 // and is easy to poll for in the captured byte stream.
 const dynamicReplyText = "Hello from parity"
-
-// dynamicStrictEnv opts the dynamic scenario into hard failure on any non-masked
-// row/attribute divergence. Off by default (the dynamic path has known codexgo
-// rendering gaps documented in this file's header); set to a future wave's bar.
-const dynamicStrictEnv = "CODEX_TUI_DYNAMIC_STRICT"
-
-func dynamicStrict() bool {
-	switch os.Getenv(dynamicStrictEnv) {
-	case "1", "true", "yes", "2":
-		return true
-	default:
-		return false
-	}
-}
 
 // TestParityTUIFrameDynamic drives a scripted assistant turn in the TUI and
 // compares the post-reply frame between both binaries.
@@ -119,9 +108,9 @@ func TestParityTUIFrameDynamic(t *testing.T) {
 
 			if len(diff.mismatchedRows) > 0 {
 				t.Logf("non-masked row differences (codex | codexgo):\n%s", diff.render())
-				if dynamicStrict() {
-					t.Errorf("dynamic frame %s: %d non-masked rows differ (unset %s to log only)",
-						name, len(diff.mismatchedRows), dynamicStrictEnv)
+				if strictFrame() {
+					t.Errorf("dynamic frame %s: %d non-masked rows differ (run with %s unset to log only)",
+						name, len(diff.mismatchedRows), strictFrameEnv)
 				}
 			}
 
@@ -130,9 +119,9 @@ func TestParityTUIFrameDynamic(t *testing.T) {
 				name, attrDiff.cellsCompared, attrDiff.cellsMismatched, len(attrDiff.rows))
 			if attrDiff.cellsMismatched > 0 {
 				t.Logf("non-masked cell ATTRIBUTE differences (codex | codexgo):\n%s", attrDiff.render())
-				if dynamicStrict() {
-					t.Errorf("dynamic frame %s: %d non-masked cells differ in SGR attributes (unset %s to log only)",
-						name, attrDiff.cellsMismatched, dynamicStrictEnv)
+				if strictFrameAttrs() {
+					t.Errorf("dynamic frame %s: %d non-masked cells differ in SGR attributes (run with %s<2 to log only)",
+						name, attrDiff.cellsMismatched, strictFrameEnv)
 				}
 			}
 		})

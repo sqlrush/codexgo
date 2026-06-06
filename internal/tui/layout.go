@@ -89,6 +89,11 @@ type TranscriptView interface {
 	// AppendCoreEvent feeds a decoded engine event into the transcript so it can
 	// build/stream history cells. It returns the updated view.
 	AppendCoreEvent(ev CoreEventMsg) TranscriptView
+	// AppendUserMessage echoes a submitted user message into history as a user
+	// cell. codex inserts this cell TUI-side at submit time (not via a core event
+	// roundtrip); this seam lets the model do the same. It returns the updated
+	// view, or self unchanged for an empty message.
+	AppendUserMessage(text string) TranscriptView
 }
 
 // ScrollbackDrainer is the optional capability a [TranscriptView] implements to
@@ -127,6 +132,7 @@ type noopTranscript struct{}
 func (n noopTranscript) Update(tea.Msg) (TranscriptView, tea.Cmd)    { return n, nil }
 func (noopTranscript) View(Rect) string                              { return "" }
 func (n noopTranscript) AppendCoreEvent(CoreEventMsg) TranscriptView { return n }
+func (n noopTranscript) AppendUserMessage(string) TranscriptView     { return n }
 
 // noopBottomPane is the placeholder bottom pane used until the area agent's
 // implementation is wired in. It reserves a single row and renders nothing.

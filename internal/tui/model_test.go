@@ -11,8 +11,9 @@ import (
 // recordingTranscript counts the core events fed to it and records the last
 // message delivered through Update.
 type recordingTranscript struct {
-	appended int
-	lastMsg  tea.Msg
+	appended     int
+	userMessages int
+	lastMsg      tea.Msg
 }
 
 func (r recordingTranscript) Update(msg tea.Msg) (TranscriptView, tea.Cmd) {
@@ -22,6 +23,10 @@ func (r recordingTranscript) Update(msg tea.Msg) (TranscriptView, tea.Cmd) {
 func (recordingTranscript) View(Rect) string { return "TRANSCRIPT" }
 func (r recordingTranscript) AppendCoreEvent(CoreEventMsg) TranscriptView {
 	r.appended++
+	return r
+}
+func (r recordingTranscript) AppendUserMessage(string) TranscriptView {
+	r.userMessages++
 	return r
 }
 
@@ -140,5 +145,28 @@ func TestModelSubmitUserMessageWithoutEngineIsNoop(t *testing.T) {
 		if msg := cmd(); msg != nil {
 			t.Fatalf("expected no-op submit without engine, got %T", msg)
 		}
+	}
+}
+
+// TestModelSubmitUserMessageEchoesIntoTranscript verifies that submitting a user
+// message echoes it into the transcript TUI-side (codex's on_user_message_display),
+// independent of the engine.
+func TestModelSubmitUserMessageEchoesIntoTranscript(t *testing.T) {
+	m := newTestModel(recordingTranscript{}, recordingBottom{desired: 1})
+	updated, _ := m.Update(SubmitUserMessageEvent{Text: "hello"})
+	tr := updated.(Model).transcript.(recordingTranscript)
+	if tr.userMessages != 1 {
+		t.Fatalf("userMessages = %d, want 1 (submit should echo into transcript)", tr.userMessages)
+	}
+}
+
+// TestModelSubmitEmptyUserMessageNoEcho verifies a whitespace-only submission
+// does not echo a user cell.
+func TestModelSubmitEmptyUserMessageNoEcho(t *testing.T) {
+	m := newTestModel(recordingTranscript{}, recordingBottom{desired: 1})
+	updated, _ := m.Update(SubmitUserMessageEvent{Text: "   "})
+	tr := updated.(Model).transcript.(recordingTranscript)
+	if tr.userMessages != 0 {
+		t.Fatalf("userMessages = %d, want 0 (empty submit should not echo)", tr.userMessages)
 	}
 }
