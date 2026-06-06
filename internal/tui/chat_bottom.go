@@ -3,8 +3,10 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // ChatBottomPane is the bottom-pane implementation of [BottomPane]. It wraps a
@@ -186,22 +188,83 @@ func (p ChatBottomPane) renderComposerBlock(width int) []string {
 // the prompt span separately from the textarea content, with the space coming
 // from the LIVE_PREFIX_COLS gutter). So the marker glyph is rendered with the
 // bold ComposerPrompt style and the trailing gutter space is left unstyled.
+//
+// codex additionally parks the HARDWARE terminal cursor on the caret cell every
+// draw (chat_composer.rs cursor_pos -> ratatui set_cursor), so the terminal
+// renders its block cursor over the input. bubbletea v1 hides the hardware
+// cursor for the program's lifetime and cannot reposition it, so the same
+// visual is reproduced here as a reverse-video cell at the caret position
+// (over the placeholder's first glyph when the buffer is empty).
 func (p ChatBottomPane) renderPromptRows(width int) []string {
 	text := p.composer.Text()
 	if text == "" {
 		prompt := p.theme.ComposerPrompt.Render("›") + " "
-		placeholder := lipglossDim(p.theme).Render(p.composer.Placeholder())
-		return []string{prompt + placeholder}
+		first, rest := splitFirstRune(p.composer.Placeholder())
+		if first == "" {
+			return []string{prompt + composerCursorStyle.Render(" ")}
+		}
+		return []string{prompt + composerCursorStyle.Render(first) + lipglossDim(p.theme).Render(rest)}
 	}
+	caretRow, caretCol := caretRowCol(text, p.composer.Cursor())
 	var rows []string
 	for i, line := range strings.Split(text, "\n") {
 		marker := p.theme.ComposerPrompt.Render("›") + " "
 		if i != 0 {
 			marker = "  "
 		}
-		rows = append(rows, marker+truncateTo(line, width-2))
+		visible := truncateTo(line, width-2)
+		if i == caretRow {
+			rows = append(rows, marker+renderLineWithCursor(visible, caretCol))
+			continue
+		}
+		rows = append(rows, marker+visible)
 	}
 	return rows
+}
+
+// composerCursorStyle is the reverse-video block standing in for the hardware
+// cursor. SGR reverse matches the default terminal block-cursor look codex gets
+// from set_cursor without assuming theme colors.
+var composerCursorStyle = lipgloss.NewStyle().Reverse(true)
+
+// caretRowCol converts a byte offset within text into a (row, rune-column)
+// pair. Offsets are clamped to the text bounds.
+func caretRowCol(text string, offset int) (row, col int) {
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > len(text) {
+		offset = len(text)
+	}
+	before := text[:offset]
+	row = strings.Count(before, "\n")
+	lineStart := strings.LastIndexByte(before, '\n') + 1
+	col = utf8.RuneCountInString(before[lineStart:])
+	return row, col
+}
+
+// renderLineWithCursor renders line with the block cursor at rune column col.
+// A caret past the last rune (the common end-of-input position) renders as a
+// block on the cell after the text, exactly where the hardware cursor would
+// sit. col is clamped into the visible line.
+func renderLineWithCursor(line string, col int) string {
+	runes := []rune(line)
+	if col >= len(runes) {
+		return line + composerCursorStyle.Render(" ")
+	}
+	if col < 0 {
+		col = 0
+	}
+	return string(runes[:col]) + composerCursorStyle.Render(string(runes[col])) + string(runes[col+1:])
+}
+
+// splitFirstRune splits s into its first rune (as a string) and the remainder.
+func splitFirstRune(s string) (first, rest string) {
+	if s == "" {
+		return "", ""
+	}
+	_, size := utf8.DecodeRuneInString(s)
+	return s[:size], s[size:]
 }
 
 // renderFooter renders the idle composer footer (default status line). It is

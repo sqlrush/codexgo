@@ -126,6 +126,11 @@ func (c Composer) WithPlaceholder(text string) Composer {
 // Text returns the current input buffer.
 func (c Composer) Text() string { return c.text }
 
+// Cursor returns the byte offset of the caret within Text. The renderer uses it
+// to place the visible block cursor (the inline analogue of the hardware cursor
+// codex positions via ratatui's set_cursor).
+func (c Composer) Cursor() int { return c.cursor }
+
 // IsEmpty reports whether the buffer has no content.
 func (c Composer) IsEmpty() bool { return c.text == "" }
 
