@@ -21,14 +21,14 @@ Legend: ✅ implemented + tested · 🟡 implemented with documented deviation/p
 | 05 | features | ✅ | |
 | 06 | api client (HTTP/SSE/WS) | ✅ | Responses request + SSE verified via turn parity |
 | 07 | model providers & catalog | ✅ | model catalog slug-identical to codex |
-| 08 | login & auth | 🟡 | OAuth/API-key/keyring/JWT; AWS SigV4 stub, device-auth pending |
+| 08 | login & auth | 🟡 | OAuth/API-key/keyring/JWT; device-auth wired (device_code_auth.rs port: usercode/token endpoints, polling state machine, byte-identical prompt + messages, auth.json persist); AWS SigV4 stub |
 | 09 | shell parsing & PTY | ✅ | |
 | 10 | exec-server & filesystem | ✅ | |
 | 11 | apply_patch | ✅ | **byte-identical** to codex (parity) |
 | 12 | sandbox core + macOS seatbelt | ✅ | .sbpl gen + spawn; LIVE per-turn policy resolution for exec (read-only/workspace-write -> seatbelt, danger -> none) |
 | 13 | Linux sandbox (landlock+seccomp) | ✅ | native, cgo-free; cross-compiles (behavioral test linux-only) |
 | 14 | Windows sandbox (restricted token) | ✅ | native; cross-compiles (behavioral test windows-only) |
-| 15 | network proxy (SOCKS5/HTTP) | 🟡 | policy+env exact; HTTPS MITM data-path deferred |
+| 15 | network proxy (SOCKS5/HTTP) | 🟡 | policy+env exact; HTTPS MITM data-path wired (certs.rs+mitm.rs port: per-install CA + per-host leaf minting, CONNECT TLS termination, inner-request policy/hooks, streaming both ways); body-inspection logging is a no-op upstream (MITM_INSPECT_BODIES=false) |
 | 16 | tools framework + built-ins | ✅ | shell_command/apply_patch verified drop-in; UnifiedExec PTY pair (exec_command/write_stdin) wired with per-model selection |
 | 17 | rollout JSONL | ✅ | |
 | 18 | state SQLite | ✅ | embedded migrations, pure-Go sqlite; thread-goal store (goals.rs port: budget-limit promotion + accounting modes) |

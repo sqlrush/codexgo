@@ -9,6 +9,7 @@ import (
 
 	"github.com/sqlrush/codexgo/internal/appserverproto"
 	"github.com/sqlrush/codexgo/internal/login"
+	"github.com/sqlrush/codexgo/internal/modelproviderinfo"
 )
 
 const loginSuccessMessage = "Successfully logged in"
@@ -51,8 +52,7 @@ func runLoginSubcommand(ctx context.Context, parsed ParsedCommandLine, streams S
 		fmt.Fprintln(streams.Stderr, "Choose one login credential source: --with-api-key or --with-access-token.")
 		return 1
 	case args.useDeviceCode:
-		fmt.Fprintln(streams.Stderr, "Device-code login is not yet implemented in this build; use `codex login --with-api-key` or browser login.")
-		return 1
+		return runLoginWithDeviceCode(ctx, cfg, streams)
 	case args.deprecatedKey:
 		fmt.Fprintln(streams.Stderr, "The --api-key flag is no longer supported. Pipe the key instead, e.g. `printenv OPENAI_API_KEY | codex login --with-api-key`.")
 		return 1
@@ -150,6 +150,27 @@ func runLoginWithChatGPT(streams Streams, cfg loadedConfig) int {
 		server.ActualPort, server.AuthURL)
 	if err := server.Wait(); err != nil {
 		fmt.Fprintf(streams.Stderr, "Error logging in: %v\n", err)
+		return 1
+	}
+	fmt.Fprintln(streams.Stderr, loginSuccessMessage)
+	return 0
+}
+
+// runLoginWithDeviceCode runs the OAuth device-code login flow for headless or
+// remote machines. Mirrors cli/src/login.rs::run_login_with_device_code +
+// login/src/device_code_auth.rs::run_device_code_login: it requests a device
+// code, prints the sign-in prompt to stdout, polls for completion, and persists
+// credentials. The prompt uses stdout (Rust println!), status messages stderr
+// (Rust eprintln!).
+func runLoginWithDeviceCode(ctx context.Context, cfg loadedConfig, streams Streams) int {
+	httpClient, err := login.NewHTTPClient()
+	if err != nil {
+		fmt.Fprintf(streams.Stderr, "Error logging in with device code: %v\n", err)
+		return 1
+	}
+	opts := login.NewServerOptions(cfg.CodexHome, login.ClientID, nil, cfg.StoreMode)
+	if err := login.RunDeviceCodeLogin(ctx, httpClient, opts, streams.Stdout, modelproviderinfo.CodexPkgVersion); err != nil {
+		fmt.Fprintf(streams.Stderr, "Error logging in with device code: %v\n", err)
 		return 1
 	}
 	fmt.Fprintln(streams.Stderr, loginSuccessMessage)

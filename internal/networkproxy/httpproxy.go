@@ -2,6 +2,7 @@ package networkproxy
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net"
@@ -14,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sqlrush/codexgo/internal/client"
 	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
@@ -32,19 +34,60 @@ var hopByHopHeaders = []string{
 
 // httpProxyServer is the loopback HTTP forward proxy. It enforces policy on both
 // plain HTTP forwarding and HTTPS CONNECT tunnels, plus the macOS x-unix-socket
-// escape hatch.
+// escape hatch. When MITM is enabled, CONNECT tunnels whose inner-request policy
+// must be inspected (limited mode or hooked hosts) are terminated with a minted
+// leaf certificate rather than blind-tunneled.
 type httpProxyServer struct {
 	state   *NetworkProxyState
 	decider NetworkPolicyDecider
 	dialer  *net.Dialer
+
+	mitmOnce sync.Once
+	mitmCA   *ManagedMitmCA
+	mitmErr  error
+	// mitmCAFactory builds (or loads) the managed CA. Overridable in tests to
+	// avoid touching CODEX_HOME. Defaults to LoadOrCreateMitmCA.
+	mitmCAFactory func() (*ManagedMitmCA, error)
+	// mitmUpstreamTLS overrides the TLS config used when forwarding decrypted
+	// inner requests upstream. Nil means honor the custom-CA env config (the
+	// production path). Used by tests to trust a test CA.
+	mitmUpstreamTLS *tls.Config
 }
 
 func newHTTPProxyServer(state *NetworkProxyState, decider NetworkPolicyDecider) *httpProxyServer {
 	return &httpProxyServer{
-		state:   state,
-		decider: decider,
-		dialer:  &net.Dialer{Timeout: 30 * time.Second},
+		state:         state,
+		decider:       decider,
+		dialer:        &net.Dialer{Timeout: 30 * time.Second},
+		mitmCAFactory: LoadOrCreateMitmCA,
 	}
+}
+
+// managedCA lazily loads the MITM CA exactly once, mirroring the Rust
+// MitmState::new (ManagedMitmCa::load_or_create) being invoked on first need.
+func (s *httpProxyServer) managedCA() (*ManagedMitmCA, error) {
+	s.mitmOnce.Do(func() {
+		factory := s.mitmCAFactory
+		if factory == nil {
+			factory = LoadOrCreateMitmCA
+		}
+		s.mitmCA, s.mitmErr = factory()
+	})
+	return s.mitmCA, s.mitmErr
+}
+
+// upstreamTLSConfig returns the TLS config for forwarding decrypted inner
+// requests upstream. Tests may override it; otherwise it honors the custom CA
+// bundle (CODEX_CA_CERTIFICATE / SSL_CERT_FILE) and falls back to system roots.
+func (s *httpProxyServer) upstreamTLSConfig() *tls.Config {
+	if s.mitmUpstreamTLS != nil {
+		return s.mitmUpstreamTLS.Clone()
+	}
+	cfg, err := client.BuildHTTPClientTLSConfig()
+	if err != nil || cfg == nil {
+		return nil
+	}
+	return cfg
 }
 
 // runHTTPProxy serves the HTTP forward proxy on the listener until ctx is
@@ -135,8 +178,23 @@ func (s *httpProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Establish the upstream tunnel before hijacking so we can surface errors.
 	allowUpstream := s.state.AllowUpstreamProxy()
+
+	// When the inner-request policy must be inspected and MITM is enabled, load the
+	// managed CA and terminate TLS rather than blind-tunneling. This mirrors
+	// http_proxy.rs::http_connect_proxy dispatching to mitm::mitm_tunnel when
+	// ConnectMitmEnabled is set and a MitmState is present.
+	if connectNeedsMitm {
+		if ca, caErr := s.managedCA(); caErr == nil {
+			s.mitmConnect(w, r, ca, host, port, client, mode, allowUpstream)
+			return
+		}
+		// If the CA cannot be loaded we fall through to the blind tunnel rather
+		// than failing the CONNECT outright; the Rust path logs and returns when
+		// MitmState fails to load, but that only happens after the required check.
+	}
+
+	// Establish the upstream tunnel before hijacking so we can surface errors.
 	upstream, err := s.dialConnectTarget(ctx, host, port, allowUpstream)
 	if err != nil {
 		writeTextResponse(w, http.StatusBadGateway, "upstream failure")
