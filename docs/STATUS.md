@@ -34,7 +34,7 @@ Legend: ✅ implemented + tested · 🟡 implemented with documented deviation/p
 | 18 | state SQLite | ✅ | embedded migrations, pure-Go sqlite; thread-goal store (goals.rs port: budget-limit promotion + accounting modes) |
 | 19 | thread store / history / graph | ✅ | read/list/search/archive; search now scans rollout transcripts (search_threads.rs port: snippet gate, excerpts, cursor paging) |
 | 20 | git / file-search / watch | 🟡 | go-git/fsnotify; fuzzy ranking best-effort |
-| 21 | MCP client | ✅ | stdio+http, namespacing |
+| 21 | MCP client | ✅ | stdio+http, namespacing; defer_loading tools register as deferred runtimes ranked by tool_search BM25 |
 | 22 | plugins & marketplace | 🟡 | manifest/install/list; remote-sync orchestration deferred |
 | 23 | skills | ✅ | loader/render/system-install + LIVE `<skills_instructions>` injection (default roots; project/admin layer roots await config-layer stack) |
 | 24 | hooks | ✅ | |
@@ -116,4 +116,4 @@ Remaining toward a literal 100%:
   per-turn policy resolution itself is LIVE: seatbelt on macOS).
 - TUI pixel-fidelity and the documented long-tail deviations (completion
   clap-bytes landed: all 5 shells byte-identical; doctor details: 17/18 exact).
-Rough faithful-and-verified completeness: **~91%**.
+Rough faithful-and-verified completeness: **~92%**.
