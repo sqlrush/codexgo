@@ -3,6 +3,9 @@ package gitutils
 import (
 	"os"
 	"path/filepath"
+	"strings"
+
+	"github.com/sqlrush/codexgo/internal/utils/abspath"
 )
 
 // GetGitRepoRoot returns the repository root for baseDir by walking up the
@@ -28,6 +31,86 @@ func GetGitRepoRoot(baseDir string) (string, bool) {
 func isDir(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir()
+}
+
+// ResolveRootGitProjectForTrust resolves the repository root used for project
+// trust decisions, mirroring the Rust `resolve_root_git_project_for_trust`
+// (git-utils/src/info.rs).
+//
+// For a regular checkout (where `<repo_root>/.git` is a directory) it returns
+// the repo root. For a linked worktree (where `<repo_root>/.git` is a file
+// containing `gitdir: <path>`), it resolves the pointer to the worktree's git
+// directory, verifies the `.../worktrees/<name>` shape, and returns the main
+// checkout root (the grandparent of the `worktrees` directory). It returns
+// ok=false when cwd is not inside a git repo or the pointer shape is
+// unexpected. The check does not require the `git` binary.
+func ResolveRootGitProjectForTrust(cwd abspath.AbsolutePathBuf) (abspath.AbsolutePathBuf, bool) {
+	repoRootStr, ok := GetGitRepoRoot(cwd.String())
+	if !ok {
+		return abspath.AbsolutePathBuf{}, false
+	}
+	repoRoot, err := abspath.FromAbsolutePathChecked(repoRootStr)
+	if err != nil {
+		return abspath.AbsolutePathBuf{}, false
+	}
+
+	dotGit := repoRoot.Join(".git")
+	if info, statErr := os.Stat(dotGit.String()); statErr == nil && info.IsDir() {
+		return repoRoot, true
+	}
+
+	contents, readErr := os.ReadFile(dotGit.String())
+	if readErr != nil {
+		return abspath.AbsolutePathBuf{}, false
+	}
+	rel, found := strings.CutPrefix(strings.TrimSpace(string(contents)), "gitdir:")
+	if !found {
+		return abspath.AbsolutePathBuf{}, false
+	}
+	rel = strings.TrimSpace(rel)
+	if rel == "" {
+		return abspath.AbsolutePathBuf{}, false
+	}
+
+	gitDirPath := abspath.ResolvePathAgainstBase(rel, repoRoot.String())
+	worktreesDir, ok := gitDirPath.Parent()
+	if !ok {
+		return abspath.AbsolutePathBuf{}, false
+	}
+	if filepath.Base(worktreesDir.String()) != "worktrees" {
+		return abspath.AbsolutePathBuf{}, false
+	}
+	commonDir, ok := worktreesDir.Parent()
+	if !ok {
+		return abspath.AbsolutePathBuf{}, false
+	}
+	mainRoot, ok := commonDir.Parent()
+	if !ok {
+		return abspath.AbsolutePathBuf{}, false
+	}
+	return mainRoot, true
+}
+
+// FindGitCheckoutRoot returns the directory of the nearest `.git` entry at or
+// above cwd, mirroring the Rust `find_git_checkout_root` used by project trust.
+// Unlike [ResolveRootGitProjectForTrust] it does not follow worktree pointers:
+// it returns the directory that physically contains `.git` (file or directory).
+// It returns ok=false when no `.git` entry is found.
+func FindGitCheckoutRoot(cwd abspath.AbsolutePathBuf) (abspath.AbsolutePathBuf, bool) {
+	base := cwd
+	if !isDir(cwd.String()) {
+		parent, ok := cwd.Parent()
+		if !ok {
+			return abspath.AbsolutePathBuf{}, false
+		}
+		base = parent
+	}
+	for _, dir := range base.Ancestors() {
+		if _, err := os.Stat(dir.Join(".git").String()); err == nil {
+			return dir, true
+		}
+	}
+	return abspath.AbsolutePathBuf{}, false
 }
 
 // findAncestorGitEntry walks up from baseDir, returning the first directory that

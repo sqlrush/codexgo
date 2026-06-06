@@ -18,10 +18,8 @@ type MatchOptions struct {
 }
 
 // Policy is an immutable set of compiled rules keyed by their first token,
-// together with host-executable allowlists. It mirrors the Rust `Policy`
-// struct. The network-rule subset of the Rust crate is intentionally omitted
-// from this port (see package docs); this type holds only the prefix-rule and
-// host-executable state used by the command-approval engine.
+// together with network rules and host-executable allowlists. It mirrors the
+// Rust `Policy` struct.
 //
 // A Policy is constructed by a [PolicyParser] and is safe to share once built;
 // its methods never mutate it.
@@ -29,6 +27,9 @@ type Policy struct {
 	// rulesByProgram preserves insertion order per program key so that matched
 	// rules appear in the same order Rust's multimap yields them.
 	rulesByProgram orderedRuleMap
+	// networkRules holds the network-policy rules in declaration order. They
+	// compile into allow/deny domain lists via CompiledNetworkDomains.
+	networkRules []NetworkRule
 	// hostExecutablesByName maps a normalized basename to its allowlist of
 	// absolute paths. Presence with an empty slice means "no path may resolve
 	// via basename fallback"; absence means "unrestricted".
@@ -78,6 +79,13 @@ func (p *Policy) Rules(program string) ([]Rule, bool) {
 	return p.rulesByProgram.get(program)
 }
 
+// NetworkRules returns the policy's network rules in declaration order,
+// mirroring Rust's `Policy::network_rules`. The returned slice must not be
+// mutated.
+func (p *Policy) NetworkRules() []NetworkRule {
+	return p.networkRules
+}
+
 // HostExecutables returns the allowlist registered for the given basename and
 // whether one exists. The returned slice must not be mutated.
 func (p *Policy) HostExecutables(name string) ([]abspath.AbsolutePathBuf, bool) {
@@ -105,10 +113,112 @@ func (p *Policy) AddPrefixRule(prefix []string, decision Decision) (*Policy, err
 
 	clone := &Policy{
 		rulesByProgram:        p.rulesByProgram.clone(),
+		networkRules:          append([]NetworkRule(nil), p.networkRules...),
 		hostExecutablesByName: cloneHostExecutables(p.hostExecutablesByName),
 	}
 	clone.rulesByProgram.insert(prefix[0], rule)
 	return clone, nil
+}
+
+// AddNetworkRule returns a new policy that additionally registers the given
+// network rule, mirroring Rust's `Policy::add_network_rule`. The host is
+// normalized and validated; a present-but-blank justification is rejected.
+// Following the project's immutability rules, the receiver is not mutated.
+func (p *Policy) AddNetworkRule(host string, protocol NetworkRuleProtocol, decision Decision, justification *string) (*Policy, error) {
+	normalizedHost, err := normalizeNetworkRuleHost(host)
+	if err != nil {
+		return nil, err
+	}
+	if justification != nil && isBlank(*justification) {
+		return nil, &Error{Kind: ErrInvalidRule, Message: "justification cannot be empty"}
+	}
+
+	rule := NetworkRule{
+		Host:     normalizedHost,
+		Protocol: protocol,
+		Decision: decision,
+	}
+	if justification != nil {
+		rule.Justification = *justification
+		rule.HasJustification = true
+	}
+
+	clone := &Policy{
+		rulesByProgram:        p.rulesByProgram.clone(),
+		networkRules:          append(append([]NetworkRule(nil), p.networkRules...), rule),
+		hostExecutablesByName: cloneHostExecutables(p.hostExecutablesByName),
+	}
+	return clone, nil
+}
+
+// MergeOverlay returns a new policy combining the receiver's rules with the
+// overlay's, mirroring Rust's `Policy::merge_overlay`. Prefix rules and network
+// rules from the overlay are appended after the base's; host-executable
+// allowlists follow last-definition-wins (overlay entries override base ones).
+func (p *Policy) MergeOverlay(overlay *Policy) *Policy {
+	combinedRules := p.rulesByProgram.clone()
+	for program, rules := range overlay.rulesByProgram.rules {
+		for _, rule := range rules {
+			combinedRules.insert(program, rule)
+		}
+	}
+
+	combinedNetworkRules := append([]NetworkRule(nil), p.networkRules...)
+	combinedNetworkRules = append(combinedNetworkRules, overlay.networkRules...)
+
+	hostExecutables := cloneHostExecutables(p.hostExecutablesByName)
+	for name, paths := range overlay.hostExecutablesByName {
+		hostExecutables[name] = append([]abspath.AbsolutePathBuf(nil), paths...)
+	}
+
+	return &Policy{
+		rulesByProgram:        combinedRules,
+		networkRules:          combinedNetworkRules,
+		hostExecutablesByName: hostExecutables,
+	}
+}
+
+// CompiledNetworkDomains compiles the network rules into ordered allow/deny
+// domain lists, mirroring Rust's `Policy::compiled_network_domains`. Rules are
+// processed in declaration order; an Allow moves the host into the allowed list
+// (removing any prior deny), a Forbidden moves it into the denied list
+// (removing any prior allow), and a Prompt is ignored for domain compilation.
+// Within each list a host appears once, at its most recent position.
+func (p *Policy) CompiledNetworkDomains() (allowed []string, denied []string) {
+	allowed = []string{}
+	denied = []string{}
+	for _, rule := range p.networkRules {
+		switch rule.Decision {
+		case DecisionAllow:
+			denied = removeDomain(denied, rule.Host)
+			allowed = upsertDomain(allowed, rule.Host)
+		case DecisionForbidden:
+			allowed = removeDomain(allowed, rule.Host)
+			denied = upsertDomain(denied, rule.Host)
+		case DecisionPrompt:
+			// Prompt rules do not contribute to the compiled domain lists.
+		}
+	}
+	return allowed, denied
+}
+
+// upsertDomain appends host to entries, moving it to the end if already present,
+// mirroring Rust's `upsert_domain`.
+func upsertDomain(entries []string, host string) []string {
+	entries = removeDomain(entries, host)
+	return append(entries, host)
+}
+
+// removeDomain drops every occurrence of host from entries, mirroring the
+// `retain` calls in Rust's `compiled_network_domains`.
+func removeDomain(entries []string, host string) []string {
+	out := entries[:0:0]
+	for _, entry := range entries {
+		if entry != host {
+			out = append(out, entry)
+		}
+	}
+	return out
 }
 
 func cloneHostExecutables(src map[string][]abspath.AbsolutePathBuf) map[string][]abspath.AbsolutePathBuf {

@@ -10,6 +10,7 @@ import (
 // [Policy] is immutable.
 type policyBuilder struct {
 	rulesByProgram            orderedRuleMap
+	networkRules              []NetworkRule
 	hostExecutablesByName     map[string][]abspath.AbsolutePathBuf
 	pendingExampleValidations []pendingExampleValidation
 }
@@ -35,6 +36,12 @@ func newPolicyBuilder() *policyBuilder {
 // `PolicyBuilder::add_rule`.
 func (b *policyBuilder) addRule(rule Rule) {
 	b.rulesByProgram.insert(rule.Program(), rule)
+}
+
+// addNetworkRule appends a network rule in declaration order, mirroring Rust's
+// `PolicyBuilder::add_network_rule`.
+func (b *policyBuilder) addNetworkRule(rule NetworkRule) {
+	b.networkRules = append(b.networkRules, rule)
 }
 
 // addHostExecutable records (last-definition-wins) the allowlist for a
@@ -90,6 +97,7 @@ func (b *policyBuilder) validatePendingExamplesFrom(start int) error {
 func (b *policyBuilder) build() *Policy {
 	return &Policy{
 		rulesByProgram:        b.rulesByProgram,
+		networkRules:          b.networkRules,
 		hostExecutablesByName: b.hostExecutablesByName,
 	}
 }

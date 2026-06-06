@@ -81,10 +81,11 @@ func dialectExtended() *syntax.FileOptions {
 }
 
 // policyBuiltins returns the predeclared environment exposing the policy
-// builtins (`prefix_rule` and `host_executable`).
+// builtins (`prefix_rule`, `network_rule`, and `host_executable`).
 func policyBuiltins() starlark.StringDict {
 	return starlark.StringDict{
 		"prefix_rule":     starlark.NewBuiltin("prefix_rule", prefixRuleBuiltin),
+		"network_rule":    starlark.NewBuiltin("network_rule", networkRuleBuiltin),
 		"host_executable": starlark.NewBuiltin("host_executable", hostExecutableBuiltin),
 	}
 }
@@ -173,6 +174,58 @@ func prefixRuleBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starl
 	for _, rule := range rules {
 		builder.addRule(rule)
 	}
+	return starlark.None, nil
+}
+
+// networkRuleBuiltin implements the `network_rule(host, protocol, decision,
+// justification)` builtin, mirroring the Rust `network_rule` builtin. host,
+// protocol, and decision are required; justification is optional. The protocol
+// and decision are parsed (the "deny" decision alias maps to forbidden), the
+// host is normalized/validated, and a present-but-blank justification is
+// rejected.
+func networkRuleBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	var (
+		host          string
+		protocolRaw   string
+		decisionRaw   string
+		justification string
+	)
+	if err := starlark.UnpackArgs(
+		fn.Name(), args, kwargs,
+		"host", &host,
+		"protocol", &protocolRaw,
+		"decision", &decisionRaw,
+		"justification?", &justification,
+	); err != nil {
+		return nil, err
+	}
+
+	protocol, err := ParseNetworkRuleProtocol(protocolRaw)
+	if err != nil {
+		return nil, err
+	}
+	decision, err := parseNetworkRuleDecision(decisionRaw)
+	if err != nil {
+		return nil, err
+	}
+
+	rule := NetworkRule{Protocol: protocol, Decision: decision}
+	if hasKeyword(kwargs, "justification") {
+		if isBlank(justification) {
+			return nil, &Error{Kind: ErrInvalidRule, Message: "justification cannot be empty"}
+		}
+		rule.Justification = justification
+		rule.HasJustification = true
+	}
+
+	normalizedHost, err := normalizeNetworkRuleHost(host)
+	if err != nil {
+		return nil, err
+	}
+	rule.Host = normalizedHost
+
+	builder := builderFromThread(thread)
+	builder.addNetworkRule(rule)
 	return starlark.None, nil
 }
 

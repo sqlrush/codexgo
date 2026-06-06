@@ -16,7 +16,7 @@ Legend: ✅ implemented + tested · 🟡 implemented with documented deviation/p
 | 00 | foundation & parity harness | ✅ | module/CI + `internal/paritytest` golden + differential helpers |
 | 01 | foundation utils | ✅ | 19 packages |
 | 02 | protocol (Op/EventMsg/…) | ✅ | drop-in JSON |
-| 03 | execpolicy (Starlark) | 🟡 | matcher complete; network_rule/amend deferred |
+| 03 | execpolicy (Starlark) | 🟡 | matcher complete; **network_rule landed** (builtin + rule type + protocol/decision aliasing + host normalization + compiled allow/deny domains + merge_overlay); amend deferred |
 | 04 | config (config.toml) | ✅ | load/merge/precedence/profiles; some sub-schemas as opaque trees |
 | 05 | features | ✅ | |
 | 06 | api client (HTTP/SSE/WS) | ✅ | Responses request + SSE verified via turn parity |
@@ -35,8 +35,8 @@ Legend: ✅ implemented + tested · 🟡 implemented with documented deviation/p
 | 19 | thread store / history / graph | ✅ | read/list/search/archive; search now scans rollout transcripts (search_threads.rs port: snippet gate, excerpts, cursor paging) |
 | 20 | git / file-search / watch | 🟡 | go-git/fsnotify; fuzzy ranking best-effort |
 | 21 | MCP client | ✅ | stdio+http, namespacing; defer_loading tools register as deferred runtimes ranked by tool_search BM25 |
-| 22 | plugins & marketplace | 🟡 | manifest/install/list; remote-sync orchestration deferred |
-| 23 | skills | ✅ | loader/render/system-install + LIVE `<skills_instructions>` injection (default roots; project/admin layer roots await config-layer stack) |
+| 22 | plugins & marketplace | 🟡 | manifest/install/list; **remote-sync orchestration landed** — curated-plugins startup sync (git→GitHub-HTTP→export-archive fallback chain, sha-based update decision, atomic swap) + configured-git-marketplace upgrade (per-marketplace revision-compare update decision, failure isolation, atomic activation+metadata) wired into `codex plugin marketplace upgrade` |
+| 23 | skills | ✅ | loader/render/system-install + LIVE `<skills_instructions>` injection (default roots; admin `/etc/codex/skills` always emitted; **project `.codex/skills` now gated on the ported git-trust decision**) |
 | 24 | hooks | ✅ | |
 | 25 | code-mode (JS) | ✅ | goja engine; JS-feature gaps vs V8 documented |
 | 26 | extensions/connectors/memories | 🟡 | guardian/goal/memories/imagegen/websearch; goal tools now LIVE in the headless loop (SQLite-backed via state bridge; events/metrics no-op until registry wiring); connectors-in-core partial |
@@ -108,10 +108,14 @@ Long-tail wins this wave: the turn-error message is now byte-identical
 `terminal_interaction` echoes the originating exec_command call id.
 
 Remaining toward a literal 100%:
-- **git-trust gate** — project `.codex/skills` roots are assembled but held
-  behind WithProjectLayer until the trust decision is ported (admin
-  /etc/codex/skills + workspace-write/danger filesystem XML now landed,
-  byte-verified). Collab is fully live incl. full-history fork_context.
+- **git-trust gate landed** — the Rust loader's ProjectTrustContext decision is
+  ported (`internal/config/trust.go`: `[projects."<key>"] trust_level` lookup
+  with canonical+logical keys, dir→project-root→repo-root precedence,
+  worktree-aware repo root). The headless host resolves it per-cwd and enables
+  project `.codex/skills` (WithProjectLayer) only for trusted projects;
+  untrusted/no-entry projects keep project layers off (parity-neutral: harness
+  cwds carry no `.codex/skills`). Collab is fully live incl. full-history
+  fork_context.
 - Legacy workspace-write knobs + per-call sandbox_permissions (denial
   escalation is LIVE: prompt -> approved unsandboxed retry).
 - TUI pixel-fidelity and the documented long-tail deviations (completion

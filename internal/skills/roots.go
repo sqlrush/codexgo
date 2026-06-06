@@ -16,11 +16,13 @@ package skills
 //   6. each existing `.agents/skills` between the project root and the cwd
 //      (repo scope, project-root-first) — appended by the outer assembly
 //
-// STUB (trust gate): the Rust loader gates Project-layer (`.codex`) discovery on
-// git-trust (ProjectTrustContext). codexgo carries git-trust as opaque, so the
-// project `.codex/skills` roots are only assembled when the CLI host opts in via
-// WithProjectLayer; the trust decision itself is not yet ported. Plugin skill
-// roots are appended by the caller.
+// Trust gate: the Rust loader gates Project-layer (`.codex`) discovery on
+// git-trust (ProjectTrustContext). codexgo now ports that decision in
+// internal/config (config.IsProjectTrusted / BuildProjectTrustContext); the CLI
+// host resolves it per-cwd and opts in via WithProjectLayer when the project is
+// trusted. With no opt-in (untrusted/no-entry project, or a host without a trust
+// gate) the project `.codex/skills` roots are not assembled. Plugin skill roots
+// are appended by the caller.
 
 import (
 	"os"
@@ -61,8 +63,8 @@ type RootsOption func(*rootsOptions)
 
 // WithProjectLayer enables Project config-layer skill roots (`.codex/skills` on
 // the chain from the project root down to the cwd). The CLI host enables this
-// once it has resolved git-trust for the project (STUB: the trust decision is
-// not yet ported — see the package doc comment + DEVIATIONS.md).
+// once it has resolved git-trust for the project (config.IsProjectTrusted —
+// see the package doc comment + DEVIATIONS.md).
 func WithProjectLayer() RootsOption {
 	return func(o *rootsOptions) { o.includeProjectLayer = true }
 }

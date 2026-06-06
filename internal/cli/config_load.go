@@ -36,6 +36,16 @@ type loadedConfig struct {
 	// SandboxMode is the resolved `sandbox_mode`, or nil when unset (codex defaults
 	// to read-only). Used to render the environment-context message.
 	SandboxMode *protocol.SandboxMode
+	// Merged is the merged TOML config tree across all layers. The skills host
+	// reads its `[projects]` trust table to gate project-layer skill loading on
+	// git-trust (mirroring the Rust loader's ProjectTrustContext).
+	Merged config.TomlValue
+	// ProjectRootMarkers is the resolved project_root_markers list (nil ==
+	// default [".git"]). Used to locate the project root for trust resolution.
+	ProjectRootMarkers []string
+	// Marketplaces is the resolved `[marketplaces]` table, keyed by name. The
+	// plugin marketplace-upgrade command reads it to refresh git marketplaces.
+	Marketplaces map[string]config.MarketplaceConfig
 }
 
 // loadConfig loads the merged configuration honoring the root -c overrides,
@@ -57,16 +67,24 @@ func loadConfig(root RootOptions) (loadedConfig, error) {
 		return loadedConfig{}, fmt.Errorf("loading configuration: %w", err)
 	}
 
+	markers, err := config.ProjectRootMarkersFromConfig(result.Merged)
+	if err != nil {
+		return loadedConfig{}, fmt.Errorf("resolving project_root_markers: %w", err)
+	}
+
 	return loadedConfig{
-		CodexHome:       result.CodexHome,
-		StoreMode:       resolveStoreMode(result.Config.CliAuthCredentialsStore),
-		ChatgptBaseURL:  result.Config.ChatgptBaseURL,
-		Tui:             result.Config.Tui,
-		ModelProviderID: result.Config.ModelProvider,
-		ModelProviders:  result.Config.ModelProviders,
-		DefaultModel:    result.Config.Model,
-		OpenAIBaseURL:   result.Config.OpenAIBaseURL,
-		SandboxMode:     result.Config.SandboxMode,
+		CodexHome:          result.CodexHome,
+		StoreMode:          resolveStoreMode(result.Config.CliAuthCredentialsStore),
+		ChatgptBaseURL:     result.Config.ChatgptBaseURL,
+		Tui:                result.Config.Tui,
+		ModelProviderID:    result.Config.ModelProvider,
+		ModelProviders:     result.Config.ModelProviders,
+		DefaultModel:       result.Config.Model,
+		OpenAIBaseURL:      result.Config.OpenAIBaseURL,
+		SandboxMode:        result.Config.SandboxMode,
+		Merged:             result.Merged,
+		ProjectRootMarkers: markers,
+		Marketplaces:       result.Config.Marketplaces,
 	}, nil
 }
 

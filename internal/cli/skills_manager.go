@@ -23,10 +23,20 @@ const (
 	skillsInstructionsCloseTag = "</skills_instructions>"
 )
 
+// projectTrustGate reports whether the project containing cwd is trusted, and
+// therefore whether project-layer skill roots (`.codex/skills`) may be loaded.
+// It mirrors the Rust loader's per-directory ProjectTrustContext decision. A nil
+// gate (or a false result) keeps project skills off, matching the conservative
+// default. See [config.IsProjectTrusted].
+type projectTrustGate func(cwd abspath.AbsolutePathBuf) bool
+
 // assemblySkillsManager loads skills from the default roots for each cwd.
 type assemblySkillsManager struct {
 	codexHome abspath.AbsolutePathBuf
 	manager   *skills.SkillsManager
+	// trustGate decides per-cwd whether the project is trusted and so whether
+	// project `.codex/skills` roots are included. nil disables project layers.
+	trustGate projectTrustGate
 }
 
 var (
@@ -43,6 +53,15 @@ func newAssemblySkillsManager(codexHome string) (*assemblySkillsManager, error) 
 // newAssemblySkillsManagerWithBundled builds the manager with explicit bundled
 // enablement (config `bundled_skills_enabled`).
 func newAssemblySkillsManagerWithBundled(codexHome string, bundledEnabled bool) (*assemblySkillsManager, error) {
+	return newAssemblySkillsManagerWithTrust(codexHome, bundledEnabled, nil)
+}
+
+// newAssemblySkillsManagerWithTrust builds the manager with explicit bundled
+// enablement and a per-cwd project-trust gate. When trustGate reports a cwd's
+// project as trusted, project-layer `.codex/skills` roots are loaded (via
+// skills.WithProjectLayer), matching the Rust loader's git-trust gate. A nil
+// gate keeps project layers off.
+func newAssemblySkillsManagerWithTrust(codexHome string, bundledEnabled bool, trustGate projectTrustGate) (*assemblySkillsManager, error) {
 	home, err := abspath.FromAbsolutePathChecked(codexHome)
 	if err != nil {
 		return nil, err
@@ -50,6 +69,7 @@ func newAssemblySkillsManagerWithBundled(codexHome string, bundledEnabled bool) 
 	return &assemblySkillsManager{
 		codexHome: home,
 		manager:   skills.NewSkillsManager(home, bundledEnabled),
+		trustGate: trustGate,
 	}, nil
 }
 
@@ -87,11 +107,11 @@ func (m *assemblySkillsManager) RenderInitialSkillsInstructions(ctx context.Cont
 //
 // The admin (System config layer) root `/etc/codex/skills` is included by
 // default, mirroring the reference binary, which always carries a System config
-// layer. The Project config-layer roots (`.codex/skills`) are intentionally NOT
-// enabled (WithProjectLayer is omitted): the reference loader gates them on
-// git-trust, which this headless host does not yet resolve (STUB — see
-// skills.DefaultSkillRoots doc + DEVIATIONS.md). Both binaries on the same host
-// therefore agree, since neither loads project skills here.
+// layer. The Project config-layer roots (`.codex/skills`) are enabled (via
+// skills.WithProjectLayer) only when the trust gate reports cwd's project as
+// trusted, mirroring the Rust loader's git-trust ProjectTrustContext gate. With
+// no trust gate, or an untrusted/no-entry project, project skills stay off — so
+// two binaries on a host with the cwd untrusted still agree.
 func (m *assemblySkillsManager) loadOutcome(ctx context.Context, cwd string) (skills.SkillLoadOutcome, bool) {
 	cwdPath, err := abspath.FromAbsolutePathChecked(cwd)
 	if err != nil {
@@ -103,7 +123,11 @@ func (m *assemblySkillsManager) loadOutcome(ctx context.Context, cwd string) (sk
 			homeDir = &p
 		}
 	}
-	roots := skills.DefaultSkillRoots(m.codexHome, homeDir, cwdPath)
+	var opts []skills.RootsOption
+	if m.trustGate != nil && m.trustGate(cwdPath) {
+		opts = append(opts, skills.WithProjectLayer())
+	}
+	roots := skills.DefaultSkillRoots(m.codexHome, homeDir, cwdPath, opts...)
 	outcome := m.manager.LoadSkills(ctx, cwdPath, roots, skills.SkillConfigRules{}, true /* useCache */, false /* forceReload */)
 	return outcome, true
 }

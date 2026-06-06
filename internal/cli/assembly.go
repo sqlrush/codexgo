@@ -18,6 +18,7 @@ import (
 	"github.com/sqlrush/codexgo/internal/rollout"
 	"github.com/sqlrush/codexgo/internal/state"
 	"github.com/sqlrush/codexgo/internal/unifiedexec"
+	"github.com/sqlrush/codexgo/internal/utils/abspath"
 )
 
 // defaultMockReply is the canned assistant reply used when CODEX_EXEC_MOCK_REPLY
@@ -51,22 +52,23 @@ func buildAssemblyWithDefaults() (*appserver.Assembly, appserver.Defaults, error
 	if !ok {
 		// Configuration could not be loaded; run with the mock so the engine still
 		// works offline (e.g. in tests or a fresh checkout without a config file).
-		return assembleResult(fallback, "", "", defaultModelProviderID, "")
+		return assembleResult(fallback, "", "", defaultModelProviderID, "", nil)
 	}
 
 	model := configDefaultModel(cfg)
+	trustGate := buildProjectTrustGate(cfg)
 
 	selected, err := resolveSelectedProvider(cfg)
 	if err != nil {
 		// A bad provider selection must not break the offline paths; fall back to
 		// the mock so the engine still runs.
-		return assembleResult(fallback, cfg.CodexHome, model, defaultModelProviderID, derefSandboxMode(cfg.SandboxMode))
+		return assembleResult(fallback, cfg.CodexHome, model, defaultModelProviderID, derefSandboxMode(cfg.SandboxMode), trustGate)
 	}
 
 	resolver, ok := buildProviderAuthResolver(cfg, selected)
 	if !ok {
 		// No credential source applies to the selected provider; use the mock.
-		return assembleResult(fallback, cfg.CodexHome, model, selected.ID, derefSandboxMode(cfg.SandboxMode))
+		return assembleResult(fallback, cfg.CodexHome, model, selected.ID, derefSandboxMode(cfg.SandboxMode), trustGate)
 	}
 
 	factory, err := appserver.NewModelClientFactory(appserver.RealModelClientFactoryConfig{
@@ -84,7 +86,23 @@ func buildAssemblyWithDefaults() (*appserver.Assembly, appserver.Defaults, error
 	if err != nil {
 		return nil, appserver.Defaults{}, fmt.Errorf("cli: build model client factory: %w", err)
 	}
-	return assembleResult(factory, cfg.CodexHome, model, selected.ID, derefSandboxMode(cfg.SandboxMode))
+	return assembleResult(factory, cfg.CodexHome, model, selected.ID, derefSandboxMode(cfg.SandboxMode), trustGate)
+}
+
+// buildProjectTrustGate returns a per-cwd predicate reporting whether the
+// project containing cwd is trusted under the merged config's `[projects]`
+// table, mirroring the Rust loader's ProjectTrustContext gate. The headless host
+// uses it to enable project-layer `.codex/skills` loading only for trusted
+// projects. A gate is always returned (nil cfg fields simply yield "untrusted").
+func buildProjectTrustGate(cfg loadedConfig) projectTrustGate {
+	merged := cfg.Merged
+	markers := cfg.ProjectRootMarkers
+	return func(cwd abspath.AbsolutePathBuf) bool {
+		if merged == nil {
+			return false
+		}
+		return config.IsProjectTrusted(merged, cwd, markers)
+	}
 }
 
 // derefSandboxMode returns the configured sandbox mode, or the empty value (which
@@ -124,7 +142,7 @@ func buildProviderAuthResolver(cfg loadedConfig, selected selectedProvider) (app
 // slug. The same resolved model + provider id flow into both the assembly's
 // models manager and the returned Defaults so the binary's exec/review/TUI paths
 // honor the configured selection.
-func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultModel, providerID string, sandboxMode protocol.SandboxMode) (*appserver.Assembly, appserver.Defaults, error) {
+func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultModel, providerID string, sandboxMode protocol.SandboxMode, trustGate projectTrustGate) (*appserver.Assembly, appserver.Defaults, error) {
 	if codexHome == "" {
 		codexHome = resolveCodexHome()
 	}
@@ -159,7 +177,7 @@ func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultMode
 	// CODEX_HOME/skills/.system and renders the <skills_instructions> developer
 	// section for new threads, like codex's include_skill_instructions default.
 	var skillsManager core.SkillsManager
-	if sm, err := newAssemblySkillsManager(codexHome); err == nil {
+	if sm, err := newAssemblySkillsManagerWithTrust(codexHome, true /* bundled */, trustGate); err == nil {
 		skillsManager = sm
 	} else {
 		fmt.Fprintf(os.Stderr, "warning: skills manager unavailable, skills instructions disabled: %v\n", err)

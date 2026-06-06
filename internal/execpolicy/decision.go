@@ -3,11 +3,16 @@
 // reimplementation of Codex 0.136.0.
 //
 // It is the Starlark-based command-approval engine. Policy files are written in
-// Starlark and evaluated with go.starlark.net. The engine exposes two builtins
+// Starlark and evaluated with go.starlark.net. The engine exposes three builtins
 // used by Codex policies:
 //
 //   - prefix_rule(pattern, decision, justification, match, not_match)
+//   - network_rule(host, protocol, decision, justification)
 //   - host_executable(name, paths)
+//
+// network_rule entries register per-host network-policy decisions; they compile
+// into ordered allow/deny domain lists via [Policy.CompiledNetworkDomains],
+// which the network sandbox policy consumes.
 //
 // A command is checked against the loaded rules with ordered token matching: a
 // list token denotes OR alternatives, an exact first-token (absolute path) match

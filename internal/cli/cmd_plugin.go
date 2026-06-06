@@ -155,7 +155,9 @@ func runPluginMarketplace(args []string, streams Streams) int {
 			fmt.Fprintf(streams.Stderr, "warning: %s: %s\n", e.Path.String(), e.Message)
 		}
 		return 0
-	case "add", "remove", "upgrade":
+	case "upgrade":
+		return runPluginMarketplaceUpgrade(args[1:], streams)
+	case "add", "remove":
 		return pluginDeferred(streams, "marketplace "+args[0],
 			"Managing marketplaces edits config and fetches remote sources (deferred path).")
 	default:
@@ -163,6 +165,62 @@ func runPluginMarketplace(args []string, streams Streams) int {
 		printPluginMarketplaceHelp(streams.Stderr)
 		return 2
 	}
+}
+
+// runPluginMarketplaceUpgrade handles `codex plugin marketplace upgrade [NAME]`:
+// it refreshes the local clones of configured git marketplaces, mirroring the
+// Rust `run_upgrade`. With NAME, only that marketplace is upgraded. Per-
+// marketplace failures are reported but do not abort the rest; the exit code is
+// non-zero when any marketplace failed.
+func runPluginMarketplaceUpgrade(args []string, streams Streams) int {
+	var marketplaceName string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "-h" || arg == "--help":
+			fmt.Fprintln(streams.Stdout, "Upgrade configured git marketplaces to their latest revision")
+			fmt.Fprintln(streams.Stdout)
+			fmt.Fprintln(streams.Stdout, "Usage: codex plugin marketplace upgrade [MARKETPLACE_NAME]")
+			return 0
+		case strings.HasPrefix(arg, "-"):
+			fmt.Fprintf(streams.Stderr, "error: unexpected argument: %s\n", arg)
+			return 2
+		case marketplaceName == "":
+			marketplaceName = arg
+		default:
+			fmt.Fprintf(streams.Stderr, "error: unexpected argument: %s\n", arg)
+			return 2
+		}
+	}
+
+	cfg, err := loadConfig(RootOptions{})
+	if err != nil {
+		fmt.Fprintf(streams.Stderr, "codex plugin marketplace upgrade: %v\n", err)
+		return 1
+	}
+
+	outcome := plugins.UpgradeConfiguredGitMarketplaces(cfg.CodexHome, cfg.Marketplaces, marketplaceName)
+	if len(outcome.SelectedMarketplaces) == 0 {
+		if marketplaceName != "" {
+			fmt.Fprintf(streams.Stdout, "No configured git marketplace named %q.\n", marketplaceName)
+		} else {
+			fmt.Fprintln(streams.Stdout, "No configured git marketplaces to upgrade.")
+		}
+		return 0
+	}
+	for _, root := range outcome.UpgradedRoots {
+		fmt.Fprintf(streams.Stdout, "Upgraded marketplace at %s\n", root.String())
+	}
+	if len(outcome.UpgradedRoots) == 0 && outcome.AllSucceeded() {
+		fmt.Fprintln(streams.Stdout, "All configured git marketplaces are already up to date.")
+	}
+	for _, e := range outcome.Errors {
+		fmt.Fprintf(streams.Stderr, "error: failed to upgrade marketplace %q: %s\n", e.MarketplaceName, e.Message)
+	}
+	if !outcome.AllSucceeded() {
+		return 1
+	}
+	return 0
 }
 
 // pluginDeferred prints a clear notice for an unimplemented mutating plugin path
