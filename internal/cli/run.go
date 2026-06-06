@@ -8,8 +8,11 @@ import (
 )
 
 // Version is the codexgo build version reported by `codex --version`. Parity
-// target: codex 0.136.0.
-const Version = "0.0.0-dev"
+// target: codex 0.136.0. It defaults to a dev placeholder and is stamped at
+// release-build time via:
+//
+//	-ldflags "-X github.com/sqlrush/codexgo/internal/cli.Version=<semver>"
+var Version = "0.0.0-dev"
 
 // BuildCommit is the source commit baked into the build, or "unknown" when not
 // provided. It mirrors the Rust build_commit() helper (CODEX_BUILD_COMMIT /
