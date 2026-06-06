@@ -45,7 +45,7 @@ Legend: ✅ implemented + tested · 🟡 implemented with documented deviation/p
 | 33 | app-server + transport | 🟡 | stdio/uds/ws + turn-driving methods; full method surface partial |
 | 34 | `codex exec` (headless) | ✅ | **turn JSONL byte-identical** to codex (text + tool turns) |
 | 35 | mcp-server | ✅ | stdio v2 + v1 compat |
-| 36–40 | TUI | 🟡 | bubbletea chat/overlays/slash/keymap/onboarding; behavioral port, not pixel-identical |
+| 36–40 | TUI | 🟡 | bubbletea chat/overlays/slash/keymap/onboarding; behavioral port. **Pixel-fidelity wave 1 landed**: env-gated PTY frame-differential harness (in-repo VT100 emulator) + first cell-grid-identical frame — the session-header welcome card (borders/title/model/center-truncated directory) + blank rows are byte-identical to codex at 80×24 and 120×40 (`CODEX_TUI_FRAME_STRICT=1`, all non-masked rows match). Remaining waves: composer/status line, inline-scrollback vs alt-screen rendering, SGR colors |
 | 41–42 | CLI + arg0 + aux | 🟡 | full subcommand set matches codex; app/update/remote-control are notices; `completion` byte-identical to clap for all 5 shells |
 | 43 | cloud features | 🟡 | cloud-tasks/requirements/backend; connectors omitted |
 | 44 | telemetry & feedback | ✅ | analytics(opt-out)/otel/feedback |

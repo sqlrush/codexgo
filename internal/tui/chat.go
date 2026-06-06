@@ -70,6 +70,19 @@ func NewChatTranscript(theme Theme) ChatTranscript {
 	}
 }
 
+// WithSessionHeader returns a copy of the transcript with the session-header
+// welcome card seeded as the first history cell, so a fresh session renders the
+// bordered "OpenAI Codex" card at the top of the transcript (mirroring codex's
+// SessionInfoCell header inserted into history on session start). It is a no-op
+// when a cell is already present.
+func (t ChatTranscript) WithSessionHeader(version, model, directory string) ChatTranscript {
+	if len(t.cells) > 0 {
+		return t
+	}
+	t.cells = t.appendCell(NewSessionHeaderCell(t.theme, version, model, directory))
+	return t
+}
+
 // Update implements TranscriptView. It handles scroll keys; engine events arrive
 // via AppendCoreEvent.
 func (t ChatTranscript) Update(msg tea.Msg) (TranscriptView, tea.Cmd) {

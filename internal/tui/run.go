@@ -31,6 +31,12 @@ type RunConfig struct {
 	// ResumeThreadID resumes an existing thread when non-empty; otherwise a fresh
 	// thread is started.
 	ResumeThreadID string
+	// Model is the configured default model slug shown in the session-header
+	// card. When empty the card omits the model value.
+	Model string
+	// Version is the CLI version string shown in the session-header card's title
+	// (rendered as "(v<Version>)"). When empty the card omits the version.
+	Version string
 }
 
 // Run launches the interactive TUI against the engine reachable through
@@ -53,12 +59,17 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	}
 
 	theme := LoadTheme(cfg.Tui, caps)
+	transcript := NewChatTranscript(theme).WithSessionHeader(
+		cfg.Version,
+		cfg.Model,
+		FormatDirectoryDisplay(cfg.workdir()),
+	)
 	model := NewModel(ModelConfig{
 		Caps:       caps,
 		Tui:        cfg.Tui,
 		Sender:     sender,
 		Engine:     engine,
-		Transcript: NewChatTranscript(theme),
+		Transcript: transcript,
 		Bottom: NewChatBottomPane(ChatBottomPaneConfig{
 			Theme:      theme,
 			FileSearch: cfg.fileSearch(),

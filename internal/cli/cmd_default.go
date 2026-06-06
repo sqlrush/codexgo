@@ -34,7 +34,12 @@ func runDefaultNoSubcommand(ctx context.Context, _ ParsedCommandLine, streams St
 	})
 	defer client.Shutdown(context.WithoutCancel(ctx))
 
-	if err := tui.Run(ctx, tui.RunConfig{Client: client, Workdir: resolveCwd()}); err != nil {
+	if err := tui.Run(ctx, tui.RunConfig{
+		Client:  client,
+		Workdir: resolveCwd(),
+		Model:   defaults.Model,
+		Version: Version,
+	}); err != nil {
 		fmt.Fprintln(streams.Stderr, "codex:", err)
 		return 1
 	}
