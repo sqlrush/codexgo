@@ -44,6 +44,11 @@ type Composer struct {
 	// filesearch performs @mention completion lookups.
 	filesearch FileSearchFunc
 
+	// placeholder is the idle-composer prompt shown when the buffer is empty. It
+	// is one entry from the rotating pool (composer_placeholder.go), chosen at
+	// construction to mirror codex's per-run random PLACEHOLDERS selection.
+	placeholder string
+
 	// width is the last laid-out content width, used for rendering.
 	width int
 }
@@ -97,13 +102,25 @@ type reverseSearch struct {
 }
 
 // NewComposer builds an empty composer bound to a theme. fileSearch may be nil
-// (then @mention completion is disabled).
+// (then @mention completion is disabled). The idle placeholder is picked at
+// random from the pool, matching codex's startup selection.
 func NewComposer(theme Theme, fileSearch FileSearchFunc) Composer {
 	return Composer{
-		theme:      theme,
-		history:    NewComposerHistory(),
-		filesearch: fileSearch,
+		theme:       theme,
+		history:     NewComposerHistory(),
+		filesearch:  fileSearch,
+		placeholder: pickComposerPlaceholder(nil),
 	}
+}
+
+// Placeholder returns the idle-composer prompt shown when the buffer is empty.
+func (c Composer) Placeholder() string { return c.placeholder }
+
+// WithPlaceholder returns a copy of the composer with the idle placeholder set.
+// Tests use it to pin the otherwise-random placeholder for deterministic output.
+func (c Composer) WithPlaceholder(text string) Composer {
+	c.placeholder = text
+	return c
 }
 
 // Text returns the current input buffer.

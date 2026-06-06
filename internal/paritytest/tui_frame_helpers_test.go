@@ -29,10 +29,9 @@ type frameSize struct {
 	Cols uint16
 }
 
-// frameSizes are the window sizes the harness exercises. 80x24 is the wave-1
-// primary target (codex renders its first screen via a synchronized full repaint
-// there); 120x40 is captured too but is documented as a later-wave target (its
-// inline-scrollback insertion path needs a fuller emulator).
+// frameSizes are the window sizes the harness exercises. Both 80x24 and 120x40
+// now pass strict cell-equality for the idle first frame after the wave-2 inline
+// migration (only the four genuinely per-run rows are masked at each size).
 var frameSizes = []frameSize{
 	{Rows: 24, Cols: 80},
 	{Rows: 40, Cols: 120},
@@ -49,6 +48,16 @@ func writeFrameParityConfig(t *testing.T, home, canonicalCwd string) {
 		`model = "` + parityModelSlug + `"`,
 		`model_provider = "parity"`,
 		`check_for_update_on_startup = false`,
+		``,
+		// Disable the startup tooltip for BOTH binaries. codex's tip is a
+		// network-fetched, time- and release-volatile announcement chosen at
+		// random (tui/src/tooltips.rs), so it cannot be reproduced byte-for-byte.
+		// Turning it off (tui.show_tooltips = false) removes the only
+		// non-reproducible scrollback block, leaving a deterministic
+		// header-card + blank-gap + 4-row live region (composer + footer) that
+		// both binaries render identically (DEVIATIONS '36-40 TUI first-frame').
+		`[tui]`,
+		`show_tooltips = false`,
 		``,
 		`[model_providers.parity]`,
 		`name = "parity"`,
@@ -182,39 +191,46 @@ func buildCodexgoBin(t *testing.T) string {
 }
 
 // frameMask is a list of substrings whose presence on a grid row makes that row
-// volatile (a per-run path, a version string, the random composer placeholder, a
-// spinner glyph). Rows matching any mask are excluded from strict comparison and
+// volatile. Rows matching any mask are excluded from strict comparison and
 // reported separately.
 //
-// These are the documented volatile cells for wave 1 (see DEVIATIONS.md TUI
-// rows). Characters/timestamps that change every run cannot be byte-identical.
+// Wave 2 drove the structural gaps to zero: codexgo now renders the inline
+// session-header card in scrollback, a one-row top inset, the bordered-less
+// composer block (top-pad + "› <placeholder>" + bottom-pad), and the default
+// status-line footer (model-with-reasoning · current-dir) — all cell-identical
+// to codex. The startup tooltip is disabled for both binaries
+// (writeFrameParityConfig sets tui.show_tooltips = false) because it is a
+// network-fetched, release- and time-volatile random announcement that cannot be
+// byte-matched. With it off, only four genuinely per-run rows remain volatile:
+//
+//   - the CLI version in the header title ("(v…"),
+//   - the header "directory:" row (absolute per-run cwd, center-truncated),
+//   - the composer placeholder row (one of 8 entries, chosen per run at random
+//     INDEPENDENTLY by each binary — see composer_placeholder.go / chatwidget.rs
+//     PLACEHOLDERS), and
+//   - the footer status line (carries the absolute per-run cwd).
+//
+// The footer's leading "<model> <reasoning> · " prefix IS reproduced
+// byte-for-byte (verified when both binaries share a short enough cwd); it is
+// only masked here because the trailing path is per-run.
 var frameMask = []string{
-	"directory:",     // absolute per-run cwd path (center-truncated differently)
-	"(v",             // CLI version string in the header title
-	"/private/var",   // macOS temp-dir paths anywhere on a row
-	"/var/folders",   // macOS temp-dir paths (canonical form)
-	"/tmp",           // linux temp-dir paths
-	"context left",   // composer footer context percentage
-	"Send a message", // codexgo composer placeholder (volatile vs codex)
-	"Ask Codex",      // codex composer placeholder (random per run)
-	"Write tests",    // codex random placeholder
-	"Explain this",   // codex random placeholder
-	"Summarize",      // codex random placeholder
-	"Implement",      // codex random placeholder
-	"Find and fix",   // codex random placeholder
-	"Improve doc",    // codex random placeholder
-	"Run /review",    // codex random placeholder
-	"Use /skills",    // codex random placeholder
-	"Tip:",           // promotional startup tip (changes across releases)
-	"Learn more",     // promotional tip continuation
-	"GPT-5.5",        // promotional tip body
-	"introducing",    // promotional tip URL
-	// Promotional tip body continuation lines (wrapped, no "Tip:" prefix). The
-	// whole startup tip is release-volatile and codexgo does not reproduce it
-	// this wave; these phrases cover the 0.136.0 GPT-5.5 tip wrap at 80 and 120.
-	"reason through",
-	"keep going until",
-	"check assumptions",
+	"directory:",   // header row: absolute per-run cwd (center-truncated)
+	"(v",           // CLI version string in the header title
+	"/private/var", // macOS temp-dir paths anywhere on a row (footer cwd)
+	"/var/folders", // macOS temp-dir paths (canonical form)
+	"/tmp",         // linux temp-dir paths
+	"context left", // composer footer context percentage (when shown)
+	// Composer placeholder pool (PLACEHOLDERS, chatwidget.rs): the idle prompt
+	// is one of these 8, picked per run at random by each binary independently,
+	// so the "› <placeholder>" row cannot be byte-identical across the two.
+	"Explain this codebase",
+	"Summarize recent commits",
+	"Implement {feature}",
+	"Find and fix a bug in",
+	"Write tests for",
+	"Improve documentation in",
+	"Run /review on my current changes",
+	"Use /skills to list available skills",
 }
 
 // rowIsMasked reports whether row should be excluded from strict comparison.

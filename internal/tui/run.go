@@ -42,9 +42,10 @@ type RunConfig struct {
 // Run launches the interactive TUI against the engine reachable through
 // cfg.Client. It performs the full wiring: capability detection, the app event
 // sender, engine start (or resume), theme load, model construction with the chat
-// transcript and bottom pane, and the bubbletea program (alternate screen, ctx
-// scoped). The engine event pump runs on a background goroutine for the lifetime
-// of the program. Run blocks until the program exits or ctx is cancelled.
+// transcript and bottom pane, and the bubbletea program (inline scrollback mode,
+// ctx scoped). The engine event pump runs on a background goroutine for the
+// lifetime of the program. Run blocks until the program exits or ctx is
+// cancelled.
 func Run(ctx context.Context, cfg RunConfig) error {
 	if cfg.Client == nil {
 		return fmt.Errorf("tui: run: client is required")
@@ -70,13 +71,23 @@ func Run(ctx context.Context, cfg RunConfig) error {
 		Sender:     sender,
 		Engine:     engine,
 		Transcript: transcript,
+		Inline:     true,
 		Bottom: NewChatBottomPane(ChatBottomPaneConfig{
 			Theme:      theme,
 			FileSearch: cfg.fileSearch(),
+			Footer: ComposerFooter{
+				Model:     cfg.Model,
+				Directory: FormatDirectoryDisplay(cfg.workdir()),
+			},
 		}),
 	})
 
-	program := tea.NewProgram(model, tea.WithAltScreen(), tea.WithContext(ctx))
+	// Inline-scrollback mode (no alternate screen): finalized history cells are
+	// printed into the terminal's native scrollback (tea.Println) while the live
+	// viewport renders only the composer/status region. This mirrors codex's
+	// inline ratatui viewport (codex-rs/tui/src/tui.rs init + insert_history_lines)
+	// rather than holding the whole transcript in an alt-screen buffer.
+	program := tea.NewProgram(model, tea.WithContext(ctx))
 	sender.Attach(program)
 
 	// Pump engine events into the program on a background goroutine.

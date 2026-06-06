@@ -32,6 +32,14 @@ type Model struct {
 	width  int
 	height int
 
+	// inline runs the TUI in inline-scrollback mode (no alternate screen):
+	// completed history cells are printed into the terminal's native scrollback
+	// via tea.Println and the live viewport renders only the composer/status
+	// region (plus a one-row top inset). This mirrors codex's inline
+	// architecture. When false the legacy alt-screen path renders the whole
+	// transcript inside the viewport.
+	inline bool
+
 	// quitting is set once an exit has been requested so the View can render a
 	// final frame before the program tears down.
 	quitting bool
@@ -55,6 +63,10 @@ type ModelConfig struct {
 	// used so the spine builds and runs before area agents land.
 	Transcript TranscriptView
 	Bottom     BottomPane
+	// Inline enables inline-scrollback rendering (no alternate screen). The
+	// interactive launcher (Run) sets it; test/view-only models leave it false
+	// to keep the legacy stacked-region View behavior.
+	Inline bool
 }
 
 // NewModel constructs the root model from configuration, applying defaults for
@@ -79,6 +91,7 @@ func NewModel(cfg ModelConfig) Model {
 		engine:     cfg.Engine,
 		transcript: transcript,
 		bottom:     bottom,
+		inline:     cfg.Inline,
 	}
 }
 
@@ -96,34 +109,68 @@ func (m Model) Init() tea.Cmd {
 }
 
 // Update implements tea.Model. It routes spine messages (resize, key, app
-// events, engine events) and delegates everything else to the area seams.
+// events, engine events) and delegates everything else to the area seams. In
+// inline mode any newly committed history cells are drained into scrollback
+// after routing (see drainScrollback).
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		return m.delegate(msg)
+		model, cmd := m.delegate(msg)
+		return model.(Model).withScrollback(cmd)
 
 	case tea.KeyMsg:
 		if cmd, handled := m.handleGlobalKey(msg); handled {
 			return m, cmd
 		}
-		return m.delegate(msg)
+		model, cmd := m.delegate(msg)
+		return model.(Model).withScrollback(cmd)
 
 	case CoreEventMsg:
 		m.transcript = m.transcript.AppendCoreEvent(msg)
-		return m.delegate(msg)
+		model, cmd := m.delegate(msg)
+		return model.(Model).withScrollback(cmd)
 
 	case EngineClosedMsg:
 		m.quitting = true
 		return m, tea.Quit
 
 	case AppEvent:
-		return m.handleAppEvent(msg)
+		model, cmd := m.handleAppEvent(msg)
+		return model.(Model).withScrollback(cmd)
 
 	default:
-		return m.delegate(msg)
+		model, cmd := m.delegate(msg)
+		return model.(Model).withScrollback(cmd)
 	}
+}
+
+// withScrollback drains any newly committed history cells into native terminal
+// scrollback (inline mode only) and batches the resulting tea.Println commands
+// ahead of the supplied follow-up command. It is a no-op in alt-screen mode or
+// when the transcript does not support draining.
+func (m Model) withScrollback(next tea.Cmd) (tea.Model, tea.Cmd) {
+	if !m.inline || m.width <= 0 {
+		return m, next
+	}
+	drainer, ok := m.transcript.(ScrollbackDrainer)
+	if !ok {
+		return m, next
+	}
+	lines, view := drainer.DrainScrollback(m.width)
+	m.transcript = view
+	if len(lines) == 0 {
+		return m, next
+	}
+	// tea.Println splits its argument on newlines into the renderer's queued
+	// scrollback lines (printed above the live viewport in one batch), so a
+	// single call with the joined block preserves insertion order.
+	print := tea.Println(strings.Join(lines, "\n"))
+	if next == nil {
+		return m, print
+	}
+	return m, tea.Batch(print, next)
 }
 
 // handleGlobalKey handles the few keybindings the app loop owns globally. It
@@ -221,12 +268,19 @@ func (m Model) delegate(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-// View implements tea.Model. It computes the transcript/bottom split and renders
-// each region, stacking them vertically.
+// View implements tea.Model. In inline mode it renders only the live region
+// (the still-active transcript tail, a one-row top inset, then the
+// composer/status bottom pane); finalized history lives in native scrollback. In
+// alt-screen mode it computes the transcript/bottom split and stacks both
+// regions to fill the screen.
 func (m Model) View() string {
 	if m.width <= 0 || m.height <= 0 {
 		return ""
 	}
+	if m.inline {
+		return m.inlineView()
+	}
+
 	bottomHeight := m.bottom.DesiredHeight(m.width)
 	layout := ComputeLayout(m.width, m.height, bottomHeight)
 
@@ -240,6 +294,31 @@ func (m Model) View() string {
 		return bottom
 	}
 	return transcript + "\n" + bottom
+}
+
+// inlineView renders the inline live viewport: the not-yet-flushed transcript
+// tail (e.g. an in-flight streaming cell) on top, a single blank top-inset row
+// (codex insets the bottom pane by top=1, chatwidget/rendering.rs), then the
+// bottom pane. Its height is the natural content height; bubbletea sizes the
+// inline viewport to the number of lines returned.
+func (m Model) inlineView() string {
+	bottomHeight := m.bottom.DesiredHeight(m.width)
+	bottom := m.bottom.View(Rect{X: 0, Y: 0, Width: m.width, Height: bottomHeight})
+
+	// The live transcript tail (active stream) renders above the composer; on a
+	// fresh first frame it is empty because the header card is already in
+	// scrollback.
+	tail := m.transcript.View(Rect{X: 0, Y: 0, Width: m.width, Height: m.height})
+	tail = strings.TrimRight(tail, "\n")
+
+	var b strings.Builder
+	if tail != "" {
+		b.WriteString(tail)
+		b.WriteByte('\n')
+	}
+	b.WriteByte('\n') // top inset (codex bottom-pane inset: top=1)
+	b.WriteString(bottom)
+	return b.String()
 }
 
 // compile-time assertion that Model satisfies tea.Model.

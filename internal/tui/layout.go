@@ -91,6 +91,22 @@ type TranscriptView interface {
 	AppendCoreEvent(ev CoreEventMsg) TranscriptView
 }
 
+// ScrollbackDrainer is the optional capability a [TranscriptView] implements to
+// support inline rendering: completed history cells are written into the
+// terminal's native scrollback (above the live viewport) rather than re-rendered
+// inside the program's viewport each frame. The root [Model] detects this seam
+// when running inline and prints the drained lines via tea.Println.
+//
+// It mirrors codex's inline architecture, where finalized history cells are
+// inserted into scrollback with insert_history_lines (codex-rs/tui/src/tui.rs)
+// while the live viewport renders only the composer/status region.
+type ScrollbackDrainer interface {
+	// DrainScrollback returns the lines for cells committed since the last drain
+	// (ready for tea.Println) and the updated view with those cells marked
+	// flushed. It returns (nil, self) when nothing is pending.
+	DrainScrollback(width int) ([]string, TranscriptView)
+}
+
 // BottomPane is the seam the bottom-pane area agent implements. It owns the
 // composer, slash-command/file-search popups, approval modals, and the status
 // line, and reports the height it currently needs.

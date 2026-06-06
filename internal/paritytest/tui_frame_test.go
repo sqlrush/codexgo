@@ -24,16 +24,20 @@ package paritytest
 // being closed wave by wave. With CODEX_TUI_FRAME_STRICT=1 the unmasked rows must
 // match or the test fails — that is the bar future waves drive to zero.
 //
-// Wave-1 status (see DEVIATIONS.md / docs/STATUS.md TUI rows):
+// Wave-2 status (see DEVIATIONS.md / docs/STATUS.md TUI rows):
 //
-//   - The session-header welcome card now renders in codexgo at the top of the
-//     transcript, byte-identical (modulo the masked version + path) to codex's
-//     card structure. TestSessionHeaderCardLayout80 (internal/tui) pins the exact
-//     bytes.
-//   - codex migrates the welcome card + tip into the terminal's NATIVE SCROLLBACK
-//     (an inline-mode startup animation) while codexgo holds them in an alt-screen
-//     viewport. The final visible 24-row viewports therefore differ structurally;
-//     reconciling inline-scrollback vs alt-screen rendering is a later wave.
+//   - The session-header welcome card renders byte-identical (modulo the masked
+//     version + path); TestSessionHeaderCardLayout80 (internal/tui) pins the bytes.
+//   - codexgo now runs in the SAME inline-scrollback model as codex: finalized
+//     history cells are printed into native terminal scrollback while the live
+//     viewport renders only a one-row top inset + the composer block. The idle
+//     composer (blank pad / "› <placeholder>" / blank pad) and the default
+//     status-line footer ("<model> <reasoning> · <dir>") are cell-identical.
+//   - The startup tooltip is disabled for BOTH binaries via the hermetic config
+//     (tui.show_tooltips = false): codex's tip is a network-fetched, release- and
+//     time-volatile random announcement that cannot be reproduced byte-for-byte.
+//   - Only four genuinely per-run rows remain masked: the version, the header
+//     directory row, the random composer placeholder, and the footer cwd.
 
 import (
 	"fmt"

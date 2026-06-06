@@ -39,6 +39,16 @@ type ChatTranscript struct {
 	execIndex map[string]int
 	// toolIndex maps an in-flight tool call_id to its cell index.
 	toolIndex map[string]int
+
+	// flushedCells counts committed cells already drained into native terminal
+	// scrollback (inline-mode rendering). Cells before this index are NOT
+	// re-rendered in the live viewport; they live above it in scrollback. See
+	// DrainScrollback.
+	flushedCells int
+	// scrollbackEmitted records whether any cell has been flushed yet, so the
+	// inter-cell leading blank line is only inserted between cells (matching
+	// codex's display_lines_for_history_insert in app/resize_reflow.rs).
+	scrollbackEmitted bool
 }
 
 // streamState tracks the in-flight streaming cell.
@@ -350,22 +360,59 @@ func (t ChatTranscript) View(area Rect) string {
 	return b.String()
 }
 
-// allLines renders every cell and the active stream into wrapped lines.
+// allLines renders the cells NOT yet flushed to scrollback plus the active
+// stream into wrapped lines. In alt-screen (non-inline) mode flushedCells is 0,
+// so this renders the full transcript; in inline mode the drained cells live in
+// native scrollback and only the tail (live) cells render here.
 func (t ChatTranscript) allLines(width int) []Line {
 	var out []Line
-	for i, cell := range t.cells {
-		if i > 0 {
+	first := t.flushedCells
+	if first < 0 {
+		first = 0
+	}
+	for i := first; i < len(t.cells); i++ {
+		if i > first {
 			out = append(out, Line{})
 		}
-		out = append(out, cell.Lines(width)...)
+		out = append(out, t.cells[i].Lines(width)...)
 	}
 	if t.streaming != nil {
-		if len(t.cells) > 0 {
+		if len(t.cells) > first {
 			out = append(out, Line{})
 		}
 		out = append(out, t.streamLines(width)...)
 	}
 	return out
+}
+
+// DrainScrollback renders the committed cells not yet flushed into native
+// terminal scrollback and marks them flushed. It returns the lines (as plain
+// strings ready for tea.Println) in insertion order, with a single blank line
+// prepended before each cell after the first ever emitted — mirroring codex's
+// display_lines_for_history_insert (a leading separator between history cells).
+//
+// It returns (nil, transcript-unchanged) when nothing new is pending. The active
+// (streaming) cell is never drained; it stays in the live viewport until it
+// commits. This is the inline-scrollback insertion path
+// (codex-rs/tui/src/tui.rs insert_history_lines).
+func (t ChatTranscript) DrainScrollback(width int) ([]string, TranscriptView) {
+	if width <= 0 || t.flushedCells >= len(t.cells) {
+		return nil, t
+	}
+	var lines []string
+	emitted := t.scrollbackEmitted
+	for i := t.flushedCells; i < len(t.cells); i++ {
+		if emitted {
+			lines = append(lines, "")
+		}
+		emitted = true
+		for _, l := range t.cells[i].Lines(width) {
+			lines = append(lines, l.Render())
+		}
+	}
+	t.flushedCells = len(t.cells)
+	t.scrollbackEmitted = emitted
+	return lines, t
 }
 
 // streamLines renders the in-flight streaming content: committed source via the
