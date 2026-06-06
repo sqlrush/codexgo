@@ -1,10 +1,26 @@
 package tui
 
 import (
+	"io"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
+
+// trueColorRenderer is a lipgloss renderer pinned to the TrueColor profile. It is
+// used to serialize 24-bit RGB spans (e.g. the footer status line) verbatim,
+// regardless of the terminal's auto-detected color depth, matching ratatui's
+// unconditional Color::Rgb emission. Its output target is irrelevant (lipgloss
+// only consults the renderer's profile when styling a string), so it writes to
+// io.Discard.
+var trueColorRenderer = newTrueColorRenderer()
+
+func newTrueColorRenderer() *lipgloss.Renderer {
+	r := lipgloss.NewRenderer(io.Discard)
+	r.SetColorProfile(termenv.TrueColor)
+	return r
+}
 
 // Style captures the SGR attributes a span can carry. It is the Go analogue of
 // ratatui's `Style`, decoupled from any single rendering backend so the same
@@ -33,9 +49,21 @@ func (s Style) WithBg(c lipgloss.TerminalColor) Style { s.Bg = c; return s }
 // WithBold returns a copy of s with bold set.
 func (s Style) WithBold(v bool) Style { s.Bold = v; return s }
 
-// Lip converts the style to a lipgloss.Style for rendering.
+// Lip converts the style to a lipgloss.Style for rendering with the default
+// (auto-detected) color profile.
 func (s Style) Lip() lipgloss.Style {
-	out := lipgloss.NewStyle()
+	return s.applyTo(lipgloss.NewStyle())
+}
+
+// LipWith converts the style to a lipgloss.Style created from the given renderer,
+// so callers can pin a specific color profile (e.g. TrueColor for surfaces codex
+// emits as raw 24-bit RGB regardless of the terminal's reported depth).
+func (s Style) LipWith(r *lipgloss.Renderer) lipgloss.Style {
+	return s.applyTo(r.NewStyle())
+}
+
+// applyTo stamps the style's attributes onto an already-constructed base style.
+func (s Style) applyTo(out lipgloss.Style) lipgloss.Style {
 	if s.Fg != nil {
 		out = out.Foreground(s.Fg)
 	}
@@ -116,9 +144,9 @@ func (l Line) String() string {
 	return b.String()
 }
 
-// Render returns the line as a styled terminal string for the given profile.
-// Each span is rendered with its own lipgloss style; an empty line renders as
-// the empty string.
+// Render returns the line as a styled terminal string for the default
+// (auto-detected) color profile. Each span is rendered with its own lipgloss
+// style; an empty line renders as the empty string.
 func (l Line) Render() string {
 	if len(l.Spans) == 0 {
 		return ""
@@ -129,6 +157,25 @@ func (l Line) Render() string {
 			continue
 		}
 		b.WriteString(s.Style.Lip().Render(s.Text))
+	}
+	return b.String()
+}
+
+// RenderWith returns the line as a styled terminal string using the supplied
+// lipgloss renderer's color profile. It is used for surfaces codex emits as raw
+// 24-bit RGB (e.g. the footer status line), which must NOT be downsampled to a
+// 256-indexed approximation by the terminal's reported depth — ratatui serializes
+// Color::Rgb as truecolor unconditionally.
+func (l Line) RenderWith(r *lipgloss.Renderer) string {
+	if len(l.Spans) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, s := range l.Spans {
+		if s.Text == "" {
+			continue
+		}
+		b.WriteString(s.Style.LipWith(r).Render(s.Text))
 	}
 	return b.String()
 }

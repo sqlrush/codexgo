@@ -112,6 +112,21 @@ type ScrollbackDrainer interface {
 	DrainScrollback(width int) ([]string, TranscriptView)
 }
 
+// ClearResettable is the optional capability a [TranscriptView] implements to
+// support /clear (and Ctrl-L): the transcript discards its history and drain
+// bookkeeping and returns a fresh transcript re-seeded with the session-header
+// welcome card. The root [Model] detects this seam when handling a
+// [ClearUIEvent] so the fresh header drains back into native scrollback.
+//
+// It mirrors codex's reset_transcript_state_after_clear + the fresh-session
+// header insertion (codex-rs/tui/src/app/history_ui.rs + session_lifecycle.rs).
+type ClearResettable interface {
+	// ResetForClear returns a brand-new transcript for a fresh session, with the
+	// session-header card re-seeded (when one was originally attached) and all
+	// scrollback-drain state reset so the header is re-emitted.
+	ResetForClear() TranscriptView
+}
+
 // BottomPane is the seam the bottom-pane area agent implements. It owns the
 // composer, slash-command/file-search popups, approval modals, and the status
 // line, and reports the height it currently needs.

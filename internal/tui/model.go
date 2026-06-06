@@ -2,6 +2,8 @@ package tui
 
 import (
 	"context"
+	"io"
+	"os"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -28,6 +30,12 @@ type Model struct {
 
 	transcript TranscriptView
 	bottom     BottomPane
+
+	// output is the terminal writer used for raw control sequences bubbletea's
+	// managed renderer does not expose (e.g. the /clear scrollback purge). It
+	// defaults to os.Stdout, matching tea.NewProgram's default output. Tests may
+	// override it to capture the emitted bytes.
+	output io.Writer
 
 	width  int
 	height int
@@ -67,6 +75,10 @@ type ModelConfig struct {
 	// interactive launcher (Run) sets it; test/view-only models leave it false
 	// to keep the legacy stacked-region View behavior.
 	Inline bool
+	// Output is the terminal writer for raw control sequences (the /clear
+	// scrollback purge). When nil it defaults to os.Stdout, matching
+	// tea.NewProgram's default output. Tests override it to capture the bytes.
+	Output io.Writer
 }
 
 // NewModel constructs the root model from configuration, applying defaults for
@@ -84,6 +96,10 @@ func NewModel(cfg ModelConfig) Model {
 	if cfg.Bottom != nil {
 		bottom = cfg.Bottom
 	}
+	output := cfg.Output
+	if output == nil {
+		output = os.Stdout
+	}
 	return Model{
 		caps:       cfg.Caps,
 		theme:      LoadTheme(cfg.Tui, cfg.Caps),
@@ -91,6 +107,7 @@ func NewModel(cfg ModelConfig) Model {
 		engine:     cfg.Engine,
 		transcript: transcript,
 		bottom:     bottom,
+		output:     output,
 		inline:     cfg.Inline,
 	}
 }
@@ -216,6 +233,9 @@ func (m Model) handleAppEvent(ev AppEvent) (tea.Model, tea.Cmd) {
 			m.transcript = m.transcript.AppendUserMessage(ev.Text)
 		}
 		return m, m.submitUserMessage(ev.Text)
+
+	case ClearUIEvent:
+		return m.handleClearUI()
 
 	case CodexOpEvent:
 		return m, m.submitCommand(ev.Command, "")

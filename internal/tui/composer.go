@@ -369,9 +369,41 @@ func (c Composer) handlePopupKey(msg tea.KeyMsg) (ComposerResult, bool) {
 		c.popup = composerPopup{}
 		return ComposerResult{Composer: c}, true
 	case tea.KeyEnter:
+		// Enter on a slash popup DISPATCHES the selected command immediately
+		// (codex's handle_key_event_with_slash_popup → InputResult::Command); on a
+		// file popup it COMPLETES the @mention. Tab keeps navigating.
+		if c.popup.kind == popupSlash {
+			return c.dispatchSelectedSlash(), true
+		}
 		return c.acceptPopup(), true
 	}
 	return ComposerResult{}, false
+}
+
+// dispatchSelectedSlash submits the slash command highlighted in the popup,
+// preserving any inline-args tail already typed after the command token. It
+// clears the composer and closes the popup, mirroring codex's Enter handling on
+// the slash popup (slash_input.rs: complete-with-args-then-dispatch, falling
+// through to InputResult::Command for the no-args case).
+func (c Composer) dispatchSelectedSlash() ComposerResult {
+	if c.popup.selected < 0 || c.popup.selected >= len(c.popup.items) {
+		c.popup = composerPopup{}
+		return ComposerResult{Composer: c}
+	}
+	item := c.popup.items[c.popup.selected]
+	// Preserve any tail the user already typed after the command token (inline
+	// args), e.g. "/review HEAD" → submit "/review HEAD".
+	tail := strings.TrimSpace(c.text[c.cursor:])
+	submit := "/" + item.insert
+	if tail != "" {
+		submit += " " + tail
+	}
+	c = c.RecordSubmission(submit)
+	c.text = ""
+	c.cursor = 0
+	c.popup = composerPopup{}
+	c.history = c.history.ResetNavigation()
+	return ComposerResult{Composer: c, Submit: submit}
 }
 
 // acceptPopup applies the selected popup item to the buffer.

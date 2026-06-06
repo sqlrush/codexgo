@@ -22,6 +22,10 @@ type ChatBottomPane struct {
 	status   string
 	// footer holds the idle-composer status-line context (model · directory).
 	footer ComposerFooter
+	// colorLevel is the detected terminal color depth, used to resolve the
+	// footer's softened theme accent colors (TrueColor → RGB, 256 → nearest
+	// indexed, otherwise default fg).
+	colorLevel StdoutColorLevel
 	// maxPopupRows caps popup height so the pane never grows unbounded.
 	maxPopupRows int
 }
@@ -36,6 +40,10 @@ type ChatBottomPaneConfig struct {
 	// directory) rendered beneath the input box. Mirrors codex's default
 	// status line `model-with-reasoning · current-dir`.
 	Footer ComposerFooter
+	// ColorLevel is the detected terminal color depth, used to resolve the
+	// footer's softened theme accent colors. Defaults to the no-color level (the
+	// footer renders without accent colors) when unset.
+	ColorLevel StdoutColorLevel
 }
 
 // NewChatBottomPane builds a bottom pane.
@@ -44,6 +52,7 @@ func NewChatBottomPane(cfg ChatBottomPaneConfig) ChatBottomPane {
 		theme:        cfg.Theme,
 		composer:     NewComposer(cfg.Theme, cfg.FileSearch),
 		footer:       cfg.Footer,
+		colorLevel:   cfg.ColorLevel,
 		maxPopupRows: 8,
 	}
 }
@@ -205,11 +214,15 @@ func (p ChatBottomPane) renderFooter(width int) []string {
 	if _, _, ok := p.composer.PopupRows(); ok {
 		return nil
 	}
-	line := p.footer.line(width)
-	if line == "" {
+	line := p.footer.styledLine(width, p.colorLevel)
+	if len(line.Spans) == 0 {
 		return nil
 	}
-	return []string{lipglossDim(p.theme).Render(line)}
+	// Render the footer with the TrueColor renderer so the softened RGB accents
+	// emit as 24-bit truecolor verbatim (codex/ratatui never downsample
+	// Color::Rgb), instead of being quantized to a 256-indexed approximation by
+	// lipgloss's auto-detected profile.
+	return []string{line.RenderWith(trueColorRenderer)}
 }
 
 // renderSearchBar renders the Ctrl+R reverse-search line.

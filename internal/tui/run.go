@@ -77,6 +77,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 		Bottom: NewChatBottomPane(ChatBottomPaneConfig{
 			Theme:      theme,
 			FileSearch: cfg.fileSearch(),
+			ColorLevel: caps.ColorLevel,
 			Footer: ComposerFooter{
 				Model:     cfg.Model,
 				Directory: FormatDirectoryDisplay(cfg.workdir()),

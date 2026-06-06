@@ -49,6 +49,15 @@ type ChatTranscript struct {
 	// inter-cell leading blank line is only inserted between cells (matching
 	// codex's display_lines_for_history_insert in app/resize_reflow.rs).
 	scrollbackEmitted bool
+
+	// header retains the session-header seed (version/model/directory) supplied to
+	// WithSessionHeader so a fresh session after /clear can re-seed the same
+	// welcome card. seeded records whether a header was ever attached, so
+	// ResetForClear can faithfully rebuild the fresh transcript.
+	header struct {
+		version, model, directory string
+		seeded                    bool
+	}
 }
 
 // streamState tracks the in-flight streaming cell.
@@ -86,11 +95,35 @@ func NewChatTranscript(theme Theme) ChatTranscript {
 // SessionInfoCell header inserted into history on session start). It is a no-op
 // when a cell is already present.
 func (t ChatTranscript) WithSessionHeader(version, model, directory string) ChatTranscript {
+	// Always retain the seed so a fresh session after /clear can re-render the
+	// same welcome card, even if the header cell is already present.
+	t.header.version = version
+	t.header.model = model
+	t.header.directory = directory
+	t.header.seeded = true
 	if len(t.cells) > 0 {
 		return t
 	}
 	t.cells = t.appendCell(NewSessionHeaderCell(t.theme, version, model, directory))
 	return t
+}
+
+// ResetForClear returns a brand-new transcript for a fresh session, discarding
+// all committed cells, the active stream, and the scrollback-drain bookkeeping,
+// then re-seeding the session-header welcome card (if one was originally
+// attached). The returned transcript starts with flushedCells = 0 so its header
+// drains back into native scrollback, mirroring codex's
+// reset_transcript_state_after_clear + start_fresh_session (the fresh session
+// re-inserts the SessionHeaderHistoryCell).
+//
+// Port of App::reset_transcript_state_after_clear followed by the fresh-session
+// header insertion (app/history_ui.rs + session_lifecycle.rs).
+func (t ChatTranscript) ResetForClear() TranscriptView {
+	fresh := NewChatTranscript(t.theme)
+	if t.header.seeded {
+		fresh = fresh.WithSessionHeader(t.header.version, t.header.model, t.header.directory)
+	}
+	return fresh
 }
 
 // Update implements TranscriptView. It handles scroll keys; engine events arrive

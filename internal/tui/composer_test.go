@@ -97,6 +97,27 @@ func TestComposerFilePopupUsesSearch(t *testing.T) {
 	}
 }
 
+// TestComposerSlashPopupEnterDispatches verifies Enter on the slash popup
+// SUBMITS the highlighted command (codex's InputResult::Command) rather than
+// merely completing the text, so e.g. "/clear" actually fires.
+func TestComposerSlashPopupEnterDispatches(t *testing.T) {
+	c := NewComposer(testTheme(), nil)
+	c = typeString(c, "/clear")
+	if !c.PopupVisible() {
+		t.Fatal("slash popup should be visible after typing /clear")
+	}
+	res := c.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if res.Submit != "/clear" {
+		t.Fatalf("slash Enter submit = %q, want %q", res.Submit, "/clear")
+	}
+	if !res.Composer.IsEmpty() {
+		t.Fatalf("composer not cleared after slash dispatch: %q", res.Composer.Text())
+	}
+	if res.Composer.PopupVisible() {
+		t.Fatal("popup should be closed after slash dispatch")
+	}
+}
+
 func TestComposerAcceptFileMention(t *testing.T) {
 	search := func(q string) []string { return []string{"src/main.go"} }
 	c := NewComposer(testTheme(), search)
