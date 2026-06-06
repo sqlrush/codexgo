@@ -45,7 +45,7 @@ func TestApplyProxyEnvOverridesSetsCommonToolVars(t *testing.T) {
 	}
 
 	if runtime.GOOS == "darwin" {
-		wantSSH := "CODEX_PROXY_GIT_SSH_COMMAND=1 ssh -o ProxyCommand='nc -X 5 -x 127.0.0.1:8081 %h %p'"
+		wantSSH := "CODEXGO_PROXY_GIT_SSH_COMMAND=1 ssh -o ProxyCommand='nc -X 5 -x 127.0.0.1:8081 %h %p'"
 		if got := env[gitSSHCommandEnvKey]; got != wantSSH {
 			t.Errorf("GIT_SSH_COMMAND = %q, want %q", got, wantSSH)
 		}

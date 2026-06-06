@@ -31,7 +31,7 @@ func mitmTestState(t *testing.T, network NetworkProxySettings) *NetworkProxyStat
 
 func githubWriteHook() MitmHookConfig {
 	bearer := "Bearer "
-	envVar := "CODEX_GITHUB_TOKEN"
+	envVar := "CODEXGO_GITHUB_TOKEN"
 	return MitmHookConfig{
 		Host: "api.github.com",
 		Matcher: MitmHookMatchConfig{

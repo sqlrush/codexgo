@@ -12,7 +12,7 @@ import (
 )
 
 // setFeatureEnabledInConfig sets `[features].<feature> = enabled` in
-// ${codexHome}/config.toml, creating the file (and CODEX_HOME directory) when
+// ${codexHome}/config.toml, creating the file (and CODEXGO_HOME directory) when
 // absent. It mirrors ConfigEditsBuilder::set_feature_enabled.
 //
 // The edit is performed by decoding the existing document into a value tree,

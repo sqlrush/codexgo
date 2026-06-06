@@ -78,7 +78,7 @@ func openaiBaseURLOverride(cfg loadedConfig) *string {
 }
 
 // isOpenAIAuthProvider reports whether the selected provider relies on the
-// built-in OpenAI auth path (OPENAI_API_KEY / CODEX_API_KEY / auth.json / ChatGPT
+// built-in OpenAI auth path (OPENAI_API_KEY / CODEXGO_API_KEY / auth.json / ChatGPT
 // login) rather than a provider-specific `env_key` bearer token. It matches the
 // Rust requires_openai_auth semantics: such providers go through the AuthManager,
 // while env_key-only providers authenticate from their named environment variable.

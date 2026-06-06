@@ -29,7 +29,7 @@ func statePathsCheck(dctx doctorContext) doctorCheck {
 	if logDir == "" {
 		logDir = filepath.Join(dctx.CodexHome, "log")
 	}
-	pathReadiness(b, "CODEX_HOME", dctx.CodexHome)
+	pathReadiness(b, "CODEXGO_HOME", dctx.CodexHome)
 	pathReadiness(b, "log dir", logDir)
 	pathReadiness(b, "sqlite home", sqliteHome)
 
@@ -63,7 +63,7 @@ func statePathsCheck(dctx doctorContext) doctorCheck {
 
 	if integrityFailed {
 		b.fail("state database integrity check failed").
-			remedy("Back up CODEX_HOME, then remove or repair the affected SQLite database.")
+			remedy("Back up CODEXGO_HOME, then remove or repair the affected SQLite database.")
 	} else {
 		b.ok("state paths and databases are inspectable")
 	}

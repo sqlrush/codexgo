@@ -8,7 +8,7 @@
 //     values for --approval-mode and --sandbox, plus their conversion into the
 //     corresponding protocol enums ([AskForApproval], [SandboxMode]).
 //   - [ProfileV2Name]: a validated --profile name used to select a
-//     $CODEX_HOME/<name>.config.toml layer.
+//     $CODEXGO_HOME/<name>.config.toml layer.
 //   - [CliConfigOverrides]: capture and parsing of repeated `-c key=value`
 //     overrides whose right-hand sides are interpreted as TOML, plus the logic
 //     to apply them onto a TOML value tree.

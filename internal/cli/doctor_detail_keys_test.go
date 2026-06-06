@@ -35,8 +35,8 @@ func hasKey(c doctorCheck, key string) bool {
 // proxy env presence, npm-managed install rows, terminal program vars) are not
 // asserted here because they legitimately vary with the host environment.
 func TestDoctorDetailKeySetsMatchCodex(t *testing.T) {
-	t.Setenv("CODEX_HOME", t.TempDir())
-	t.Setenv("CODEX_DOCTOR_SKIP_NETWORK", "1")
+	t.Setenv("CODEXGO_HOME", t.TempDir())
+	t.Setenv("CODEXGO_DOCTOR_SKIP_NETWORK", "1")
 
 	checks := buildDoctorChecks(context.Background(), RootOptions{})
 	byID := map[string]doctorCheck{}
@@ -47,7 +47,7 @@ func TestDoctorDetailKeySetsMatchCodex(t *testing.T) {
 	// wantKeys lists detail labels each check must always emit on this platform.
 	wantKeys := map[string][]string{
 		"config.load": {
-			"CODEX_HOME", "config.toml", "cwd", "enabled feature flags",
+			"CODEXGO_HOME", "config.toml", "cwd", "enabled feature flags",
 			"feature flag overrides", "feature flags enabled", "log dir",
 			"mcp servers", "model", "model provider", "sqlite home",
 		},
@@ -60,7 +60,7 @@ func TestDoctorDetailKeySetsMatchCodex(t *testing.T) {
 			"execve wrapper helper", "filesystem sandbox", "network sandbox",
 		},
 		"state.paths": {
-			"CODEX_HOME", "active rollout files", "archived rollout files",
+			"CODEXGO_HOME", "active rollout files", "archived rollout files",
 			"goals DB", "goals DB integrity", "log DB", "log DB integrity",
 			"log dir", "memories DB", "memories DB integrity", "sqlite home",
 			"state DB", "state DB integrity",
@@ -102,8 +102,8 @@ func TestDoctorDetailKeySetsMatchCodex(t *testing.T) {
 // repeated-label array ([path, "missing"]) when the file is absent, matching the
 // JSON array codex emits.
 func TestConfigLoadConfigTomlIsArrayWhenMissing(t *testing.T) {
-	t.Setenv("CODEX_HOME", t.TempDir())
-	t.Setenv("CODEX_DOCTOR_SKIP_NETWORK", "1")
+	t.Setenv("CODEXGO_HOME", t.TempDir())
+	t.Setenv("CODEXGO_DOCTOR_SKIP_NETWORK", "1")
 
 	_, check := configLoadCheck(RootOptions{})
 	structured, _ := structuredJSONDetails(check.Details)
@@ -122,8 +122,8 @@ func TestConfigLoadConfigTomlIsArrayWhenMissing(t *testing.T) {
 // TestConfigLoadDefaultsModelAndProvider asserts the unset model renders as
 // "<default>" and the unset provider defaults to "openai", matching codex.
 func TestConfigLoadDefaultsModelAndProvider(t *testing.T) {
-	t.Setenv("CODEX_HOME", t.TempDir())
-	t.Setenv("CODEX_DOCTOR_SKIP_NETWORK", "1")
+	t.Setenv("CODEXGO_HOME", t.TempDir())
+	t.Setenv("CODEXGO_DOCTOR_SKIP_NETWORK", "1")
 
 	_, check := configLoadCheck(RootOptions{})
 	structured, _ := structuredJSONDetails(check.Details)
@@ -138,8 +138,8 @@ func TestConfigLoadDefaultsModelAndProvider(t *testing.T) {
 // TestSandboxHelpersFilesystemNetworkKeys asserts the sandbox check reports
 // separate filesystem/network sandbox labels rather than a single "sandbox mode".
 func TestSandboxHelpersFilesystemNetworkKeys(t *testing.T) {
-	t.Setenv("CODEX_HOME", t.TempDir())
-	t.Setenv("CODEX_DOCTOR_SKIP_NETWORK", "1")
+	t.Setenv("CODEXGO_HOME", t.TempDir())
+	t.Setenv("CODEXGO_DOCTOR_SKIP_NETWORK", "1")
 
 	dctx, _ := configLoadCheck(RootOptions{})
 	c := sandboxHelpersCheck(dctx)
@@ -156,8 +156,8 @@ func TestSandboxHelpersFilesystemNetworkKeys(t *testing.T) {
 // TestStateRolloutParityKeys asserts the rollout/state DB parity check emits the
 // codex "rollout DB ..." label family with the state-DB-missing skip row.
 func TestStateRolloutParityKeys(t *testing.T) {
-	t.Setenv("CODEX_HOME", t.TempDir())
-	t.Setenv("CODEX_DOCTOR_SKIP_NETWORK", "1")
+	t.Setenv("CODEXGO_HOME", t.TempDir())
+	t.Setenv("CODEXGO_DOCTOR_SKIP_NETWORK", "1")
 
 	dctx, _ := configLoadCheck(RootOptions{})
 	c := stateRolloutParityCheck(dctx)

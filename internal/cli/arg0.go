@@ -8,27 +8,30 @@ import (
 	"runtime"
 
 	"github.com/sqlrush/codexgo/internal/applypatch"
+	"github.com/sqlrush/codexgo/internal/brand"
+	"github.com/sqlrush/codexgo/internal/execserver"
 	"github.com/sqlrush/codexgo/internal/utils/abspath"
 )
 
 // Busybox-style alias names recognized by arg0 dispatch. These mirror the
-// constants in codex-rs/arg0/src/lib.rs and the helper crates it imports.
+// constants in codex-rs/arg0/src/lib.rs and the helper crates it imports,
+// using codexgo's own alias names (see internal/brand).
 const (
 	// applyPatchArg0 routes to the apply_patch helper.
 	applyPatchArg0 = "apply_patch"
 	// misspelledApplyPatchArg0 is the legacy/typo alias also routed to apply_patch.
 	misspelledApplyPatchArg0 = "applypatch"
 	// linuxSandboxArg0 routes to the Linux sandbox backend (Linux only).
-	linuxSandboxArg0 = "codex-linux-sandbox"
+	linuxSandboxArg0 = brand.Arg0LinuxSandbox
 	// execveWrapperArg0 routes to the shell-escalation execve wrapper (unix only).
-	execveWrapperArg0 = "codex-execve-wrapper"
+	execveWrapperArg0 = brand.Arg0ExecveWrapper
 
 	// fsHelperArg1 routes to the exec-server filesystem helper (matches
 	// CODEX_FS_HELPER_ARG1).
-	fsHelperArg1 = "--codex-run-as-fs-helper"
+	fsHelperArg1 = execserver.CodexFsHelperArg1
 	// coreApplyPatchArg1 routes to the core apply_patch helper (matches
 	// CODEX_CORE_APPLY_PATCH_ARG1), used by the Windows batch shim.
-	coreApplyPatchArg1 = "--codex-run-as-apply-patch"
+	coreApplyPatchArg1 = brand.Arg1CoreApplyPatch
 )
 
 // Arg0Streams bundles the I/O the arg0 helpers write to. Injecting them keeps

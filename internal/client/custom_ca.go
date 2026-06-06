@@ -10,15 +10,15 @@ import (
 )
 
 // Environment variables that select a custom CA bundle, mirroring the Rust
-// `custom_ca` module. CODEX_CA_CERTIFICATE takes precedence over SSL_CERT_FILE.
+// `custom_ca` module. CODEXGO_CA_CERTIFICATE takes precedence over SSL_CERT_FILE.
 const (
 	// CodexCACertEnv is the Codex-specific custom CA override.
-	CodexCACertEnv = "CODEX_CA_CERTIFICATE"
+	CodexCACertEnv = "CODEXGO_CA_CERTIFICATE"
 	// SSLCertFileEnv is the fallback CA override understood by other tooling.
 	SSLCertFileEnv = "SSL_CERT_FILE"
 )
 
-const caCertHint = "If you set CODEX_CA_CERTIFICATE or SSL_CERT_FILE, ensure it points to a PEM file containing one or more CERTIFICATE blocks, or unset it to use system roots."
+const caCertHint = "If you set CODEXGO_CA_CERTIFICATE or SSL_CERT_FILE, ensure it points to a PEM file containing one or more CERTIFICATE blocks, or unset it to use system roots."
 
 // BuildCustomCATransportError describes why a transport using shared custom CA
 // support could not be constructed. It mirrors the Rust
@@ -70,7 +70,7 @@ func nonEmptyPath(env EnvSource, key string) (string, bool) {
 }
 
 // configuredBundle returns the selected CA bundle and which env var selected it.
-// CODEX_CA_CERTIFICATE wins over SSL_CERT_FILE. It mirrors the Rust
+// CODEXGO_CA_CERTIFICATE wins over SSL_CERT_FILE. It mirrors the Rust
 // `EnvSource::configured_ca_bundle`.
 func configuredBundle(env EnvSource) (configuredCABundle, bool) {
 	if path, ok := nonEmptyPath(env, CodexCACertEnv); ok {

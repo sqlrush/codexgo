@@ -18,14 +18,16 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/sqlrush/codexgo/internal/brand"
 	"github.com/sqlrush/codexgo/internal/gitutils"
 	"github.com/sqlrush/codexgo/internal/keyring"
 	"github.com/sqlrush/codexgo/internal/utils/abspath"
 )
 
 // keyringService is the service name used for all keyring entries. It mirrors
-// the `KEYRING_SERVICE` constant in codex.
-const keyringService = "codex"
+// the `KEYRING_SERVICE` constant in codex, with codexgo's own service name so
+// the two products' keychain entries never collide.
+const keyringService = brand.KeyringSecretsService
 
 // SecretName is a validated secret identifier. Valid names are non-empty and
 // contain only ASCII uppercase letters, digits, or underscores (after trimming

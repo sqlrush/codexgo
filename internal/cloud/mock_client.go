@@ -8,7 +8,7 @@ import (
 )
 
 // MockClient is a deterministic in-memory CloudBackend used for tests and the
-// CODEX_CLOUD_TASKS_MODE=mock path. It mirrors the Rust `MockClient`.
+// CODEXGO_CLOUD_TASKS_MODE=mock path. It mirrors the Rust `MockClient`.
 type MockClient struct{}
 
 // compile-time assertion that MockClient satisfies CloudBackend.

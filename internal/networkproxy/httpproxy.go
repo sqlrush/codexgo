@@ -46,7 +46,7 @@ type httpProxyServer struct {
 	mitmCA   *ManagedMitmCA
 	mitmErr  error
 	// mitmCAFactory builds (or loads) the managed CA. Overridable in tests to
-	// avoid touching CODEX_HOME. Defaults to LoadOrCreateMitmCA.
+	// avoid touching CODEXGO_HOME. Defaults to LoadOrCreateMitmCA.
 	mitmCAFactory func() (*ManagedMitmCA, error)
 	// mitmUpstreamTLS overrides the TLS config used when forwarding decrypted
 	// inner requests upstream. Nil means honor the custom-CA env config (the
@@ -78,7 +78,7 @@ func (s *httpProxyServer) managedCA() (*ManagedMitmCA, error) {
 
 // upstreamTLSConfig returns the TLS config for forwarding decrypted inner
 // requests upstream. Tests may override it; otherwise it honors the custom CA
-// bundle (CODEX_CA_CERTIFICATE / SSL_CERT_FILE) and falls back to system roots.
+// bundle (CODEXGO_CA_CERTIFICATE / SSL_CERT_FILE) and falls back to system roots.
 func (s *httpProxyServer) upstreamTLSConfig() *tls.Config {
 	if s.mitmUpstreamTLS != nil {
 		return s.mitmUpstreamTLS.Clone()

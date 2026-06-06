@@ -32,14 +32,14 @@ const (
 )
 
 // SystemCacheRootDir returns the on-disk cache location for embedded system
-// skills under an absolute CODEX_HOME. It mirrors the Rust
+// skills under an absolute CODEXGO_HOME. It mirrors the Rust
 // `system_cache_root_dir`.
 func SystemCacheRootDir(codexHome abspath.AbsolutePathBuf) abspath.AbsolutePathBuf {
 	return codexHome.Join(skillsDirName).Join(systemSkillsDirName)
 }
 
 // InstallSystemSkills installs the embedded system skills into
-// CODEX_HOME/skills/.system, clearing any existing system skills directory
+// CODEXGO_HOME/skills/.system, clearing any existing system skills directory
 // first. A marker file with a fingerprint of the embedded directory lets repeated
 // startups skip the work when nothing changed. It mirrors the Rust
 // `install_system_skills`.

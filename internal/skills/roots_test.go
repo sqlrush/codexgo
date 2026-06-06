@@ -77,7 +77,7 @@ func TestDefaultSkillRootsNilHome(t *testing.T) {
 	}
 }
 
-// TestDefaultSkillRootsProjectLayer discovers `.codex/skills` directories on
+// TestDefaultSkillRootsProjectLayer discovers `.codexgo/skills` directories on
 // the chain between the project root (marked by .git) and the cwd as Repo-scoped
 // roots, emitted FIRST (cwd-closest first, mirroring the Rust
 // HighestPrecedenceFirst walk: Project layers precede the User layer) and gated
@@ -85,12 +85,12 @@ func TestDefaultSkillRootsNilHome(t *testing.T) {
 func TestDefaultSkillRootsProjectLayer(t *testing.T) {
 	codexHome := absT(t, t.TempDir())
 	repo := t.TempDir()
-	// repo/.git marks the project root; repo/.codex/skills and
-	// repo/sub/.codex/skills both exist; cwd is repo/sub/leaf.
+	// repo/.git marks the project root; repo/.codexgo/skills and
+	// repo/sub/.codexgo/skills both exist; cwd is repo/sub/leaf.
 	for _, dir := range []string{
 		filepath.Join(repo, ".git"),
-		filepath.Join(repo, ".codex", "skills"),
-		filepath.Join(repo, "sub", ".codex", "skills"),
+		filepath.Join(repo, ".codexgo", "skills"),
+		filepath.Join(repo, "sub", ".codexgo", "skills"),
 		filepath.Join(repo, "sub", "leaf"),
 	} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -104,9 +104,9 @@ func TestDefaultSkillRootsProjectLayer(t *testing.T) {
 	roots := DefaultSkillRoots(codexHome, nil, cwd, WithProjectLayer(), WithSystemConfigDir(systemConfig))
 
 	want := []string{
-		// Project `.codex/skills` roots come first, cwd-closest first.
-		repoAbs.Join("sub").Join(".codex").Join("skills").String(),
-		repoAbs.Join(".codex").Join("skills").String(),
+		// Project `.codexgo/skills` roots come first, cwd-closest first.
+		repoAbs.Join("sub").Join(".codexgo").Join("skills").String(),
+		repoAbs.Join(".codexgo").Join("skills").String(),
 		// Then the user layer.
 		codexHome.Join("skills").String(),
 		codexHome.Join("skills").Join(".system").String(),
@@ -127,7 +127,7 @@ func TestDefaultSkillRootsProjectLayer(t *testing.T) {
 	}
 }
 
-// TestDefaultSkillRootsProjectLayerDisabled omits the `.codex/skills` roots when
+// TestDefaultSkillRootsProjectLayerDisabled omits the `.codexgo/skills` roots when
 // WithProjectLayer is not supplied (the default CLI host gates project loading
 // on git-trust, which codexgo carries as opaque).
 func TestDefaultSkillRootsProjectLayerDisabled(t *testing.T) {
@@ -135,7 +135,7 @@ func TestDefaultSkillRootsProjectLayerDisabled(t *testing.T) {
 	repo := t.TempDir()
 	for _, dir := range []string{
 		filepath.Join(repo, ".git"),
-		filepath.Join(repo, ".codex", "skills"),
+		filepath.Join(repo, ".codexgo", "skills"),
 	} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", dir, err)
@@ -145,7 +145,7 @@ func TestDefaultSkillRootsProjectLayerDisabled(t *testing.T) {
 
 	roots := DefaultSkillRoots(codexHome, nil, cwd)
 	for _, r := range roots {
-		if r.Scope == SkillScopeRepo && filepath.Base(filepath.Dir(r.Path.String())) == ".codex" {
+		if r.Scope == SkillScopeRepo && filepath.Base(filepath.Dir(r.Path.String())) == ".codexgo" {
 			t.Errorf("project root leaked without WithProjectLayer: %q", r.Path.String())
 		}
 	}
@@ -181,7 +181,7 @@ func TestDefaultSkillRootsAdminLayer(t *testing.T) {
 }
 
 // TestDefaultSkillRootsFullStack exercises all four scopes together and asserts
-// the Rust HighestPrecedenceFirst order: project `.codex/skills` (cwd-first),
+// the Rust HighestPrecedenceFirst order: project `.codexgo/skills` (cwd-first),
 // user roots, system cache, admin `<systemConfigDir>/skills`, then the repo
 // `.agents/skills` chain appended last by the outer assembly.
 func TestDefaultSkillRootsFullStack(t *testing.T) {
@@ -191,7 +191,7 @@ func TestDefaultSkillRootsFullStack(t *testing.T) {
 	repo := t.TempDir()
 	for _, dir := range []string{
 		filepath.Join(repo, ".git"),
-		filepath.Join(repo, ".codex", "skills"),
+		filepath.Join(repo, ".codexgo", "skills"),
 		filepath.Join(repo, ".agents", "skills"),
 	} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -205,7 +205,7 @@ func TestDefaultSkillRootsFullStack(t *testing.T) {
 		WithProjectLayer(), WithSystemConfigDir(systemConfig))
 
 	want := []string{
-		repoAbs.Join(".codex").Join("skills").String(),    // project
+		repoAbs.Join(".codexgo").Join("skills").String(),  // project
 		codexHome.Join("skills").String(),                 // user (deprecated)
 		homeDir.Join(".agents").Join("skills").String(),   // user-installed
 		codexHome.Join("skills").Join(".system").String(), // system cache

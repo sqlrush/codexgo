@@ -41,7 +41,7 @@ type ThemeEntry struct {
 // plus any custom themes the caller supplies. customNames may be nil.
 //
 // Port of highlight::list_available_themes, reduced to the foundation's built-in
-// palette set. Custom .tmTheme discovery under {CODEX_HOME}/themes is out of
+// palette set. Custom .tmTheme discovery under {CODEXGO_HOME}/themes is out of
 // scope for the foundation and is injected by the caller when available.
 func ListAvailableThemes(customNames []string) []ThemeEntry {
 	builtins := make([]string, 0, len(builtinThemes))

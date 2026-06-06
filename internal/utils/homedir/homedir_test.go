@@ -43,7 +43,7 @@ func TestFindCodexHomeFromEnv(t *testing.T) {
 			name:            "missing path is fatal NotFound",
 			env:             strPtr(missing),
 			wantErrIs:       ErrNotFound,
-			wantErrContains: "CODEX_HOME",
+			wantErrContains: "CODEXGO_HOME",
 		},
 		{
 			name:            "file path is fatal InvalidInput",
@@ -95,7 +95,7 @@ func TestFindCodexHomeFromEnv_DefaultUsesHomeDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("home dir: %v", err)
 	}
-	want := normalizeAbsolute(filepath.Join(home, ".codex"))
+	want := normalizeAbsolute(filepath.Join(home, ".codexgo"))
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
@@ -132,7 +132,7 @@ func TestFindCodexHome_EmptyEnvFallsBackToDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("home dir: %v", err)
 	}
-	want := normalizeAbsolute(filepath.Join(home, ".codex"))
+	want := normalizeAbsolute(filepath.Join(home, ".codexgo"))
 	if got != want {
 		t.Fatalf("empty env: got %q, want %q", got, want)
 	}

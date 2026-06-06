@@ -1,4 +1,4 @@
-// Package homedir resolves the Codex configuration directory (CODEX_HOME).
+// Package homedir resolves the Codex configuration directory (CODEXGO_HOME).
 //
 // This file contains a minimal, self-contained port of the parts of the
 // upstream `codex_utils_absolute_path::AbsolutePathBuf` type that
@@ -6,7 +6,7 @@
 // absolute and normalized (lexically; not necessarily canonicalized). For the
 // home-dir use case the only behavior we must reproduce is the lexical
 // normalization performed by `AbsolutePathBuf::from_absolute_path` on a path
-// that is already absolute (CODEX_HOME is canonicalized before this call, and
+// that is already absolute (CODEXGO_HOME is canonicalized before this call, and
 // the default `~/.codex` is built from an absolute home directory).
 //
 // When the full `internal/utils/absolutepath` package is ported it should

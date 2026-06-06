@@ -96,7 +96,7 @@ func TestBuildSeatbeltPolicyGoldenFullNetwork(t *testing.T) {
 
 // TestBuildSeatbeltPolicyGoldenWritableRootWithProtectedMetadata asserts a
 // writable root carries the protected-metadata require-not regexes and the
-// matching -D params, byte-for-byte. The root has no .git/.agents/.codex on disk
+// matching -D params, byte-for-byte. The root has no .git/.agents/.codexgo on disk
 // so there are no excluded subpaths, only metadata-name regexes.
 func TestBuildSeatbeltPolicyGoldenWritableRootWithProtectedMetadata(t *testing.T) {
 	t.Parallel()
@@ -106,7 +106,7 @@ func TestBuildSeatbeltPolicyGoldenWritableRootWithProtectedMetadata(t *testing.T
 		t.Fatalf("normalize temp root %q failed", root)
 	}
 	// Use a distinct cwd so the writable root is not the workspace root; this
-	// avoids forcing a missing .codex into the excluded subpaths and keeps the
+	// avoids forcing a missing .codexgo into the excluded subpaths and keeps the
 	// write section limited to the protected-metadata regexes.
 	cwd, ok := normalizePathForSandbox(t.TempDir())
 	if !ok {
@@ -125,7 +125,7 @@ func TestBuildSeatbeltPolicyGoldenWritableRootWithProtectedMetadata(t *testing.T
 		SandboxPolicyCwd:        cwd,
 	})
 
-	// Protected metadata regexes appear in writable-root order: .git, .agents, .codex.
+	// Protected metadata regexes appear in writable-root order: .git, .agents, .codexgo.
 	requireParts := []string{`(subpath (param "WRITABLE_ROOT_0"))`}
 	for _, name := range protectedMetadataPathNames {
 		regex := strings.ReplaceAll(seatbeltProtectedMetadataNameRegex(resolved, name), `"`, `\"`)
@@ -179,7 +179,7 @@ func TestBuildSeatbeltPolicyGoldenFullDiskWriteWithUnreadableCarveout(t *testing
 	}
 	want := []dirParam{
 		{key: "WRITABLE_ROOT_0", path: "/"},
-		{key: "WRITABLE_ROOT_0_EXCLUDED_0", path: "/.codex"},
+		{key: "WRITABLE_ROOT_0_EXCLUDED_0", path: "/.codexgo"},
 		{key: "WRITABLE_ROOT_0_EXCLUDED_1", path: unreadable},
 	}
 	if len(writableDefs) != len(want) {

@@ -17,7 +17,7 @@ import (
 // doctorSkipNetworkEnv is the environment variable that disables live network
 // probes, keeping offline and deterministic runs fast. When set, the network
 // reachability checks report a skipped status.
-const doctorSkipNetworkEnv = "CODEX_DOCTOR_SKIP_NETWORK"
+const doctorSkipNetworkEnv = "CODEXGO_DOCTOR_SKIP_NETWORK"
 
 // networkProbeTimeout bounds each live network probe so the doctor stays fast and
 // never blocks on a hung connection.
@@ -25,7 +25,7 @@ const networkProbeTimeout = 5 * time.Second
 
 // providerReachabilityCheck performs a bounded HTTP reachability probe of the
 // active provider endpoint, mirroring network.provider_reachability in doctor.rs.
-// It honors CODEX_DOCTOR_SKIP_NETWORK (reporting skipped) and never leaks
+// It honors CODEXGO_DOCTOR_SKIP_NETWORK (reporting skipped) and never leaks
 // credentials. A reachable endpoint, including auth-required statuses such as
 // 401/403, is treated as ok because it proves the host is reachable.
 func providerReachabilityCheck(ctx context.Context, dctx doctorContext) doctorCheck {
@@ -66,7 +66,7 @@ func providerReachabilityCheck(ctx context.Context, dctx doctorContext) doctorCh
 
 // websocketReachabilityCheck reports the active provider's WebSocket metadata and
 // performs a bounded handshake probe, mirroring network.websocket_reachability in
-// doctor.rs. It honors CODEX_DOCTOR_SKIP_NETWORK (reporting skipped).
+// doctor.rs. It honors CODEXGO_DOCTOR_SKIP_NETWORK (reporting skipped).
 func websocketReachabilityCheck(dctx doctorContext) doctorCheck {
 	b := newCheck("network.websocket_reachability", "websocket")
 
@@ -182,10 +182,10 @@ func dnsAddressFamilyDetail(rawURL string) string {
 // resolvable). codexgo derives it from auth env vars and stored auth rather than a
 // live provider handshake. See DEVIATIONS.md (doctor).
 func websocketAuthModeName(dctx doctorContext) string {
-	if envVarPresent("OPENAI_API_KEY") || envVarPresent("CODEX_API_KEY") {
+	if envVarPresent("OPENAI_API_KEY") || envVarPresent("CODEXGO_API_KEY") {
 		return "api_key"
 	}
-	if envVarPresent("CODEX_ACCESS_TOKEN") {
+	if envVarPresent("CODEXGO_ACCESS_TOKEN") {
 		return "chatgpt"
 	}
 	if dctx.Loaded {
@@ -265,10 +265,10 @@ func providerAuthReachabilityMode(dctx doctorContext, requiresOpenAIAuth bool) r
 	if !requiresOpenAIAuth {
 		return reachabilityModeNotRequired
 	}
-	if envVarPresent("OPENAI_API_KEY") || envVarPresent("CODEX_API_KEY") {
+	if envVarPresent("OPENAI_API_KEY") || envVarPresent("CODEXGO_API_KEY") {
 		return reachabilityModeAPIKey
 	}
-	if envVarPresent("CODEX_ACCESS_TOKEN") {
+	if envVarPresent("CODEXGO_ACCESS_TOKEN") {
 		return reachabilityModeChatGPT
 	}
 	if dctx.Loaded {

@@ -1,7 +1,7 @@
 // Package cloud is a faithful Go port of the Rust `codex-cloud-tasks-client`
 // (plus the mock client). It exposes the cloud-tasks data model, the
 // CloudBackend interface, an HTTP-backed implementation, and a mock backend
-// selectable via CODEX_CLOUD_TASKS_MODE=mock.
+// selectable via CODEXGO_CLOUD_TASKS_MODE=mock.
 //
 // JSON, on-disk, wire formats, and env vars match the reference codex exactly.
 package cloud

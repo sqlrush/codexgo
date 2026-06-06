@@ -14,6 +14,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/sqlrush/codexgo/internal/brand"
+	"github.com/sqlrush/codexgo/internal/utils/pluginutil"
 )
 
 // ErrArchiveSizeLimitExceeded is the sentinel reported when packing exceeds the
@@ -45,17 +48,18 @@ func unpackIOError(context string, err error) *PluginBundleUnpackError {
 // PackPluginBundleTarGz mirrors the Rust `pack_plugin_bundle_tar_gz`.
 //
 // It archives pluginPath (which must be a directory containing
-// ".codex-plugin/plugin.json") as a gzip-compressed tar, enforcing maxBytes on
-// the compressed output. Entries are emitted in sorted order for deterministic,
+// ".codexgo-plugin/plugin.json", or the ".codex-plugin"/".claude-plugin"
+// compatibility fallbacks) as a gzip-compressed tar, enforcing maxBytes on the
+// compressed output. Entries are emitted in sorted order for deterministic,
 // reproducible archives.
 func PackPluginBundleTarGz(pluginPath string, maxBytes int) ([]byte, error) {
 	if !isDir(pluginPath) {
 		return nil, &PluginBundlePackError{Message: fmt.Sprintf(
 			"invalid plugin path `%s`: expected a plugin directory", pluginPath)}
 	}
-	if !isFile(filepath.Join(pluginPath, ".codex-plugin", "plugin.json")) {
+	if _, ok := pluginutil.FindPluginManifestPath(pluginPath); !ok {
 		return nil, &PluginBundlePackError{Message: fmt.Sprintf(
-			"invalid plugin path `%s`: missing .codex-plugin/plugin.json", pluginPath)}
+			"invalid plugin path `%s`: missing %s/plugin.json", pluginPath, brand.PluginManifestDir)}
 	}
 
 	buf := newSizeLimitedBuffer(maxBytes)

@@ -252,7 +252,7 @@ func findProjectRootForTrust(cwd abspath.AbsolutePathBuf, markers []string) absp
 // IsProjectTrusted reports whether cwd's project is explicitly trusted under the
 // merged config's `[projects]` table, using the default project-root markers.
 // It is the convenience entry point hosts use to gate project-layer feature
-// loading (e.g. project `.codex/skills`). projectRootMarkers may be nil to use
+// loading (e.g. project `.codexgo/skills`). projectRootMarkers may be nil to use
 // the default [".git"] markers.
 func IsProjectTrusted(merged TomlValue, cwd abspath.AbsolutePathBuf, projectRootMarkers []string) bool {
 	markers := projectRootMarkers

@@ -14,7 +14,7 @@ import (
 // runCloudSubcommand handles `codex cloud` (alias `cloud-tasks`): browse tasks
 // from Codex Cloud and apply changes locally. It mirrors the Rust
 // codex_cloud_tasks::run_main dispatch surface, wiring the offline-capable mock
-// backend (selected via CODEX_CLOUD_TASKS_MODE=mock) and the authenticated HTTP
+// backend (selected via CODEXGO_CLOUD_TASKS_MODE=mock) and the authenticated HTTP
 // backend.
 //
 // The interactive task browser (the Rust default with no subcommand) is a TUI
@@ -136,7 +136,7 @@ func parseCloudArgs(args []string) (cloudArgs, error) {
 }
 
 // resolveCloudBackend selects the cloud backend: the offline mock backend when
-// CODEX_CLOUD_TASKS_MODE=mock, otherwise the authenticated HTTP backend. When
+// CODEXGO_CLOUD_TASKS_MODE=mock, otherwise the authenticated HTTP backend. When
 // HTTP auth is missing it returns an authentication-required error.
 func resolveCloudBackend(ctx context.Context, _ Streams) (cloud.CloudBackend, error) {
 	if cloud.MockModeEnabled() {
@@ -151,7 +151,7 @@ func resolveCloudBackend(ctx context.Context, _ Streams) (cloud.CloudBackend, er
 	if auth == nil {
 		return nil, fmt.Errorf(
 			"Codex Cloud requires ChatGPT or API-key authentication; run `codex login` " +
-				"(or set CODEX_CLOUD_TASKS_MODE=mock to use the offline mock backend)")
+				"(or set CODEXGO_CLOUD_TASKS_MODE=mock to use the offline mock backend)")
 	}
 	return cloud.NewHTTPClientFromAuth(cloud.BaseURLFromEnv(), auth, "codex-cli-go"), nil
 }
@@ -222,5 +222,5 @@ func printCloudHelp(w io.Writer) {
 	fmt.Fprintln(w, "      --preflight    Dry-run the apply without writing changes")
 	fmt.Fprintln(w, "  -h, --help         Print help")
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, "Authentication: run `codex login`, or set CODEX_CLOUD_TASKS_MODE=mock for the offline mock backend.")
+	fmt.Fprintln(w, "Authentication: run `codex login`, or set CODEXGO_CLOUD_TASKS_MODE=mock for the offline mock backend.")
 }

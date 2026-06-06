@@ -7,7 +7,7 @@ import (
 )
 
 // resolveLogDir returns the configured log directory override, or the default
-// CODEX_HOME/log when unset. Mirrors Config.log_dir resolution in config.rs.
+// CODEXGO_HOME/log when unset. Mirrors Config.log_dir resolution in config.rs.
 func resolveLogDir(dctx doctorContext) string {
 	if dctx.LogDir != "" {
 		return dctx.LogDir
@@ -16,7 +16,7 @@ func resolveLogDir(dctx doctorContext) string {
 }
 
 // resolveSqliteHome returns the configured sqlite home override, or the default
-// CODEX_HOME when unset. Mirrors Config.sqlite_home resolution in config.rs.
+// CODEXGO_HOME when unset. Mirrors Config.sqlite_home resolution in config.rs.
 func resolveSqliteHome(dctx doctorContext) string {
 	if dctx.SqliteHome != "" {
 		return dctx.SqliteHome

@@ -100,7 +100,7 @@ func TestRemoteControlNotice(t *testing.T) {
 // and exits non-zero (interactive browser not ported) using the offline mock
 // backend to avoid auth.
 func TestCloudNoActionNotice(t *testing.T) {
-	t.Setenv("CODEX_CLOUD_TASKS_MODE", "mock")
+	t.Setenv("CODEXGO_CLOUD_TASKS_MODE", "mock")
 	code, _, errOut := runWith(t, []string{"codex", "cloud"}, "")
 	if code == 0 {
 		t.Errorf("code = %d, want non-zero", code)
@@ -113,7 +113,7 @@ func TestCloudNoActionNotice(t *testing.T) {
 // TestCloudListMock verifies `codex cloud list` works against the offline mock
 // backend (list works offline / without auth).
 func TestCloudListMock(t *testing.T) {
-	t.Setenv("CODEX_CLOUD_TASKS_MODE", "mock")
+	t.Setenv("CODEXGO_CLOUD_TASKS_MODE", "mock")
 	code, out, errOut := runWith(t, []string{"codex", "cloud", "list"}, "")
 	if code != 0 {
 		t.Errorf("code = %d, want 0 (stderr=%q)", code, errOut)
@@ -128,7 +128,7 @@ func TestCloudListMock(t *testing.T) {
 func TestPluginListOffline(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("CODEX_HOME", home)
+	t.Setenv("CODEXGO_HOME", home)
 	code, _, errOut := runWith(t, []string{"codex", "plugin", "list"}, "")
 	if code != 0 {
 		t.Errorf("code = %d, want 0 (stderr=%q)", code, errOut)

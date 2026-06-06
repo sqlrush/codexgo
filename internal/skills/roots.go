@@ -5,43 +5,46 @@ package skills
 // (HighestPrecedenceFirst walk: Project layers, then User, then System) plus the
 // repo `.agents/skills` chain discovery (`repo_agents_skill_roots`):
 //
-//   1. each existing `.codex/skills` between the project root and the cwd
+//   1. each existing `.codexgo/skills` between the project root and the cwd
 //      (repo scope, cwd-closest-first) — Project config layers, gated behind
 //      WithProjectLayer
-//   2. `$CODEX_HOME/skills`            (user — deprecated location, kept)
+//   2. `$CODEXGO_HOME/skills`            (user — deprecated location, kept)
 //   3. `$HOME/.agents/skills`          (user-installed)
-//   4. `$CODEX_HOME/skills/.system`    (embedded system skills cache)
-//   5. `<systemConfigDir>/skills`      (admin scope; defaults to /etc/codex,
+//   4. `$CODEXGO_HOME/skills/.system`    (embedded system skills cache)
+//   5. `<systemConfigDir>/skills`      (admin scope; defaults to /etc/codexgo,
 //      override via WithSystemConfigDir) — the System config layer
 //   6. each existing `.agents/skills` between the project root and the cwd
 //      (repo scope, project-root-first) — appended by the outer assembly
 //
-// Trust gate: the Rust loader gates Project-layer (`.codex`) discovery on
+// Trust gate: the Rust loader gates Project-layer (`.codexgo`) discovery on
 // git-trust (ProjectTrustContext). codexgo now ports that decision in
 // internal/config (config.IsProjectTrusted / BuildProjectTrustContext); the CLI
 // host resolves it per-cwd and opts in via WithProjectLayer when the project is
 // trusted. With no opt-in (untrusted/no-entry project, or a host without a trust
-// gate) the project `.codex/skills` roots are not assembled. Plugin skill roots
-// are appended by the caller.
+// gate) the project `.codexgo/skills` roots are not assembled. Plugin skill
+// roots are appended by the caller.
 
 import (
 	"os"
 	"path/filepath"
 
+	"github.com/sqlrush/codexgo/internal/brand"
 	"github.com/sqlrush/codexgo/internal/utils/abspath"
 )
 
 // agentsDirName is the user/repo agents directory (`.agents`).
 const agentsDirName = ".agents"
 
-// projectConfigDirName is the project config folder (`.codex`) that the Rust
-// Project config layer exposes as its config_folder().
-const projectConfigDirName = ".codex"
+// projectConfigDirName is the project config folder (`.codexgo`) that the Rust
+// Project config layer exposes as its config_folder(); codexgo uses its own
+// directory name (see internal/brand).
+const projectConfigDirName = brand.DotDirName
 
-// defaultSystemConfigDirUnix is the Unix system config folder, the parent of the
-// Rust `SYSTEM_CONFIG_TOML_FILE_UNIX` (`/etc/codex/config.toml`). The admin
-// skill root is `<systemConfigDir>/skills`.
-const defaultSystemConfigDirUnix = "/etc/codex"
+// defaultSystemConfigDirUnix is the Unix system config folder, mirroring the
+// parent of the Rust `SYSTEM_CONFIG_TOML_FILE_UNIX` (`/etc/codex/config.toml`)
+// with codexgo's own directory name. The admin skill root is
+// `<systemConfigDir>/skills`.
+const defaultSystemConfigDirUnix = "/etc/" + brand.Name
 
 // defaultProjectRootMarkers mirrors the Rust DEFAULT_PROJECT_ROOT_MARKERS.
 var defaultProjectRootMarkers = []string{".git"}
@@ -82,7 +85,7 @@ func WithSystemConfigDir(dir abspath.AbsolutePathBuf) RootsOption {
 // DefaultSkillRoots assembles the skill roots for one session in the Rust
 // HighestPrecedenceFirst order: the Project-layer `.codex/skills` roots
 // (cwd-closest first, only when WithProjectLayer is set), then the user-layer
-// roots (CODEX_HOME skills, $HOME/.agents/skills, the embedded-system cache),
+// roots (CODEXGO_HOME skills, $HOME/.agents/skills, the embedded-system cache),
 // then the admin `<systemConfigDir>/skills` root, then the repo `.agents/skills`
 // chain from the project root down to the cwd. homeDir may be nil when no home
 // directory resolves. Roots are deduplicated by path, preserving first

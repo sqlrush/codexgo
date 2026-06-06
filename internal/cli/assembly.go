@@ -21,7 +21,7 @@ import (
 	"github.com/sqlrush/codexgo/internal/utils/abspath"
 )
 
-// defaultMockReply is the canned assistant reply used when CODEX_EXEC_MOCK_REPLY
+// defaultMockReply is the canned assistant reply used when CODEXGO_EXEC_MOCK_REPLY
 // is unset, matching the existing codex-exec binary so the engine produces a
 // complete turn out of the box without credentials.
 const defaultMockReply = "Hello from codex (mock model). Set a real model client to run live."
@@ -116,7 +116,7 @@ func derefSandboxMode(mode *protocol.SandboxMode) protocol.SandboxMode {
 
 // buildProviderAuthResolver selects the credential resolver for the active
 // provider. requires_openai_auth providers (e.g. the built-in OpenAI provider)
-// use the login-backed resolver, which honors OPENAI_API_KEY / CODEX_API_KEY /
+// use the login-backed resolver, which honors OPENAI_API_KEY / CODEXGO_API_KEY /
 // auth.json / ChatGPT login. Other providers authenticate from their declared
 // env_key. It returns ok == false when no credential source applies, so the
 // caller selects the mock fallback.
@@ -138,7 +138,7 @@ func buildProviderAuthResolver(cfg loadedConfig, selected selectedProvider) (app
 // assembleResult builds the engine with the given model-client factory, codex
 // home, default model slug, and provider id, returning the assembly alongside the
 // resolved per-session Defaults. An empty codexHome is resolved from the
-// environment; an empty defaultModel falls back to CODEX_MODEL and then the mock
+// environment; an empty defaultModel falls back to CODEXGO_MODEL and then the mock
 // slug. The same resolved model + provider id flow into both the assembly's
 // models manager and the returned Defaults so the binary's exec/review/TUI paths
 // honor the configured selection.
@@ -174,7 +174,7 @@ func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultMode
 		fmt.Fprintf(os.Stderr, "warning: state runtime unavailable, goal tools disabled: %v\n", err)
 	}
 	// The skills manager installs the embedded system skills under
-	// CODEX_HOME/skills/.system and renders the <skills_instructions> developer
+	// CODEXGO_HOME/skills/.system and renders the <skills_instructions> developer
 	// section for new threads, like codex's include_skill_instructions default.
 	var skillsManager core.SkillsManager
 	if sm, err := newAssemblySkillsManagerWithTrust(codexHome, true /* bundled */, trustGate); err == nil {
@@ -281,9 +281,9 @@ func bundledModelCatalog() []modelsmanager.ModelInfo {
 }
 
 // mockClientFactory builds the scripted-mock ModelClientFactory used as the
-// offline/dev fallback. The reply is overridable via CODEX_EXEC_MOCK_REPLY.
+// offline/dev fallback. The reply is overridable via CODEXGO_EXEC_MOCK_REPLY.
 func mockClientFactory() appserver.ModelClientFactory {
-	reply := os.Getenv("CODEX_EXEC_MOCK_REPLY")
+	reply := os.Getenv("CODEXGO_EXEC_MOCK_REPLY")
 	if reply == "" {
 		reply = defaultMockReply
 	}
@@ -313,7 +313,7 @@ func loadProviderConfig() (loadedConfig, bool) {
 }
 
 // configDefaultModel returns the configured `model` slug, or "" when unset. The
-// assembly's resolveDefaultModel then layers CODEX_MODEL and the mock slug below
+// assembly's resolveDefaultModel then layers CODEXGO_MODEL and the mock slug below
 // it, so a config model wins over the env var, matching the Rust precedence
 // (config model resolved before the env-derived defaults).
 func configDefaultModel(cfg loadedConfig) string {
@@ -324,22 +324,22 @@ func configDefaultModel(cfg loadedConfig) string {
 }
 
 // resolveDefaultModel returns the effective default model slug for the assembly.
-// The configured model wins; otherwise CODEX_MODEL is honored, and finally the
+// The configured model wins; otherwise CODEXGO_MODEL is honored, and finally the
 // mock slug keeps the offline path working out of the box.
 func resolveDefaultModel(configModel string) string {
 	if configModel != "" {
 		return configModel
 	}
-	if slug := os.Getenv("CODEX_MODEL"); slug != "" {
+	if slug := os.Getenv("CODEXGO_MODEL"); slug != "" {
 		return slug
 	}
 	return defaultMockModelSlug
 }
 
 // resolveInstallationID returns the installation identifier sent in routing
-// headers, honoring CODEX_INSTALLATION_ID when set.
+// headers, honoring CODEXGO_INSTALLATION_ID when set.
 func resolveInstallationID() string {
-	return os.Getenv("CODEX_INSTALLATION_ID")
+	return os.Getenv("CODEXGO_INSTALLATION_ID")
 }
 
 // defaultMockModelSlug is the slug used by the offline mock client.
@@ -365,16 +365,16 @@ func mockTurn(text string) core.MockTurn {
 	}}
 }
 
-// resolveCodexHome resolves the Codex configuration directory, falling back to
-// ".codex" when neither CODEX_HOME nor the home directory is available.
+// resolveCodexHome resolves the codexgo configuration directory, falling back
+// to ".codexgo" when neither CODEXGO_HOME nor the home directory is available.
 func resolveCodexHome() string {
 	if home, err := config.FindCodexHome(); err == nil {
 		return home
 	}
-	if home := os.Getenv("CODEX_HOME"); home != "" {
+	if home := os.Getenv("CODEXGO_HOME"); home != "" {
 		return home
 	}
-	return ".codex"
+	return config.DefaultCodexDirName
 }
 
 // resolveCwd returns the current working directory, defaulting to "." when it

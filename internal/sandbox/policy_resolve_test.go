@@ -242,14 +242,14 @@ func TestCanReadCanWritePath(t *testing.T) {
 
 // TestProtectedMetadataWriteDenied ports
 // filesystem_policy_blocks_protected_metadata_path_writes_by_default: writes
-// into .git/.agents/.codex under a writable root are denied, and the writable
+// into .git/.agents/.codexgo under a writable root are denied, and the writable
 // root surfaces all three protected metadata names.
 func TestProtectedMetadataWriteDenied(t *testing.T) {
 	cwd := t.TempDir()
 	root := canonicalCwd(t, cwd)
 	policy := restricted(pathEntry(root, protocol.FileSystemAccessModeWrite))
 
-	for _, sub := range []string{".git/config", ".agents/config", ".codex/config.toml"} {
+	for _, sub := range []string{".git/config", ".agents/config", ".codexgo/config.toml"} {
 		target := filepath.Join(root, sub)
 		if canWritePathWithCwd(policy, target, cwd) {
 			t.Errorf("expected write to %q to be denied", target)
@@ -260,7 +260,7 @@ func TestProtectedMetadataWriteDenied(t *testing.T) {
 	if len(roots) != 1 {
 		t.Fatalf("writable roots = %d, want 1 (%+v)", len(roots), roots)
 	}
-	want := []string{".git", ".agents", ".codex"}
+	want := []string{".git", ".agents", ".codexgo"}
 	got := roots[0].ProtectedMetadataNames
 	if len(got) != len(want) {
 		t.Fatalf("protected metadata names = %v, want %v", got, want)

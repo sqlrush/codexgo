@@ -9,7 +9,7 @@
 // truncation.
 //
 // Built-in (system) skills are embedded via go:embed and installed into
-// CODEX_HOME/skills/.system at startup, mirroring the Rust include_dir approach.
+// CODEXGO_HOME/skills/.system at startup, mirroring the Rust include_dir approach.
 //
 // All exported values follow Codex's immutability conventions: operations return
 // new values rather than mutating their receivers or arguments.
@@ -21,7 +21,7 @@ package skills
 type SkillScope string
 
 const (
-	// SkillScopeUser is a user-installed skill (CODEX_HOME or $HOME/.agents).
+	// SkillScopeUser is a user-installed skill (CODEXGO_HOME or $HOME/.agents).
 	SkillScopeUser SkillScope = "user"
 	// SkillScopeRepo is a skill discovered in the project/repository tree.
 	SkillScopeRepo SkillScope = "repo"

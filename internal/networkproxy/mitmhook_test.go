@@ -15,7 +15,7 @@ func baseMitmConfig() NetworkProxyConfig {
 }
 
 func githubHook() MitmHookConfig {
-	env := "CODEX_GITHUB_TOKEN"
+	env := "CODEXGO_GITHUB_TOKEN"
 	prefix := "Bearer "
 	return MitmHookConfig{
 		Host: "api.github.com",
@@ -81,7 +81,7 @@ func TestCompileResolvesEnvBackedInjectedHeaders(t *testing.T) {
 	cfg.Network.MitmHooks = []MitmHookConfig{githubHook()}
 	hooks, err := compileMitmHooksWithResolvers(cfg,
 		func(name string) (string, bool) {
-			return "ghp-secret", name == "CODEX_GITHUB_TOKEN"
+			return "ghp-secret", name == "CODEXGO_GITHUB_TOKEN"
 		},
 		func(abspath.AbsolutePathBuf) (string, error) { return "", nil },
 	)
@@ -93,7 +93,7 @@ func TestCompileResolvesEnvBackedInjectedHeaders(t *testing.T) {
 		t.Fatalf("got %d compiled hooks, want 1", len(compiled))
 	}
 	header := compiled[0].actions.injectRequestHeaders[0]
-	if header.sourceKind != secretSourceEnvVar || header.source != "CODEX_GITHUB_TOKEN" {
+	if header.sourceKind != secretSourceEnvVar || header.source != "CODEXGO_GITHUB_TOKEN" {
 		t.Errorf("source = %v/%q, want env CODEX_GITHUB_TOKEN", header.sourceKind, header.source)
 	}
 	if header.value != "Bearer ghp-secret" {

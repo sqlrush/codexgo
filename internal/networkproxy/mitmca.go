@@ -34,7 +34,7 @@ import (
 )
 
 const (
-	// managedMitmCADir is the subdirectory of CODEX_HOME holding the CA material.
+	// managedMitmCADir is the subdirectory of CODEXGO_HOME holding the CA material.
 	// Mirrors certs.rs MANAGED_MITM_CA_DIR.
 	managedMitmCADir = "proxy"
 	// managedMitmCACert is the CA certificate filename. Mirrors MANAGED_MITM_CA_CERT.
@@ -66,7 +66,7 @@ type ManagedMitmCA struct {
 	cache map[string]*tls.Certificate
 }
 
-// LoadOrCreateMitmCA loads the managed CA from CODEX_HOME/proxy, creating it on
+// LoadOrCreateMitmCA loads the managed CA from CODEXGO_HOME/proxy, creating it on
 // first use. Mirrors ManagedMitmCa::load_or_create.
 func LoadOrCreateMitmCA() (*ManagedMitmCA, error) {
 	certPath, keyPath, err := managedCAPaths()
@@ -178,12 +178,12 @@ func (c *ManagedMitmCA) issueHostCertificate(host string) (*tls.Certificate, err
 	}, nil
 }
 
-// managedCAPaths resolves the CA cert/key paths under CODEX_HOME/proxy. Mirrors
+// managedCAPaths resolves the CA cert/key paths under CODEXGO_HOME/proxy. Mirrors
 // managed_ca_paths.
 func managedCAPaths() (certPath, keyPath string, err error) {
 	codexHome, err := homedir.FindCodexHome()
 	if err != nil {
-		return "", "", fmt.Errorf("failed to resolve CODEX_HOME for managed MITM CA: %w", err)
+		return "", "", fmt.Errorf("failed to resolve CODEXGO_HOME for managed MITM CA: %w", err)
 	}
 	proxyDir := filepath.Join(codexHome, managedMitmCADir)
 	return filepath.Join(proxyDir, managedMitmCACert), filepath.Join(proxyDir, managedMitmCAKey), nil

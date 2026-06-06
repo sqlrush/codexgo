@@ -114,12 +114,12 @@ func ApplyGitPatch(req ApplyGitRequest) (ApplyGitResult, error) {
 	}, nil
 }
 
-// applyGitConfigParts reads the CODEX_APPLY_GIT_CFG env var and converts each
+// applyGitConfigParts reads the CODEXGO_APPLY_GIT_CFG env var and converts each
 // comma-separated `key=value` pair into `-c key=value` argument fragments.
 //
-// Mirrors the Rust handling of `CODEX_APPLY_GIT_CFG`.
+// Mirrors the Rust handling of `CODEXGO_APPLY_GIT_CFG`.
 func applyGitConfigParts() []string {
-	cfg, ok := os.LookupEnv("CODEX_APPLY_GIT_CFG")
+	cfg, ok := os.LookupEnv("CODEXGO_APPLY_GIT_CFG")
 	if !ok {
 		return nil
 	}

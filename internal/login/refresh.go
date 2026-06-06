@@ -25,9 +25,9 @@ const (
 	revokeTokenURL  = "https://auth.openai.com/oauth/revoke"
 
 	// RefreshTokenURLOverrideEnvVar overrides the refresh-token endpoint.
-	RefreshTokenURLOverrideEnvVar = "CODEX_REFRESH_TOKEN_URL_OVERRIDE"
+	RefreshTokenURLOverrideEnvVar = "CODEXGO_REFRESH_TOKEN_URL_OVERRIDE"
 	// RevokeTokenURLOverrideEnvVar overrides the revoke-token endpoint.
-	RevokeTokenURLOverrideEnvVar = "CODEX_REVOKE_TOKEN_URL_OVERRIDE"
+	RevokeTokenURLOverrideEnvVar = "CODEXGO_REVOKE_TOKEN_URL_OVERRIDE"
 )
 
 // Refresh-token failure user-facing messages, mirroring manager.rs constants.

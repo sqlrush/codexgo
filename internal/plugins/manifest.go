@@ -3,9 +3,10 @@ package plugins
 // On-disk plugin manifest schema and loader. Ports
 // `codex-rs/core-plugins/src/manifest.rs`.
 //
-// The manifest lives at ".codex-plugin/plugin.json" with a ".claude-plugin/"
-// fallback. All manifest paths are required to be "./"-relative to the plugin
-// root and are normalized to absolute paths before being returned.
+// The manifest lives at ".codexgo-plugin/plugin.json" with ".codex-plugin/"
+// and ".claude-plugin/" compatibility fallbacks. All manifest paths are
+// required to be "./"-relative to the plugin root and are normalized to
+// absolute paths before being returned.
 
 import (
 	"encoding/json"

@@ -3,7 +3,7 @@
 // It provides the HTTP transport layer used by higher-level Codex API clients:
 // request building, body preparation (including optional zstd compression),
 // a retry policy with codex defaults, custom-CA handling driven by the
-// CODEX_CA_CERTIFICATE / SSL_CERT_FILE environment variables, ChatGPT
+// CODEXGO_CA_CERTIFICATE / SSL_CERT_FILE environment variables, ChatGPT
 // Cloudflare cookie handling, and a small streaming-response abstraction.
 package client
 

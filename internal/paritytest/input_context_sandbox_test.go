@@ -52,10 +52,13 @@ func captureEnvironmentContext(t *testing.T, who, bin, cwd, mode string) string 
 	cmd.Dir = cwd
 	cmd.Env = append(os.Environ(),
 		"CODEX_HOME="+home,
+		"CODEXGO_HOME="+home,
 		fakeEnvKey+"="+fakeAPIKey,
 		"OPENAI_API_KEY=",
 		"CODEX_API_KEY=",
+		"CODEXGO_API_KEY=",
 		"CODEX_ACCESS_TOKEN=",
+		"CODEXGO_ACCESS_TOKEN=",
 	)
 	// Note: TZ is intentionally NOT pinned here. Both binaries resolve the host
 	// timezone the same way on the same host, so current_date/timezone agree;
@@ -102,6 +105,13 @@ func TestParityInputContextSandboxModes(t *testing.T) {
 			cwd := t.TempDir()
 			refEnv := captureEnvironmentContext(t, "codex", refBin, cwd, mode)
 			cgoEnv := captureEnvironmentContext(t, "codexgo", cgoBin, cwd, mode)
+			// Registered identity deviation (DEVIATIONS.md "cross-cutting
+			// identity"): codexgo's protected project-metadata carveout is
+			// {cwd}/.codexgo where the reference protects {cwd}/.codex.
+			// Normalize that one token so the rest stays byte-compared. The
+			// rendered cwd is the symlink-resolved form (/private/var on
+			// macOS), so match on the carveout suffix rather than cwd.
+			cgoEnv = strings.ReplaceAll(cgoEnv, "/.codexgo</path>", "/.codex</path>")
 			if refEnv != cgoEnv {
 				t.Errorf("environment_context mismatch (%s)\n codex:   %q\n codexgo: %q", mode, refEnv, cgoEnv)
 			}

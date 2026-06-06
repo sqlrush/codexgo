@@ -7,14 +7,14 @@ import (
 )
 
 // DefaultBaseURL is the fallback cloud-tasks base URL when
-// CODEX_CLOUD_TASKS_BASE_URL is unset. It matches the reference codex default.
+// CODEXGO_CLOUD_TASKS_BASE_URL is unset. It matches the reference codex default.
 const DefaultBaseURL = "https://chatgpt.com/backend-api"
 
 // EnvBaseURL is the env var used to override the cloud-tasks base URL.
-const EnvBaseURL = "CODEX_CLOUD_TASKS_BASE_URL"
+const EnvBaseURL = "CODEXGO_CLOUD_TASKS_BASE_URL"
 
 // EnvMode is the env var used to select the mock backend (value "mock"/"MOCK").
-const EnvMode = "CODEX_CLOUD_TASKS_MODE"
+const EnvMode = "CODEXGO_CLOUD_TASKS_MODE"
 
 // CloudBackend is the interface implemented by the HTTP and mock backends. It
 // mirrors the Rust `CloudBackend` trait. All methods take a context for
@@ -50,7 +50,7 @@ func BaseURLFromEnv() string {
 }
 
 // MockModeEnabled reports whether the mock backend is selected via the env var,
-// mirroring the reference `CODEX_CLOUD_TASKS_MODE in {mock, MOCK}` check.
+// mirroring the reference `CODEXGO_CLOUD_TASKS_MODE in {mock, MOCK}` check.
 func MockModeEnabled() bool {
 	switch os.Getenv(EnvMode) {
 	case "mock", "MOCK":

@@ -28,13 +28,14 @@ import (
 	"sort"
 	"time"
 
+	"github.com/sqlrush/codexgo/internal/brand"
 	"github.com/sqlrush/codexgo/internal/config"
 	"github.com/sqlrush/codexgo/internal/utils/abspath"
 )
 
 const (
 	marketplaceUpgradeGitTimeout    = 30 * time.Second
-	marketplaceInstallMetadataFile  = ".codex-marketplace-install.json"
+	marketplaceInstallMetadataFile  = brand.MarketplaceInstallMetadataFile
 	marketplaceUpgradeStagingSubdir = ".staging"
 )
 

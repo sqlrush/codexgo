@@ -233,12 +233,15 @@ func runToolCallTurn(t *testing.T, who, bin, serverURL string) (string, string) 
 	cmd := exec.Command(bin, "exec", "--json", "--skip-git-repo-check", "-C", work, toolTurnPrompt)
 	cmd.Env = append(os.Environ(),
 		"CODEX_HOME="+home,
+		"CODEXGO_HOME="+home,
 		fakeEnvKey+"="+fakeAPIKey,
 		// Keep the run hermetic: no ambient credentials, fixed shell/locale so the
 		// command string and output are deterministic.
 		"OPENAI_API_KEY=",
 		"CODEX_API_KEY=",
+		"CODEXGO_API_KEY=",
 		"CODEX_ACCESS_TOKEN=",
+		"CODEXGO_ACCESS_TOKEN=",
 	)
 	cmd.Stdin = bytes.NewReader(nil)
 	var stdout, stderr bytes.Buffer

@@ -133,11 +133,11 @@ func mergeAWSOverride(base, override ModelProviderAwsAuthInfo) ModelProviderAwsA
 }
 
 // CreateOSSProvider builds an open-source ("gpt-oss") provider for the given
-// default port and wire API. The base URL honors the experimental CODEX_OSS_PORT
-// and CODEX_OSS_BASE_URL environment variables. It mirrors create_oss_provider.
+// default port and wire API. The base URL honors the experimental CODEXGO_OSS_PORT
+// and CODEXGO_OSS_BASE_URL environment variables. It mirrors create_oss_provider.
 func CreateOSSProvider(defaultProviderPort uint16, wireApi WireApi) ModelProviderInfo {
 	port := defaultProviderPort
-	if raw, ok := os.LookupEnv("CODEX_OSS_PORT"); ok && strings.TrimSpace(raw) != "" {
+	if raw, ok := os.LookupEnv("CODEXGO_OSS_PORT"); ok && strings.TrimSpace(raw) != "" {
 		if parsed, err := strconv.ParseUint(raw, 10, 16); err == nil {
 			port = uint16(parsed)
 		}
@@ -145,7 +145,7 @@ func CreateOSSProvider(defaultProviderPort uint16, wireApi WireApi) ModelProvide
 	defaultBaseURL := fmt.Sprintf("http://localhost:%d/v1", port)
 
 	baseURL := defaultBaseURL
-	if raw, ok := os.LookupEnv("CODEX_OSS_BASE_URL"); ok && strings.TrimSpace(raw) != "" {
+	if raw, ok := os.LookupEnv("CODEXGO_OSS_BASE_URL"); ok && strings.TrimSpace(raw) != "" {
 		baseURL = raw
 	}
 	return CreateOSSProviderWithBaseURL(baseURL, wireApi)

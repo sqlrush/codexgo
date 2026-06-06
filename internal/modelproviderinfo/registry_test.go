@@ -181,8 +181,8 @@ func TestMergeAllowsBedrockDefaultFields(t *testing.T) {
 }
 
 func TestCreateOSSProviderEnvOverride(t *testing.T) {
-	t.Setenv("CODEX_OSS_PORT", "")
-	t.Setenv("CODEX_OSS_BASE_URL", "")
+	t.Setenv("CODEXGO_OSS_PORT", "")
+	t.Setenv("CODEXGO_OSS_BASE_URL", "")
 	p := CreateOSSProvider(DefaultOllamaPort, WireApiResponses)
 	if p.BaseURL == nil || *p.BaseURL != "http://localhost:11434/v1" {
 		t.Fatalf("default base url: %v", p.BaseURL)
@@ -191,13 +191,13 @@ func TestCreateOSSProviderEnvOverride(t *testing.T) {
 		t.Fatalf("oss name: %q", p.Name)
 	}
 
-	t.Setenv("CODEX_OSS_PORT", "9999")
+	t.Setenv("CODEXGO_OSS_PORT", "9999")
 	p = CreateOSSProvider(DefaultOllamaPort, WireApiResponses)
 	if p.BaseURL == nil || *p.BaseURL != "http://localhost:9999/v1" {
 		t.Fatalf("port override base url: %v", p.BaseURL)
 	}
 
-	t.Setenv("CODEX_OSS_BASE_URL", "http://example.invalid/v1")
+	t.Setenv("CODEXGO_OSS_BASE_URL", "http://example.invalid/v1")
 	p = CreateOSSProvider(DefaultOllamaPort, WireApiResponses)
 	if p.BaseURL == nil || *p.BaseURL != "http://example.invalid/v1" {
 		t.Fatalf("base url override: %v", p.BaseURL)

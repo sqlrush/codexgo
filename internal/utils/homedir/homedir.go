@@ -6,38 +6,40 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/sqlrush/codexgo/internal/brand"
 )
 
-// envVar is the environment variable that overrides the Codex home directory.
-const envVar = "CODEX_HOME"
+// envVar is the environment variable that overrides the codexgo home directory.
+const envVar = brand.HomeEnvVar
 
-// defaultDirName is the default Codex directory name placed under the user's
-// home directory when CODEX_HOME is not set.
-const defaultDirName = ".codex"
+// defaultDirName is the default codexgo directory name placed under the user's
+// home directory when CODEXGO_HOME is not set.
+const defaultDirName = brand.DotDirName
 
 // Sentinel errors that mirror the std::io::ErrorKind values the upstream Rust
 // implementation produces. Callers can match on these with errors.Is.
 var (
 	// ErrNotFound mirrors std::io::ErrorKind::NotFound. It is returned when
-	// CODEX_HOME points to a path that does not exist, when reading the home
+	// CODEXGO_HOME points to a path that does not exist, when reading the home
 	// directory fails to find a path, or when the user's home directory cannot
 	// be determined.
 	ErrNotFound = errors.New("not found")
 
 	// ErrInvalidInput mirrors std::io::ErrorKind::InvalidInput. It is returned
-	// when CODEX_HOME points to a path that exists but is not a directory.
+	// when CODEXGO_HOME points to a path that exists but is not a directory.
 	ErrInvalidInput = errors.New("invalid input")
 )
 
 // FindCodexHome returns the path to the Codex configuration directory.
 //
-// The location can be overridden with the CODEX_HOME environment variable. If
-// CODEX_HOME is not set (or is empty), it defaults to ~/.codex.
+// The location can be overridden with the CODEXGO_HOME environment variable. If
+// CODEXGO_HOME is not set (or is empty), it defaults to ~/.codex.
 //
-//   - If CODEX_HOME is set, the value must exist and be a directory. The value
+//   - If CODEXGO_HOME is set, the value must exist and be a directory. The value
 //     is canonicalized (symlinks resolved) and a normalized absolute path is
 //     returned; otherwise an error is returned.
-//   - If CODEX_HOME is not set, this function does not verify that the returned
+//   - If CODEXGO_HOME is not set, this function does not verify that the returned
 //     directory exists.
 //
 // This matches the precedence and behavior of Codex's find_codex_home.
@@ -54,7 +56,7 @@ func FindCodexHome() (string, error) {
 }
 
 // findCodexHomeFromEnv is the testable core of FindCodexHome. A nil pointer
-// represents an absent CODEX_HOME; a non-nil pointer carries the override value
+// represents an absent CODEXGO_HOME; a non-nil pointer carries the override value
 // (which is always non-empty when produced by FindCodexHome).
 //
 // The argument is read-only and never mutated.
@@ -65,7 +67,7 @@ func findCodexHomeFromEnv(codexHomeEnv *string) (string, error) {
 	return resolveEnvOverride(*codexHomeEnv)
 }
 
-// resolveEnvOverride validates and canonicalizes an explicit CODEX_HOME value.
+// resolveEnvOverride validates and canonicalizes an explicit CODEXGO_HOME value.
 //
 // It reproduces the upstream sequence: stat the path (mapping NotFound to a
 // dedicated message, other errors to a read failure), reject non-directories,
@@ -103,7 +105,7 @@ func resolveEnvOverride(val string) (string, error) {
 }
 
 // defaultCodexHome returns <home>/.codex without verifying that it exists,
-// matching the upstream behavior when CODEX_HOME is unset.
+// matching the upstream behavior when CODEXGO_HOME is unset.
 func defaultCodexHome() (string, error) {
 	home, err := userHomeDir()
 	if err != nil {

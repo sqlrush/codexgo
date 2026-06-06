@@ -258,7 +258,7 @@ func networkEnvCheck() doctorCheck {
 
 	status := statusOK
 	summary := "network-related environment looks readable"
-	for _, name := range []string{"CODEX_CA_CERTIFICATE", "SSL_CERT_FILE"} {
+	for _, name := range []string{"CODEXGO_CA_CERTIFICATE", "SSL_CERT_FILE"} {
 		raw, ok := os.LookupEnv(name)
 		if !ok || raw == "" {
 			continue

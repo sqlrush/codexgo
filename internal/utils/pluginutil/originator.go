@@ -18,7 +18,7 @@ const (
 
 	// originatorOverrideEnvVar mirrors the Rust
 	// CODEX_INTERNAL_ORIGINATOR_OVERRIDE_ENV_VAR constant.
-	originatorOverrideEnvVar = "CODEX_INTERNAL_ORIGINATOR_OVERRIDE"
+	originatorOverrideEnvVar = "CODEXGO_INTERNAL_ORIGINATOR_OVERRIDE"
 )
 
 // originatorValue returns the current originator string, mirroring the value

@@ -1,7 +1,7 @@
 package cli
 
 // assemblySkillsManager is the headless host glue for skills: it installs the
-// embedded system skills under CODEX_HOME (via skills.NewSkillsManager), and
+// embedded system skills under CODEXGO_HOME (via skills.NewSkillsManager), and
 // renders the `<skills_instructions>` developer section for a new thread's
 // initial context — the include_skill_instructions block of codex's
 // build_initial_context. It implements core.SkillsManager (the per-turn

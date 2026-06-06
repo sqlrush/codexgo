@@ -287,7 +287,7 @@ func streamBody(w http.ResponseWriter, body io.Reader) error {
 
 // newMitmTransport builds the upstream RoundTripper for MITM-forwarded HTTPS
 // requests. It enforces the local-target policy on dial (SSRF defense, matching
-// the CONNECT path), honors a custom CA bundle (CODEX_CA_CERTIFICATE /
+// the CONNECT path), honors a custom CA bundle (CODEXGO_CA_CERTIFICATE /
 // SSL_CERT_FILE, mirroring the Rust UpstreamClient's TLS config), and optionally
 // honors an upstream HTTP(S) proxy.
 func newMitmTransport(s *httpProxyServer, allowUpstream bool) http.RoundTripper {

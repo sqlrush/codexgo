@@ -28,13 +28,13 @@ const (
 	// NativeSandboxSpecEnv carries the JSON-encoded NativeSandboxSpec to the
 	// helper. It is removed from the child's environment before exec so the
 	// sandboxed command never sees it.
-	NativeSandboxSpecEnv = "CODEX_NATIVE_SANDBOX_SPEC"
+	NativeSandboxSpecEnv = "CODEXGO_NATIVE_SANDBOX_SPEC"
 	// nativeSandboxStageEnv tracks which stage of the Linux helper is running.
 	// The Linux backend uses a two-stage re-exec so the sandboxed command can run
 	// as PID 1 in a fresh PID namespace without an unsafe raw fork from the Go
 	// runtime: the outer stage sets up namespaces then re-execs itself as the
 	// inner stage, which establishes the mount overlay and exec's the command.
-	nativeSandboxStageEnv = "CODEX_NATIVE_SANDBOX_STAGE"
+	nativeSandboxStageEnv = "CODEXGO_NATIVE_SANDBOX_STAGE"
 	// nativeStageOuter sets up user/mount/(net)/pid namespaces.
 	nativeStageOuter = "outer"
 	// nativeStageInner is PID 1 in the new PID namespace; it mounts the overlay
@@ -43,7 +43,7 @@ const (
 	// nativeSandboxPIDNSEnv is set by the outer stage on the inner re-exec when a
 	// new PID namespace was created, so the inner stage knows it should mount a
 	// fresh /proc reflecting that namespace.
-	nativeSandboxPIDNSEnv = "CODEX_NATIVE_SANDBOX_PIDNS"
+	nativeSandboxPIDNSEnv = "CODEXGO_NATIVE_SANDBOX_PIDNS"
 )
 
 // NetworkSeccompMode selects how the Linux network seccomp filter restricts

@@ -42,7 +42,7 @@ var unifiedExecEnv = [...][2]string{
 	{"PAGER", "cat"},
 	{"GIT_PAGER", "cat"},
 	{"GH_PAGER", "cat"},
-	{"CODEX_CI", "1"},
+	{"CODEXGO_CI", "1"},
 }
 
 // applyUnifiedExecEnv returns a new map equal to env with the unified-exec

@@ -6,15 +6,17 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/sqlrush/codexgo/internal/brand"
 	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
 // Protected workspace metadata path names that stay read-only under writable
-// roots. Mirrors PROTECTED_METADATA_* in codex-rs/protocol/src/permissions.rs.
+// roots. Mirrors PROTECTED_METADATA_* in codex-rs/protocol/src/permissions.rs,
+// with the product config dir renamed to codexgo's own (.codexgo).
 const (
 	protectedMetadataGitName    = ".git"
 	protectedMetadataAgentsName = ".agents"
-	protectedMetadataCodexName  = ".codex"
+	protectedMetadataCodexName  = brand.DotDirName
 )
 
 // protectedMetadataPathNames lists the protected metadata basenames in the same

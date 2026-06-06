@@ -9,16 +9,16 @@ func TestApplyUnifiedExecEnv(t *testing.T) {
 	t.Run("injects defaults", func(t *testing.T) {
 		env := applyUnifiedExecEnv(map[string]string{})
 		want := map[string]string{
-			"NO_COLOR":  "1",
-			"TERM":      "dumb",
-			"LANG":      "C.UTF-8",
-			"LC_CTYPE":  "C.UTF-8",
-			"LC_ALL":    "C.UTF-8",
-			"COLORTERM": "",
-			"PAGER":     "cat",
-			"GIT_PAGER": "cat",
-			"GH_PAGER":  "cat",
-			"CODEX_CI":  "1",
+			"NO_COLOR":   "1",
+			"TERM":       "dumb",
+			"LANG":       "C.UTF-8",
+			"LC_CTYPE":   "C.UTF-8",
+			"LC_ALL":     "C.UTF-8",
+			"COLORTERM":  "",
+			"PAGER":      "cat",
+			"GIT_PAGER":  "cat",
+			"GH_PAGER":   "cat",
+			"CODEXGO_CI": "1",
 		}
 		if !reflect.DeepEqual(env, want) {
 			t.Fatalf("env = %v, want %v", env, want)

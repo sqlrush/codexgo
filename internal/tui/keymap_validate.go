@@ -158,7 +158,7 @@ func validateUnique(context string, pairs []actionBindings) error {
 			if prev, ok := seen[b]; ok {
 				return fmt.Errorf(
 					"ambiguous `tui.keymap.%s` bindings: `%s` and `%s` use the same key; "+
-						"set unique keys in `~/.codex/config.toml` and retry; "+
+						"set unique keys in `~/.codexgo/config.toml` and retry; "+
 						"see the Codex keymap documentation for supported actions and examples",
 					context, prev, p.action,
 				)
@@ -191,7 +191,7 @@ func validateNoShadow(context string, primary, shadowed []actionBindings, allowe
 			}
 			return fmt.Errorf(
 				"ambiguous `tui.keymap.%s` bindings: `%s` shadows `%s` with the same key; "+
-					"set unique keys in `~/.codex/config.toml` and retry; "+
+					"set unique keys in `~/.codexgo/config.toml` and retry; "+
 					"see the Codex keymap documentation for supported actions and examples",
 				context, prev, s.action,
 			)
@@ -216,7 +216,7 @@ func validateNoReserved(context string, pairs []actionBindings, reserved []reser
 			}
 			return fmt.Errorf(
 				"ambiguous `tui.keymap.%s` bindings: `%s` uses a key reserved by `%s`; "+
-					"set a different key in `~/.codex/config.toml` and retry; "+
+					"set a different key in `~/.codexgo/config.toml` and retry; "+
 					"see the Codex keymap documentation for supported actions and examples",
 				context, p.action, reservedAction,
 			)

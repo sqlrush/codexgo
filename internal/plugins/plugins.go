@@ -7,8 +7,8 @@
 //   - Stable plugin identifiers of the form <name>@<marketplace> and their
 //     validation (see plugin_id.go).
 //   - The on-disk plugin manifest schema and loader, supporting the canonical
-//     ".codex-plugin/plugin.json" location with a ".claude-plugin/" fallback
-//     (see manifest.go).
+//     ".codexgo-plugin/plugin.json" location with ".codex-plugin/" and
+//     ".claude-plugin/" compatibility fallbacks (see manifest.go).
 //   - The plugin cache store that installs/uninstalls/upgrades plugin bundles on
 //     disk and resolves the active version (see store.go).
 //   - Per-plugin enabled/disabled toggle collection (see toggles.go).

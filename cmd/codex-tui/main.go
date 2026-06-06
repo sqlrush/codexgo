@@ -119,11 +119,11 @@ func workdir() string {
 }
 
 func codexHome() string {
-	if home := os.Getenv("CODEX_HOME"); home != "" {
+	if home := os.Getenv("CODEXGO_HOME"); home != "" {
 		return home
 	}
 	if home, err := os.UserHomeDir(); err == nil {
-		return home + "/.codex"
+		return home + "/.codexgo"
 	}
 	return "."
 }

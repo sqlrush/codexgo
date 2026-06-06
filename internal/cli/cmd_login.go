@@ -127,7 +127,7 @@ func runLoginWithAPIKey(cfg loadedConfig, streams Streams) int {
 // runLoginWithAccessToken reads an access token from stdin and stores it.
 func runLoginWithAccessToken(ctx context.Context, cfg loadedConfig, streams Streams) int {
 	token, ok := readStdinSecret(streams,
-		"--with-access-token expects the access token on stdin. Try piping it, e.g. `printenv CODEX_ACCESS_TOKEN | codex login --with-access-token`.",
+		"--with-access-token expects the access token on stdin. Try piping it, e.g. `printenv CODEXGO_ACCESS_TOKEN | codex login --with-access-token`.",
 		"Reading access token from stdin...",
 		"No access token provided via stdin.")
 	if !ok {

@@ -50,11 +50,11 @@ func configLoadCheck(root RootOptions) (doctorContext, doctorCheck) {
 		Cfg:            result.Config,
 	}
 
-	// Detail emission order mirrors config_check in doctor.rs: CODEX_HOME, cwd,
+	// Detail emission order mirrors config_check in doctor.rs: CODEXGO_HOME, cwd,
 	// model, model provider, log dir, sqlite home, mcp servers, then the feature
 	// flag rows, then the config.toml path/parse rows. JSON keys are sorted by the
 	// marshaler, so this order only affects the human renderer.
-	b.detail(fmt.Sprintf("CODEX_HOME: %s", result.CodexHome))
+	b.detail(fmt.Sprintf("CODEXGO_HOME: %s", result.CodexHome))
 	b.detail(fmt.Sprintf("cwd: %s", resolveCwd()))
 	b.detail(fmt.Sprintf("model: %s", orDefault(dctx.Model)))
 	b.detail(fmt.Sprintf("model provider: %s", resolveModelProviderID(dctx.ModelProvider)))

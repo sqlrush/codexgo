@@ -1,13 +1,18 @@
 package state
 
-import "path/filepath"
+import (
+	"path/filepath"
+
+	"github.com/sqlrush/codexgo/internal/brand"
+)
 
 // Environment variable and database filename constants, mirroring the Rust
-// `codex-state` crate. These names are part of the on-disk contract shared with
-// real codex and must not change.
+// `codex-state` crate. The database FILENAMES are part of the on-disk schema
+// contract and must not change; the environment variable uses the codexgo
+// prefix because codexgo keeps a fully isolated local namespace.
 const (
 	// SQLiteHomeEnv overrides the SQLite state home directory.
-	SQLiteHomeEnv = "CODEX_SQLITE_HOME"
+	SQLiteHomeEnv = brand.EnvPrefix + "SQLITE_HOME"
 
 	// LogsDBFilename is the logs database filename under the SQLite home.
 	LogsDBFilename = "logs_2.sqlite"

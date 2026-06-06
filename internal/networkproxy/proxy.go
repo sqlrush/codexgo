@@ -38,10 +38,10 @@ var ProxyURLEnvKeys = []string{
 var AllProxyEnvKeys = []string{"ALL_PROXY", "all_proxy"}
 
 // ProxyActiveEnvKey marks that the managed proxy is active.
-const ProxyActiveEnvKey = "CODEX_NETWORK_PROXY_ACTIVE"
+const ProxyActiveEnvKey = "CODEXGO_NETWORK_PROXY_ACTIVE"
 
 // AllowLocalBindingEnvKey signals whether local binding is permitted.
-const AllowLocalBindingEnvKey = "CODEX_NETWORK_ALLOW_LOCAL_BINDING"
+const AllowLocalBindingEnvKey = "CODEXGO_NETWORK_ALLOW_LOCAL_BINDING"
 
 const (
 	electronGetUseProxyEnvKey = "ELECTRON_GET_USE_PROXY"
@@ -84,10 +84,10 @@ var NoProxyEnvKeys = []string{
 const DefaultNoProxyValue = "localhost,127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 
 // CodexProxyGitSSHCommandMarker is the macOS git-ssh marker prefix.
-const CodexProxyGitSSHCommandMarker = "CODEX_PROXY_GIT_SSH_COMMAND=1 "
+const CodexProxyGitSSHCommandMarker = "CODEXGO_PROXY_GIT_SSH_COMMAND=1 "
 
 const (
-	codexProxyGitSSHCommandPrefix = "CODEX_PROXY_GIT_SSH_COMMAND=1 ssh -o ProxyCommand='nc -X 5 -x "
+	codexProxyGitSSHCommandPrefix = "CODEXGO_PROXY_GIT_SSH_COMMAND=1 ssh -o ProxyCommand='nc -X 5 -x "
 	codexProxyGitSSHCommandSuffix = " %h %p'"
 )
 

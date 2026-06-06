@@ -17,6 +17,8 @@ package approvalpresets
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/sqlrush/codexgo/internal/brand"
 )
 
 // Reserved identifiers for the built-in permission profiles.
@@ -348,7 +350,7 @@ func PermissionProfileReadOnly() PermissionProfile {
 func PermissionProfileWorkspaceWrite() PermissionProfile {
 	gitSub := ".git"
 	agentsSub := ".agents"
-	codexSub := ".codex"
+	codexSub := brand.DotDirName
 
 	network := NetworkSandboxRestricted
 	return PermissionProfile{

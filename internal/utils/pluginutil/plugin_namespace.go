@@ -10,17 +10,22 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/sqlrush/codexgo/internal/brand"
 	"github.com/sqlrush/codexgo/internal/utils/abspath"
 )
 
 // discoverablePluginManifestPaths lists, in priority order, the relative paths
-// at which a plugin manifest may live, mirroring the Rust
-// DISCOVERABLE_PLUGIN_MANIFEST_PATHS constant.
+// at which a plugin manifest may live. codexgo's own ".codexgo-plugin"
+// convention comes first; the upstream codex ".codex-plugin" and Claude
+// ".claude-plugin" conventions are kept as compatibility fallbacks so existing
+// ecosystem plugins remain installable (mirrors the Rust
+// DISCOVERABLE_PLUGIN_MANIFEST_PATHS constant plus the codexgo entry).
 //
 // It is an unexported package-level value; callers receive copies and cannot
 // mutate it.
 var discoverablePluginManifestPaths = [...]string{
-	filepath.Join(".codex-plugin", "plugin.json"),
+	filepath.Join(brand.PluginManifestDir, "plugin.json"),
+	filepath.Join(brand.PluginManifestDirCodexCompat, "plugin.json"),
 	filepath.Join(".claude-plugin", "plugin.json"),
 }
 

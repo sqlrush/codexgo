@@ -14,9 +14,9 @@ const (
 	// OpenAIAPIKeyEnvVar is the OpenAI API key env var.
 	OpenAIAPIKeyEnvVar = "OPENAI_API_KEY"
 	// CodexAPIKeyEnvVar is the Codex API key env var (takes precedence when enabled).
-	CodexAPIKeyEnvVar = "CODEX_API_KEY"
+	CodexAPIKeyEnvVar = "CODEXGO_API_KEY"
 	// CodexAccessTokenEnvVar is the agent-identity access-token env var.
-	CodexAccessTokenEnvVar = "CODEX_ACCESS_TOKEN"
+	CodexAccessTokenEnvVar = "CODEXGO_ACCESS_TOKEN"
 )
 
 // ReadOpenAIAPIKeyFromEnv returns the trimmed OPENAI_API_KEY, or nil when unset
@@ -25,13 +25,13 @@ func ReadOpenAIAPIKeyFromEnv() *string {
 	return readNonEmptyEnvVar(OpenAIAPIKeyEnvVar)
 }
 
-// ReadCodexAPIKeyFromEnv returns the trimmed CODEX_API_KEY, or nil when unset or
+// ReadCodexAPIKeyFromEnv returns the trimmed CODEXGO_API_KEY, or nil when unset or
 // empty. Mirrors read_codex_api_key_from_env.
 func ReadCodexAPIKeyFromEnv() *string {
 	return readNonEmptyEnvVar(CodexAPIKeyEnvVar)
 }
 
-// ReadCodexAccessTokenFromEnv returns the trimmed CODEX_ACCESS_TOKEN, or nil when
+// ReadCodexAccessTokenFromEnv returns the trimmed CODEXGO_ACCESS_TOKEN, or nil when
 // unset or empty. Mirrors read_codex_access_token_from_env.
 func ReadCodexAccessTokenFromEnv() *string {
 	return readNonEmptyEnvVar(CodexAccessTokenEnvVar)

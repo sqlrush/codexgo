@@ -18,7 +18,7 @@
 //
 // Model wiring: by default codex-exec runs against a scripted mock model so the
 // binary is runnable without credentials (e.g. `go run ./cmd/codex-exec --json
-// "hello"`). Set CODEX_EXEC_MOCK_REPLY to control the canned assistant reply.
+// "hello"`). Set CODEXGO_EXEC_MOCK_REPLY to control the canned assistant reply.
 // A real provider-backed model client can be substituted by replacing the
 // ModelClientFactory in buildAssembly.
 package main
@@ -35,7 +35,7 @@ import (
 	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
-// defaultMockReply is the canned assistant reply used when CODEX_EXEC_MOCK_REPLY
+// defaultMockReply is the canned assistant reply used when CODEXGO_EXEC_MOCK_REPLY
 // is unset, so the binary produces a complete turn out of the box.
 const defaultMockReply = "Hello from codex-exec (mock model). Set a real model client to run live."
 
@@ -75,7 +75,7 @@ func main() {
 // which the engine surfaces as task_started / agent_message / task_complete
 // events — enough to exercise the full exec JSONL path end-to-end.
 func buildAssembly() (*appserver.Assembly, error) {
-	reply := os.Getenv("CODEX_EXEC_MOCK_REPLY")
+	reply := os.Getenv("CODEXGO_EXEC_MOCK_REPLY")
 	if reply == "" {
 		reply = defaultMockReply
 	}
@@ -129,14 +129,14 @@ func mustGetwd() string {
 	return "."
 }
 
-// codexHome resolves the Codex configuration directory from CODEX_HOME or
-// ~/.codex, defaulting to ".codex" when neither is available.
+// codexHome resolves the codexgo configuration directory from CODEXGO_HOME or
+// ~/.codexgo, defaulting to ".codexgo" when neither is available.
 func codexHome() string {
-	if home := os.Getenv("CODEX_HOME"); home != "" {
+	if home := os.Getenv("CODEXGO_HOME"); home != "" {
 		return home
 	}
 	if home, err := os.UserHomeDir(); err == nil {
-		return home + "/.codex"
+		return home + "/.codexgo"
 	}
-	return ".codex"
+	return ".codexgo"
 }

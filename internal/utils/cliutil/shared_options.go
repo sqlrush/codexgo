@@ -25,7 +25,7 @@ type SharedCliOptions struct {
 	// (--local-provider).
 	OSSProvider *string
 
-	// ConfigProfileV2 selects a $CODEX_HOME/<name>.config.toml layer
+	// ConfigProfileV2 selects a $CODEXGO_HOME/<name>.config.toml layer
 	// (--profile/-p).
 	ConfigProfileV2 *ProfileV2Name
 

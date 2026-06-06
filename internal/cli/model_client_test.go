@@ -17,8 +17,8 @@ import (
 func clearAuthEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("CODEX_API_KEY", "")
-	t.Setenv("CODEX_ACCESS_TOKEN", "")
+	t.Setenv("CODEXGO_API_KEY", "")
+	t.Setenv("CODEXGO_ACCESS_TOKEN", "")
 }
 
 func TestLoginAuthResolverNoCredentials(t *testing.T) {

@@ -164,7 +164,7 @@ func detectFromExeWithCodexHome(isMacOS bool, currentExe string, managedByNpm, m
 }
 
 // Current returns the process-wide [InstallContext], computed once on first call
-// from the current executable and CODEX_MANAGED_BY_NPM / CODEX_MANAGED_BY_BUN
+// from the current executable and CODEXGO_MANAGED_BY_NPM / CODEXGO_MANAGED_BY_BUN
 // environment variables. It mirrors codex's `InstallContext::current`.
 func Current() *InstallContext {
 	currentOnce.Do(func() {
@@ -172,8 +172,8 @@ func Current() *InstallContext {
 		if path, err := os.Executable(); err == nil {
 			exe = path
 		}
-		_, npm := os.LookupEnv("CODEX_MANAGED_BY_NPM")
-		_, bun := os.LookupEnv("CODEX_MANAGED_BY_BUN")
+		_, npm := os.LookupEnv("CODEXGO_MANAGED_BY_NPM")
+		_, bun := os.LookupEnv("CODEXGO_MANAGED_BY_BUN")
 		ctx := DetectFromExe(runtime.GOOS == "darwin", exe, npm, bun)
 		currentCtx = &ctx
 	})

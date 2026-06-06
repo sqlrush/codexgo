@@ -1,8 +1,9 @@
-// Package config loads, merges, and validates the Codex configuration stored in
-// ~/.codex/config.toml into the resolved Config. It is a faithful Go port of the
-// Rust codex-config crate, preserving the on-disk TOML and JSON serialization
-// formats byte-for-byte (after key-order canonicalization) so the data can be
-// shared with the upstream Codex implementation.
+// Package config loads, merges, and validates the codexgo configuration stored
+// in ~/.codexgo/config.toml into the resolved Config. It is a faithful Go port
+// of the Rust codex-config crate, preserving the on-disk TOML and JSON
+// serialization formats byte-for-byte (after key-order canonicalization); only
+// the directory location and environment variable names differ, because
+// codexgo keeps a fully isolated local namespace (see internal/brand).
 package config
 
 import (
@@ -10,17 +11,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/sqlrush/codexgo/internal/brand"
 )
 
-// CodexHomeEnvVar is the environment variable that overrides the Codex
+// CodexHomeEnvVar is the environment variable that overrides the codexgo
 // configuration directory.
-const CodexHomeEnvVar = "CODEX_HOME"
+const CodexHomeEnvVar = brand.HomeEnvVar
 
 // DefaultCodexDirName is the directory name used under the user's home directory
-// when CODEX_HOME is not set.
-const DefaultCodexDirName = ".codex"
+// when CODEXGO_HOME is not set.
+const DefaultCodexDirName = brand.DotDirName
 
-// ConfigTomlFile is the canonical config file name within CODEX_HOME.
+// ConfigTomlFile is the canonical config file name within CODEXGO_HOME.
 const ConfigTomlFile = "config.toml"
 
 // ConfigLocalTomlFile is an optional overlay file that is merged on top of
@@ -28,12 +31,12 @@ const ConfigTomlFile = "config.toml"
 // base config.toml but below CLI/env overrides.
 const ConfigLocalTomlFile = "config.local.toml"
 
-// FindCodexHome resolves the Codex configuration directory.
+// FindCodexHome resolves the codexgo configuration directory.
 //
-// When CODEX_HOME is set and non-empty, the value must exist and be a directory;
-// it is resolved to an absolute path or an error is returned. When CODEX_HOME is
-// unset, the default is <home>/.codex and its existence is NOT verified. This
-// mirrors the Rust find_codex_home behavior.
+// When CODEXGO_HOME is set and non-empty, the value must exist and be a
+// directory; it is resolved to an absolute path or an error is returned. When
+// CODEXGO_HOME is unset, the default is <home>/.codexgo and its existence is
+// NOT verified. This mirrors the Rust find_codex_home behavior.
 func FindCodexHome() (string, error) {
 	env := os.Getenv(CodexHomeEnvVar)
 	return findCodexHomeFromEnv(env)
@@ -69,12 +72,12 @@ func findCodexHomeFromEnv(env string) (string, error) {
 	return filepath.Join(home, DefaultCodexDirName), nil
 }
 
-// ConfigTomlPath returns the path to config.toml within the given CODEX_HOME.
+// ConfigTomlPath returns the path to config.toml within the given CODEXGO_HOME.
 func ConfigTomlPath(codexHome string) string {
 	return filepath.Join(codexHome, ConfigTomlFile)
 }
 
-// ConfigLocalTomlPath returns the path to config.local.toml within CODEX_HOME.
+// ConfigLocalTomlPath returns the path to config.local.toml within CODEXGO_HOME.
 func ConfigLocalTomlPath(codexHome string) string {
 	return filepath.Join(codexHome, ConfigLocalTomlFile)
 }

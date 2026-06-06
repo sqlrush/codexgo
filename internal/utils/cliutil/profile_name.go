@@ -3,7 +3,7 @@ package cliutil
 import "fmt"
 
 // ProfileV2Name is a validated plain profile-v2 name used to select the
-// $CODEX_HOME/<name>.config.toml layer.
+// $CODEXGO_HOME/<name>.config.toml layer.
 //
 // It mirrors codex_protocol::config_types::ProfileV2Name. A valid name is
 // non-empty and contains only ASCII alphanumerics, '_', or '-'. The value is

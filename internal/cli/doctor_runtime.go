@@ -119,14 +119,14 @@ func installationCheck() doctorCheck {
 			detail(fmt.Errorf("executable lookup error: %w", err).Error())
 		return b.build()
 	}
-	_, npm := os.LookupEnv("CODEX_MANAGED_BY_NPM")
-	_, bun := os.LookupEnv("CODEX_MANAGED_BY_BUN")
+	_, npm := os.LookupEnv("CODEXGO_MANAGED_BY_NPM")
+	_, bun := os.LookupEnv("CODEXGO_MANAGED_BY_BUN")
 	// Detail emission order mirrors installation_check in doctor.rs.
 	b.detail(fmt.Sprintf("current executable: %s", exe))
 	b.detail(fmt.Sprintf("install context: %s", describeInstallContext(ctx)))
 	b.detail(fmt.Sprintf("managed by npm: %t", npm))
 	b.detail(fmt.Sprintf("managed by bun: %t", bun))
-	b.detail(fmt.Sprintf("managed package root: %s", envPathOrNotSet("CODEX_MANAGED_PACKAGE_ROOT")))
+	b.detail(fmt.Sprintf("managed package root: %s", envPathOrNotSet("CODEXGO_MANAGED_PACKAGE_ROOT")))
 
 	entries := codexPathEntries()
 	if len(entries) > 1 {
@@ -209,7 +209,7 @@ func runtimeSearchCheck() doctorCheck {
 
 // updatesStatusCheck reports the locally-cached update configuration and a bounded
 // latest-version probe, mirroring updates.status in doctor.rs. The probe honors
-// CODEX_DOCTOR_SKIP_NETWORK so offline/deterministic runs stay local.
+// CODEXGO_DOCTOR_SKIP_NETWORK so offline/deterministic runs stay local.
 //
 // Detail emission order mirrors updates_check: check-for-update flag, update
 // action, version cache path/parse rows, then the latest-version rows.

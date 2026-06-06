@@ -188,6 +188,7 @@ func runRealCodexTurn(t *testing.T, bin, serverURL string) string {
 	cmd := exec.Command(bin, "exec", "--json", "--skip-git-repo-check", turnPrompt)
 	cmd.Env = append(os.Environ(),
 		"CODEX_HOME="+home,
+		"CODEXGO_HOME="+home,
 		fakeEnvKey+"="+fakeAPIKey,
 	)
 	// Empty stdin so exec does not block waiting for piped input.
@@ -237,12 +238,15 @@ func runCodexgoTurnBinary(t *testing.T, bin, serverURL string) string {
 	cmd := exec.Command(bin, "exec", "--json", "--skip-git-repo-check", turnPrompt)
 	cmd.Env = append(os.Environ(),
 		"CODEX_HOME="+home,
+		"CODEXGO_HOME="+home,
 		fakeEnvKey+"="+fakeAPIKey,
 		// Ensure no ambient OpenAI/Codex credentials leak in and accidentally
 		// select a different auth path than the configured provider's env_key.
 		"OPENAI_API_KEY=",
 		"CODEX_API_KEY=",
+		"CODEXGO_API_KEY=",
 		"CODEX_ACCESS_TOKEN=",
+		"CODEXGO_ACCESS_TOKEN=",
 	)
 	cmd.Stdin = bytes.NewReader(nil)
 	var stdout, stderr bytes.Buffer

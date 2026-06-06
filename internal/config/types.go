@@ -34,7 +34,7 @@ const (
 	HistoryPersistenceNone    HistoryPersistence = "none"
 )
 
-// History governs what is written to ~/.codex/history.jsonl. Rust serde
+// History governs what is written to ~/.codexgo/history.jsonl. Rust serde
 // default applies to all fields; deny_unknown_fields.
 type History struct {
 	Persistence HistoryPersistence `json:"persistence" toml:"persistence"`

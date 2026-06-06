@@ -35,10 +35,13 @@ func captureTimezoneLine(t *testing.T, who, bin, tz string) string {
 	cmd := exec.Command(bin, "exec", "--json", "--skip-git-repo-check", turnPrompt)
 	env := append(os.Environ(),
 		"CODEX_HOME="+home,
+		"CODEXGO_HOME="+home,
 		fakeEnvKey+"="+fakeAPIKey,
 		"OPENAI_API_KEY=",
 		"CODEX_API_KEY=",
+		"CODEXGO_API_KEY=",
 		"CODEX_ACCESS_TOKEN=",
+		"CODEXGO_ACCESS_TOKEN=",
 	)
 	env = withTZ(env, tz)
 	cmd.Env = env

@@ -25,7 +25,7 @@ import (
 // namespaces the test is skipped rather than failed.
 func runSandboxedShell(t *testing.T, spec NativeSandboxSpec) string {
 	t.Helper()
-	if os.Getenv("CODEX_SANDBOX_E2E_CHILD") == "1" {
+	if os.Getenv("CODEXGO_SANDBOX_E2E_CHILD") == "1" {
 		os.Exit(RunLinuxSandboxMain(os.Stderr))
 	}
 
@@ -36,7 +36,7 @@ func runSandboxedShell(t *testing.T, spec NativeSandboxSpec) string {
 
 	cmd := exec.Command(os.Args[0], NativeSandboxArgv0)
 	cmd.Env = append(os.Environ(),
-		"CODEX_SANDBOX_E2E_CHILD=1",
+		"CODEXGO_SANDBOX_E2E_CHILD=1",
 		NativeSandboxSpecEnv+"="+encoded,
 	)
 	out, _ := cmd.CombinedOutput()

@@ -206,7 +206,7 @@ func TestPermissionProfileJSON(t *testing.T) {
 				`{"path":{"type":"special","value":{"kind":"tmpdir"}},"access":"write"},` +
 				`{"path":{"type":"special","value":{"kind":"project_roots","subpath":".git"}},"access":"read"},` +
 				`{"path":{"type":"special","value":{"kind":"project_roots","subpath":".agents"}},"access":"read"},` +
-				`{"path":{"type":"special","value":{"kind":"project_roots","subpath":".codex"}},"access":"read"}` +
+				`{"path":{"type":"special","value":{"kind":"project_roots","subpath":".codexgo"}},"access":"read"}` +
 				`]},"network":"restricted"}`,
 		},
 	}

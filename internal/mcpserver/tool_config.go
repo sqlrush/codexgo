@@ -262,7 +262,7 @@ func codexToolInputSchema() map[string]any {
 			"config": map[string]any{
 				"type":                 "object",
 				"additionalProperties": true,
-				"description":          "Individual config settings that will override what is in CODEX_HOME/config.toml.",
+				"description":          "Individual config settings that will override what is in CODEXGO_HOME/config.toml.",
 			},
 			"base-instructions": map[string]any{
 				"type":        "string",

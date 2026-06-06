@@ -9,8 +9,8 @@ import (
 // TestBuildDoctorChecksEmitsCanonicalIDs asserts the doctor emits exactly the 18
 // check IDs codex 0.136.0 emits, so doctor --json matches codex check-for-check.
 func TestBuildDoctorChecksEmitsCanonicalIDs(t *testing.T) {
-	t.Setenv("CODEX_HOME", t.TempDir())
-	t.Setenv("CODEX_DOCTOR_SKIP_NETWORK", "1")
+	t.Setenv("CODEXGO_HOME", t.TempDir())
+	t.Setenv("CODEXGO_DOCTOR_SKIP_NETWORK", "1")
 
 	checks := buildDoctorChecks(context.Background(), RootOptions{})
 
@@ -43,8 +43,8 @@ func TestBuildDoctorChecksEmitsCanonicalIDs(t *testing.T) {
 // TestDoctorCheckIDsAreUnique guards against accidental duplicate IDs in the
 // emitted set, which would break check-for-check comparison with codex.
 func TestDoctorCheckIDsAreUnique(t *testing.T) {
-	t.Setenv("CODEX_HOME", t.TempDir())
-	t.Setenv("CODEX_DOCTOR_SKIP_NETWORK", "1")
+	t.Setenv("CODEXGO_HOME", t.TempDir())
+	t.Setenv("CODEXGO_DOCTOR_SKIP_NETWORK", "1")
 
 	checks := buildDoctorChecks(context.Background(), RootOptions{})
 	seen := map[string]bool{}
@@ -60,8 +60,8 @@ func TestDoctorCheckIDsAreUnique(t *testing.T) {
 // checks report a skipped status when CODEX_DOCTOR_SKIP_NETWORK is set, keeping
 // offline and deterministic runs fast.
 func TestNetworkChecksSkippedWhenOffline(t *testing.T) {
-	t.Setenv("CODEX_HOME", t.TempDir())
-	t.Setenv("CODEX_DOCTOR_SKIP_NETWORK", "1")
+	t.Setenv("CODEXGO_HOME", t.TempDir())
+	t.Setenv("CODEXGO_DOCTOR_SKIP_NETWORK", "1")
 
 	checks := buildDoctorChecks(context.Background(), RootOptions{})
 	byID := map[string]doctorCheck{}

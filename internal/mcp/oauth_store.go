@@ -12,16 +12,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sqlrush/codexgo/internal/brand"
 	"github.com/sqlrush/codexgo/internal/config"
 	"github.com/sqlrush/codexgo/internal/keyring"
 )
 
 // keyringService is the keyring service name under which MCP OAuth credentials
-// are stored. It matches the reference KEYRING_SERVICE constant exactly so
-// credentials written by codex are readable here and vice versa.
-const keyringService = "Codex MCP Credentials"
+// are stored. codexgo uses its own service name (instead of the reference
+// "Codex MCP Credentials") so the two products' keychain entries never collide.
+const keyringService = brand.KeyringMCPOAuthService
 
-// fallbackFilename is the on-disk credential store filename within CODEX_HOME,
+// fallbackFilename is the on-disk credential store filename within CODEXGO_HOME,
 // used when the keyring is unavailable. It matches the reference constant.
 const fallbackFilename = ".credentials.json"
 
@@ -32,7 +33,7 @@ const mcpServerType = "http"
 // in need of refresh, matching the reference REFRESH_SKEW_MILLIS.
 const refreshSkewMillis uint64 = 30_000
 
-// OAuthStore persists MCP OAuth tokens to the system keyring with a CODEX_HOME
+// OAuthStore persists MCP OAuth tokens to the system keyring with a CODEXGO_HOME
 // file fallback, faithfully porting the reference oauth.rs storage behavior. The
 // store mode selects the backend: Auto prefers keyring then file, Keyring uses
 // only the keyring, File uses only the fallback file.
@@ -41,7 +42,7 @@ type OAuthStore struct {
 	codexHome string
 }
 
-// NewOAuthStore builds a store using the system keyring and the given CODEX_HOME
+// NewOAuthStore builds a store using the system keyring and the given CODEXGO_HOME
 // for the fallback file. When codexHome is empty it is resolved from the
 // environment on demand.
 func NewOAuthStore(codexHome string) *OAuthStore {
@@ -249,13 +250,13 @@ type fallbackTokenEntry struct {
 }
 
 // fallbackFilePath returns the path to the fallback credentials file within
-// CODEX_HOME.
+// CODEXGO_HOME.
 func (s *OAuthStore) fallbackFilePath() (string, error) {
 	home := s.codexHome
 	if home == "" {
 		resolved, err := config.FindCodexHome()
 		if err != nil {
-			return "", fmt.Errorf("mcp: resolve CODEX_HOME: %w", err)
+			return "", fmt.Errorf("mcp: resolve CODEXGO_HOME: %w", err)
 		}
 		home = resolved
 	}

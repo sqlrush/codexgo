@@ -11,7 +11,7 @@ import (
 
 // authEnvVars are the environment variables that can supply Codex credentials
 // without a stored auth.json, matching the env keys the Rust doctor inspects.
-var authEnvVars = []string{"OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN"}
+var authEnvVars = []string{"OPENAI_API_KEY", "CODEXGO_API_KEY", "CODEXGO_ACCESS_TOKEN"}
 
 // authCheck reports the current login state without exposing secrets, mirroring
 // auth.credentials in doctor.rs. It records storage mode, the auth file path, and

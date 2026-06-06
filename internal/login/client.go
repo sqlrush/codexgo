@@ -13,7 +13,7 @@ const (
 	// DefaultOriginator is the originator header value for the Rust CLI.
 	DefaultOriginator = "codex_cli_rs"
 	// OriginatorOverrideEnvVar overrides the originator value.
-	OriginatorOverrideEnvVar = "CODEX_INTERNAL_ORIGINATOR_OVERRIDE"
+	OriginatorOverrideEnvVar = "CODEXGO_INTERNAL_ORIGINATOR_OVERRIDE"
 )
 
 // originatorValue returns the originator string, honoring the override env var.
@@ -34,7 +34,7 @@ func NewHTTPClient() (*http.Client, error) {
 }
 
 // newHTTPClient builds the default HTTP client used for login traffic. It
-// applies any custom CA bundle configured via CODEX_CA_CERTIFICATE /
+// applies any custom CA bundle configured via CODEXGO_CA_CERTIFICATE /
 // SSL_CERT_FILE, mirroring default_client::build_reqwest_client. The originator
 // header is added per-request by callers that need it.
 func newHTTPClient() (*http.Client, error) {

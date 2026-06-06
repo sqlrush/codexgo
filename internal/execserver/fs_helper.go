@@ -9,13 +9,15 @@ import (
 	"io/fs"
 
 	"github.com/sqlrush/codexgo/internal/appserverproto"
+	"github.com/sqlrush/codexgo/internal/brand"
 	"github.com/sqlrush/codexgo/internal/filesystem"
 )
 
-// CodexFsHelperArg1 is the first argument that selects the fs helper mode.
+// CodexFsHelperArg1 is the first argument that selects the fs helper mode,
+// using codexgo's own marker name.
 //
 // Rust: `CODEX_FS_HELPER_ARG1 = "--codex-run-as-fs-helper"`.
-const CodexFsHelperArg1 = "--codex-run-as-fs-helper"
+const CodexFsHelperArg1 = brand.Arg1FsHelper
 
 // fsHelperOperation enumerates the fs helper operations, identified by their
 // `fs/*` method name on the wire.

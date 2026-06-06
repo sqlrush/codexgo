@@ -7,7 +7,7 @@ import (
 
 const (
 	maxBlockedEvents             = 200
-	networkPolicyViolationPrefix = "CODEX_NETWORK_POLICY_VIOLATION"
+	networkPolicyViolationPrefix = "CODEXGO_NETWORK_POLICY_VIOLATION"
 )
 
 // BlockedRequest records a single policy violation for telemetry. JSON tags

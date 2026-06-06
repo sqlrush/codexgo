@@ -6,7 +6,7 @@ import (
 	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
-// ConfigToml is the base configuration deserialized from ~/.codex/config.toml.
+// ConfigToml is the base configuration deserialized from ~/.codexgo/config.toml.
 // It mirrors the Rust ConfigToml struct field-for-field and order-for-order so
 // that JSON serialization matches byte-for-byte after key-order canonicalization.
 //

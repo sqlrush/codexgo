@@ -37,7 +37,7 @@ const (
 	ConfigLayerSourceMdm ConfigLayerSourceKind = "mdm"
 	// ConfigLayerSourceSystem is a managed config layer from a file.
 	ConfigLayerSourceSystem ConfigLayerSourceKind = "system"
-	// ConfigLayerSourceUser is the user config layer from $CODEX_HOME/config.toml.
+	// ConfigLayerSourceUser is the user config layer from $CODEXGO_HOME/config.toml.
 	ConfigLayerSourceUser ConfigLayerSourceKind = "user"
 	// ConfigLayerSourceProject is a .codex/ folder within a project.
 	ConfigLayerSourceProject ConfigLayerSourceKind = "project"

@@ -31,7 +31,7 @@ type authResolverConfig struct {
 	StoreMode config.AuthCredentialsStoreMode
 	// ChatgptBaseURL overrides the ChatGPT backend base URL (agent-identity JWKS).
 	ChatgptBaseURL *string
-	// EnableCodexAPIKeyEnv enables the CODEX_API_KEY env var auth path.
+	// EnableCodexAPIKeyEnv enables the CODEXGO_API_KEY env var auth path.
 	EnableCodexAPIKeyEnv bool
 	// HTTPClient is used for agent-identity JWT verification. When nil a default
 	// login HTTP client is constructed lazily.

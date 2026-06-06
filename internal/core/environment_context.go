@@ -3,6 +3,8 @@ package core
 import (
 	"fmt"
 	"strings"
+
+	"github.com/sqlrush/codexgo/internal/brand"
 )
 
 // This file ports codex's environment_context fragment
@@ -81,7 +83,7 @@ func ReadOnlyFilesystemContext(cwd string) *FilesystemContext {
 //   - cwd write (the materialized :workspace_roots / project_roots entry)
 //   - :slash_tmp write (exclude_slash_tmp is false by default)
 //   - :tmpdir write (exclude_tmpdir_env_var is false by default)
-//   - {cwd}/.git, {cwd}/.agents, {cwd}/.codex read (the default read-only
+//   - {cwd}/.git, {cwd}/.agents, {cwd}/.codexgo read (the default read-only
 //     project-root metadata carveouts, appended unconditionally)
 //
 // Additional writable_roots (config sandbox_workspace_write.writable_roots) and
@@ -99,7 +101,7 @@ func WorkspaceWriteFilesystemContext(cwd string) *FilesystemContext {
 			{Access: "write", Special: ":tmpdir"},
 			{Access: "read", Path: cwd + "/.git"},
 			{Access: "read", Path: cwd + "/.agents"},
-			{Access: "read", Path: cwd + "/.codex"},
+			{Access: "read", Path: cwd + "/" + brand.DotDirName},
 		},
 	}
 }

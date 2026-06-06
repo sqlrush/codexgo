@@ -230,18 +230,20 @@ func captureDynamicFrame(t *testing.T, bin, canonicalCwd string, size frameSize)
 	writeDynamicFrameConfig(t, home, canonicalCwd, srv.URL)
 
 	env := map[string]string{
-		"PATH":           os.Getenv("PATH"),
-		"HOME":           os.Getenv("HOME"),
-		"CODEX_HOME":     home,
-		fakeEnvKey:       fakeAPIKey,
-		"TERM":           "xterm-256color",
-		"LANG":           "en_US.UTF-8",
-		"COLUMNS":        strconv.Itoa(int(size.Cols)),
-		"LINES":          strconv.Itoa(int(size.Rows)),
-		"OPENAI_API_KEY": "",
-		"CODEX_API_KEY":  "",
-		"NO_COLOR":       "",
-		"CI":             "",
+		"PATH":            os.Getenv("PATH"),
+		"HOME":            os.Getenv("HOME"),
+		"CODEX_HOME":      home,
+		"CODEXGO_HOME":    home, // codexgo namespace; reference binary reads CODEX_HOME
+		fakeEnvKey:        fakeAPIKey,
+		"TERM":            "xterm-256color",
+		"LANG":            "en_US.UTF-8",
+		"COLUMNS":         strconv.Itoa(int(size.Cols)),
+		"LINES":           strconv.Itoa(int(size.Rows)),
+		"OPENAI_API_KEY":  "",
+		"CODEX_API_KEY":   "",
+		"CODEXGO_API_KEY": "",
+		"NO_COLOR":        "",
+		"CI":              "",
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

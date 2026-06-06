@@ -34,7 +34,7 @@ func parseVersionCache(contents []byte) (versionCacheInfo, error) {
 
 // fetchLatestVersion performs a bounded probe of the latest release version,
 // mirroring fetch_latest_github_release_version in updates.rs (the tag is
-// "rust-v<semver>"). It returns ("", nil) when CODEX_DOCTOR_SKIP_NETWORK is set so
+// "rust-v<semver>"). It returns ("", nil) when CODEXGO_DOCTOR_SKIP_NETWORK is set so
 // offline/deterministic runs skip the row entirely.
 func fetchLatestVersion() (string, error) {
 	if os.Getenv(doctorSkipNetworkEnv) != "" {

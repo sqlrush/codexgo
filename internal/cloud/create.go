@@ -7,11 +7,11 @@ import (
 
 // EnvStartingDiff is the env var carrying a pre-apply patch diff included when
 // creating a task. It matches the reference codex name.
-const EnvStartingDiff = "CODEX_STARTING_DIFF"
+const EnvStartingDiff = "CODEXGO_STARTING_DIFF"
 
 // buildCreateTaskBody constructs the create-task request body. It mirrors the
 // JSON shape built by the Rust `Tasks::create`, including the optional
-// pre_apply_patch (from CODEX_STARTING_DIFF) and best_of_n metadata.
+// pre_apply_patch (from CODEXGO_STARTING_DIFF) and best_of_n metadata.
 func buildCreateTaskBody(envID, prompt, gitRef string, qaMode bool, bestOfN int) (json.RawMessage, error) {
 	inputItems := []any{
 		map[string]any{

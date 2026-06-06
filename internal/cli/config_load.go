@@ -28,7 +28,7 @@ type loadedConfig struct {
 	// merged onto the built-in catalog so custom providers extend the defaults.
 	ModelProviders map[string]modelproviderinfo.ModelProviderInfo
 	// DefaultModel is the resolved `model` slug, or nil when unset. It is the
-	// preferred default model for the assembly over CODEX_MODEL and the mock slug.
+	// preferred default model for the assembly over CODEXGO_MODEL and the mock slug.
 	DefaultModel *string
 	// OpenAIBaseURL overrides the built-in OpenAI provider's base URL when set and
 	// non-empty, matching the Rust `openai_base_url` handling.

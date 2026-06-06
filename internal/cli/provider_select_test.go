@@ -181,14 +181,14 @@ func TestBuildProviderAuthResolverSelection(t *testing.T) {
 }
 
 func TestResolveDefaultModelPrecedence(t *testing.T) {
-	t.Setenv("CODEX_MODEL", "env-model")
+	t.Setenv("CODEXGO_MODEL", "env-model")
 	if got := resolveDefaultModel("config-model"); got != "config-model" {
 		t.Fatalf("config model should win: got %q", got)
 	}
 	if got := resolveDefaultModel(""); got != "env-model" {
-		t.Fatalf("CODEX_MODEL should win over mock: got %q", got)
+		t.Fatalf("CODEXGO_MODEL should win over mock: got %q", got)
 	}
-	t.Setenv("CODEX_MODEL", "")
+	t.Setenv("CODEXGO_MODEL", "")
 	if got := resolveDefaultModel(""); got != defaultMockModelSlug {
 		t.Fatalf("mock slug should be the final fallback: got %q", got)
 	}

@@ -28,10 +28,13 @@ func runOutputLastTurn(t *testing.T, who, bin, serverURL string) ([]byte, bool) 
 		"-o", outFile, turnPrompt)
 	cmd.Env = append(os.Environ(),
 		"CODEX_HOME="+home,
+		"CODEXGO_HOME="+home,
 		fakeEnvKey+"="+fakeAPIKey,
 		"OPENAI_API_KEY=",
 		"CODEX_API_KEY=",
+		"CODEXGO_API_KEY=",
 		"CODEX_ACCESS_TOKEN=",
+		"CODEXGO_ACCESS_TOKEN=",
 	)
 	cmd.Stdin = bytes.NewReader(nil)
 	var stdout, stderr bytes.Buffer

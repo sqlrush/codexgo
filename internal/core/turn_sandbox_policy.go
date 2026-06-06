@@ -121,7 +121,7 @@ func readOnlyFileSystemSandboxPolicy() protocol.FileSystemSandboxPolicy {
 // workspaceWriteFileSystemSandboxPolicy mirrors
 // FileSystemSandboxPolicy::workspace_write for the default config (no extra
 // writable_roots, tmpdir + /tmp included): root read, project_roots write,
-// /tmp write, $TMPDIR write. The .git/.codex/.agents read-only carveouts are
+// /tmp write, $TMPDIR write. The .git/.codexgo/.agents read-only carveouts are
 // materialized by the seatbelt backend from the writable roots at spawn time
 // (getWritableRootsWithCwd -> defaultReadOnlySubpathsForWritableRoot), so they
 // are not duplicated into the policy entries here.

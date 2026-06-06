@@ -11,7 +11,7 @@ import (
 // codexThreadIDEnvVar is the environment variable populated with the thread id.
 //
 // Rust: `shell_environment::CODEX_THREAD_ID_ENV_VAR`.
-const codexThreadIDEnvVar = "CODEX_THREAD_ID"
+const codexThreadIDEnvVar = "CODEXGO_THREAD_ID"
 
 // unixCoreEnvVars is the core inherit set on non-Windows platforms.
 //

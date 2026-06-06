@@ -18,7 +18,7 @@ const (
 	statusWarning checkStatus = "warning"
 	statusFail    checkStatus = "fail"
 	// statusSkipped marks a check that was intentionally not run (for example a
-	// network probe when CODEX_DOCTOR_SKIP_NETWORK is set). Skipped checks never
+	// network probe when CODEXGO_DOCTOR_SKIP_NETWORK is set). Skipped checks never
 	// affect the overall status.
 	statusSkipped checkStatus = "skipped"
 )

@@ -18,7 +18,7 @@ import (
 	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
-// AuthDotJson is the expected structure of $CODEX_HOME/auth.json.
+// AuthDotJson is the expected structure of $CODEXGO_HOME/auth.json.
 //
 // Rust: storage::AuthDotJson. Field order and serde attributes are preserved:
 //   - auth_mode: default, skip_serializing_if None

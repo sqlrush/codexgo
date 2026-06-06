@@ -44,7 +44,7 @@ func TestRenderEnvironmentContextReadOnly(t *testing.T) {
 // (sandbox_mode = "workspace-write", no extra writable_roots). The managed
 // restricted profile carries: :root read, the materialized project root (cwd)
 // write, :slash_tmp / :tmpdir write, and the default read-only carveouts
-// {cwd}/.git, {cwd}/.agents, {cwd}/.codex.
+// {cwd}/.git, {cwd}/.agents, {cwd}/.codexgo.
 func TestRenderEnvironmentContextWorkspaceWrite(t *testing.T) {
 	const cwd = "/work/project"
 	in := EnvironmentContextInput{
@@ -68,7 +68,7 @@ func TestRenderEnvironmentContextWorkspaceWrite(t *testing.T) {
 		`<entry access="write"><special>:tmpdir</special></entry>` +
 		`<entry access="read"><path>/work/project/.git</path></entry>` +
 		`<entry access="read"><path>/work/project/.agents</path></entry>` +
-		`<entry access="read"><path>/work/project/.codex</path></entry>` +
+		`<entry access="read"><path>/work/project/.codexgo</path></entry>` +
 		`</file_system></permission_profile></filesystem>` + "\n" +
 		"</environment_context>"
 

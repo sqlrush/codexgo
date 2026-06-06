@@ -64,7 +64,7 @@ var doctorCheckIDs = []string{
 // never mutates user state, matching the doctor contract in doctor.rs. The
 // emitted set is exactly the 18 IDs in [doctorCheckIDs].
 //
-// Network reachability checks honor CODEX_DOCTOR_SKIP_NETWORK: when it is set
+// Network reachability checks honor CODEXGO_DOCTOR_SKIP_NETWORK: when it is set
 // they report a skipped status so offline and deterministic runs stay fast.
 func buildDoctorChecks(ctx context.Context, root RootOptions) []doctorCheck {
 	dctx, configCheck := configLoadCheck(root)

@@ -1,7 +1,7 @@
 package cli
 
 // Tests for the project-trust gate on project-layer skill loading: project
-// `.codex/skills` roots must load only when the cwd's project is trusted,
+// `.codexgo/skills` roots must load only when the cwd's project is trusted,
 // mirroring the Rust loader's git-trust ProjectTrustContext gate.
 
 import (
@@ -15,11 +15,11 @@ import (
 	"github.com/sqlrush/codexgo/internal/utils/abspath"
 )
 
-// writeProjectSkill creates a project `.codex/skills/<name>/SKILL.md` under root
+// writeProjectSkill creates a project `.codexgo/skills/<name>/SKILL.md` under root
 // with a minimal valid front-matter so the loader picks it up.
 func writeProjectSkill(t *testing.T, root, name, description string) {
 	t.Helper()
-	dir := filepath.Join(root, ".codex", "skills", name)
+	dir := filepath.Join(root, ".codexgo", "skills", name)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir skill dir: %v", err)
 	}
@@ -42,7 +42,7 @@ func newProjectWithSkill(t *testing.T, skillName, description string) string {
 }
 
 // TestProjectSkillsLoadOnlyWhenTrusted verifies that the same project's
-// `.codex/skills` are rendered when the trust gate reports trusted and omitted
+// `.codexgo/skills` are rendered when the trust gate reports trusted and omitted
 // when it reports untrusted.
 func TestProjectSkillsLoadOnlyWhenTrusted(t *testing.T) {
 	home := t.TempDir()

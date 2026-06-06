@@ -204,20 +204,20 @@ func TestPathsShareTarget(t *testing.T) {
 	}
 }
 
-// TestDefaultReadOnlySubpathsForWritableRoot verifies that existing .git/.codex
+// TestDefaultReadOnlySubpathsForWritableRoot verifies that existing .git/.codexgo
 // directories under a writable root are reported as default read-only subpaths.
 func TestDefaultReadOnlySubpathsForWritableRoot(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
 		t.Fatalf("mkdir .git: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(root, ".codex"), 0o755); err != nil {
-		t.Fatalf("mkdir .codex: %v", err)
+	if err := os.MkdirAll(filepath.Join(root, ".codexgo"), 0o755); err != nil {
+		t.Fatalf("mkdir .codexgo: %v", err)
 	}
 
 	subs := defaultReadOnlySubpathsForWritableRoot(root, false)
 	wantGit := filepath.Join(root, ".git")
-	wantCodex := filepath.Join(root, ".codex")
+	wantCodex := filepath.Join(root, ".codexgo")
 	haveGit, haveCodex := false, false
 	for _, s := range subs {
 		if s == wantGit {

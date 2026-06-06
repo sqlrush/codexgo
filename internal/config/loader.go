@@ -15,11 +15,11 @@ type LayerSource int
 const (
 	// LayerSystem is /etc/codex/config.toml (Unix) style system config.
 	LayerSystem LayerSource = iota
-	// LayerUser is ${CODEX_HOME}/config.toml.
+	// LayerUser is ${CODEXGO_HOME}/config.toml.
 	LayerUser
-	// LayerUserProfile is ${CODEX_HOME}/<name>.config.toml (profile-v2).
+	// LayerUserProfile is ${CODEXGO_HOME}/<name>.config.toml (profile-v2).
 	LayerUserProfile
-	// LayerConfigLocal is ${CODEX_HOME}/config.local.toml overlay.
+	// LayerConfigLocal is ${CODEXGO_HOME}/config.local.toml overlay.
 	LayerConfigLocal
 	// LayerEnv is config values derived from environment variables.
 	LayerEnv
@@ -41,7 +41,7 @@ type LoadOptions struct {
 	// CodexHome is the resolved configuration directory. When empty it is
 	// resolved via FindCodexHome.
 	CodexHome string
-	// Profile selects a profile-v2 layer (${CODEX_HOME}/<profile>.config.toml).
+	// Profile selects a profile-v2 layer (${CODEXGO_HOME}/<profile>.config.toml).
 	Profile string
 	// SystemConfigPath overrides the system config.toml path (test hook).
 	SystemConfigPath string
@@ -70,7 +70,7 @@ type LoadResult struct {
 	Warnings []string
 }
 
-// Load resolves CODEX_HOME, reads and parses each config layer, merges them in
+// Load resolves CODEXGO_HOME, reads and parses each config layer, merges them in
 // precedence order (CLI > env > config.local > profile > config.toml > system),
 // and decodes the merged result into a typed ConfigToml.
 func Load(opts LoadOptions) (LoadResult, error) {
@@ -185,7 +185,7 @@ func readTomlFile(path string) (TomlValue, bool, error) {
 	return value, true, nil
 }
 
-// profileConfigPath returns ${CODEX_HOME}/<profile>.config.toml, the profile-v2
+// profileConfigPath returns ${CODEXGO_HOME}/<profile>.config.toml, the profile-v2
 // layer file used when a profile is selected.
 func profileConfigPath(codexHome, profile string) string {
 	return filepath.Join(codexHome, profile+".config.toml")

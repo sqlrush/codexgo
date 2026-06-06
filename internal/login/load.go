@@ -58,9 +58,9 @@ func FromAgentIdentityJWT(ctx context.Context, httpClient *http.Client, jwt stri
 }
 
 // LoadAuth resolves credentials with the same precedence as manager::load_auth:
-//  1. CODEX_API_KEY env var (only when enableCodexAPIKeyEnv is set)
+//  1. CODEXGO_API_KEY env var (only when enableCodexAPIKeyEnv is set)
 //  2. external ChatGPT tokens in the ephemeral store
-//  3. (unless mode is Ephemeral) CODEX_ACCESS_TOKEN agent-identity env var
+//  3. (unless mode is Ephemeral) CODEXGO_ACCESS_TOKEN agent-identity env var
 //  4. the configured persistent store (file/keyring/auto)
 //
 // Returns (nil, nil) when no credentials are found.
