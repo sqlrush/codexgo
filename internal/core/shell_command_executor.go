@@ -10,6 +10,7 @@ import (
 	"github.com/sqlrush/codexgo/internal/applypatch"
 	"github.com/sqlrush/codexgo/internal/modelsmanager"
 	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/internal/sandbox"
 	"github.com/sqlrush/codexgo/internal/shellcmd"
 	"github.com/sqlrush/codexgo/internal/tools"
 	"github.com/sqlrush/codexgo/internal/utils/abspath"
@@ -143,6 +144,11 @@ func (e shellCommandExecutor) parseArgs(p tools.ToolPayload) (command, workdir s
 // runShellCommand executes argv (already wrapped in the user's shell) through the
 // ExecService, emitting the exec_command_begin / exec_command_end events that the
 // exec JSONL processor renders as the command_execution lifecycle item.
+//
+// It mirrors the shell handler's begin -> ToolOrchestrator::run -> finish
+// ordering: the begin event is emitted ONCE, then the sandboxed attempt runs and
+// (on a sandbox denial under a permitting policy) escalates to an unsandboxed
+// retry, and the end event is emitted ONCE with the FINAL attempt's result.
 func (e shellCommandExecutor) runShellCommand(ctx context.Context, h *toolHandlerContext, argv []string, cwd string) (tools.ToolOutput, error) {
 	if h.Session != nil {
 		h.Session.SendEvent(h.Turn.SubID, protocol.EventMsg{
@@ -157,18 +163,7 @@ func (e shellCommandExecutor) runShellCommand(ctx context.Context, h *toolHandle
 		})
 	}
 
-	// Resolve and apply the turn's REAL sandbox policy (mirrors codex's
-	// ToolOrchestrator): read-only / workspace-write spawn under the platform
-	// sandbox; danger-full-access keeps the none backend.
-	pol := resolveTurnSandboxPolicy(h.Turn)
-	res, runErr := e.exec.Run(ctx, ExecRequest{
-		Command:                 argv,
-		Cwd:                     cwd,
-		SandboxType:             pol.SandboxType,
-		FileSystemSandboxPolicy: pol.FileSystemSandboxPolicy,
-		NetworkSandboxPolicy:    pol.NetworkSandboxPolicy,
-		SandboxPolicyCwd:        h.Turn.Cwd,
-	})
+	res, runErr := e.runShellWithEscalation(ctx, h, argv, cwd)
 	if runErr != nil {
 		return nil, tools.RespondToModelError(fmt.Sprintf("exec failed: %v", runErr))
 	}
@@ -198,6 +193,65 @@ func (e shellCommandExecutor) runShellCommand(ctx context.Context, h *toolHandle
 	}
 
 	return newTextToolOutput(formatShellToolOutput(res), boolPtr(res.ExitCode == 0)), nil
+}
+
+// runShellWithEscalation runs the command under the turn's resolved sandbox
+// policy and, on a likely sandbox denial under a permitting approval policy,
+// prompts for approval and retries unsandboxed. It is the shell-path port of the
+// ToolOrchestrator::run attempt loop (first attempt sandboxed; on SandboxErr +
+// policy != never -> ask; on approval -> retry with SandboxType none).
+//
+// Under danger-full-access the first attempt already runs with SandboxType none,
+// so isLikelySandboxDenied is always false and the escalation is skipped, keeping
+// the danger-full-access differentials byte-identical. Under approval_policy=never
+// the escalation surfaces the denial unchanged (wantsNoSandboxApproval is false),
+// also preserving the existing never-policy behavior.
+func (e shellCommandExecutor) runShellWithEscalation(ctx context.Context, h *toolHandlerContext, argv []string, cwd string) (ExecResult, error) {
+	// Resolve and apply the turn's REAL sandbox policy (mirrors codex's
+	// ToolOrchestrator): read-only / workspace-write spawn under the platform
+	// sandbox; danger-full-access keeps the none backend.
+	pol := resolveTurnSandboxPolicy(h.Turn)
+	res, runErr := e.exec.Run(ctx, ExecRequest{
+		Command:                 argv,
+		Cwd:                     cwd,
+		SandboxType:             pol.SandboxType,
+		FileSystemSandboxPolicy: pol.FileSystemSandboxPolicy,
+		NetworkSandboxPolicy:    pol.NetworkSandboxPolicy,
+		SandboxPolicyCwd:        h.Turn.Cwd,
+	})
+	if runErr != nil {
+		return ExecResult{}, runErr
+	}
+
+	// Detect a likely sandbox denial on the sandboxed attempt and escalate.
+	aggregated := res.Stdout + res.Stderr
+	if !isLikelySandboxDenied(pol.SandboxType, int(res.ExitCode), res.Stdout, res.Stderr, aggregated) {
+		return res, nil
+	}
+
+	decision := resolveSandboxEscalation(ctx, h.Session, sandboxEscalationRequest{
+		Turn:    h.Turn,
+		CallID:  h.CallID,
+		Command: argv,
+		Cwd:     cwd,
+	})
+	if decision != sandboxEscalationRetryUnsandboxed {
+		// Surface the denial unchanged (Never/OnRequest, denied reads, or the
+		// user declined). The model sees the original sandboxed result.
+		return res, nil
+	}
+
+	// Escalated retry: re-run without the sandbox (SandboxType none).
+	retryRes, retryErr := e.exec.Run(ctx, ExecRequest{
+		Command:          argv,
+		Cwd:              cwd,
+		SandboxType:      sandbox.SandboxTypeNone,
+		SandboxPolicyCwd: h.Turn.Cwd,
+	})
+	if retryErr != nil {
+		return ExecResult{}, retryErr
+	}
+	return retryRes, nil
 }
 
 // applyHeredocPatch applies an intercepted apply_patch heredoc through

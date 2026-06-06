@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sync"
 
 	"github.com/sqlrush/codexgo/internal/agentgraph"
 	"github.com/sqlrush/codexgo/internal/api"
@@ -165,14 +164,13 @@ func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultMode
 	} else {
 		fmt.Fprintf(os.Stderr, "warning: skills manager unavailable, skills instructions disabled: %v\n", err)
 	}
-	// Multi-agent control plane: the thread manager only exists after Assemble
-	// returns, while the per-thread router factory below closes over it, so the
-	// engine is published through a guarded holder after assembly. The spawn-edge
-	// graph is process-wide (shared across roots), like the Rust agent graph.
-	var collabEngine struct {
-		mu  sync.Mutex
-		mgr *core.ThreadManager
-	}
+	// Multi-agent control plane + goal event sink: the thread manager only exists
+	// after Assemble returns, while the per-thread router factory below closes over
+	// it, so the manager is published through a guarded holder after assembly. The
+	// holder is shared by the collab control plane (engine) and the goal event sink
+	// (session lookup). The spawn-edge graph is process-wide (shared across roots),
+	// like the Rust agent graph.
+	threadMgr := &threadManagerHolder{}
 	collabGraph := agentgraph.NewInMemoryAgentGraphStore()
 	asm, err := appserver.Assemble(appserver.AssemblyConfig{
 		ModelClientFactory: factory,
@@ -199,18 +197,24 @@ func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultMode
 				UserInput: headlessUserInputRequester{},
 			}
 			if goalStateRuntime != nil {
-				// Goal tools persist per-thread goals in the goals DB; the nil
-				// event sink and metrics client are the headless defaults.
-				deps.GoalTools = goal.NewToolExecutors(threadID, goal.NewStateRuntimeBridge(goalStateRuntime), nil, nil)
+				// Goal tools persist per-thread goals in the goals DB; the event
+				// sink routes thread_goal_updated accounting events to this thread's
+				// session event stream (late-bound via the shared thread-manager
+				// holder, since the session does not exist yet). The metrics client
+				// stays nil (headless default).
+				deps.GoalTools = goal.NewToolExecutors(
+					threadID,
+					goal.NewStateRuntimeBridge(goalStateRuntime),
+					newGoalEventSink(threadID, threadMgr),
+					nil,
+				)
 			}
 			// Wire the multi-agent control plane so the deferred collab tools
 			// (spawn_agent et al., discovered via tool_search) actually execute.
 			// Each root thread gets its own Control (registry scope) over the
 			// shared engine + spawn-edge graph, mirroring the per-session
 			// AgentControl in codex.
-			collabEngine.mu.Lock()
-			engine := collabEngine.mgr
-			collabEngine.mu.Unlock()
+			engine := threadMgr.get()
 			if engine != nil {
 				control, cerr := multiagent.NewControl(multiagent.Config{
 					Engine:    engine,
@@ -230,9 +234,7 @@ func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultMode
 	if err != nil {
 		return nil, appserver.Defaults{}, err
 	}
-	collabEngine.mu.Lock()
-	collabEngine.mgr = asm.ThreadManager
-	collabEngine.mu.Unlock()
+	threadMgr.set(asm.ThreadManager)
 	defaults := appserver.Defaults{
 		Model:      model,
 		ProviderID: providerID,

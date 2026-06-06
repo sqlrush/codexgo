@@ -150,6 +150,19 @@ func (s *Session) SendEvent(id string, msg protocol.EventMsg) {
 	}
 }
 
+// EmitEvent enqueues a pre-built event on the event queue, preserving its
+// correlation id. It is the entry point for host components (e.g. the extension
+// event sink) that construct a fully-formed [protocol.Event] with the id
+// appropriate for the callback they handle. Agent-status derivation and
+// cancellation handling match [SendEvent].
+func (s *Session) EmitEvent(ev protocol.Event) {
+	s.updateAgentStatusFromEvent(ev.Msg)
+	select {
+	case s.txEvent <- ev:
+	case <-s.ctx.Done():
+	}
+}
+
 // updateAgentStatusFromEvent advances the cached agent status based on an
 // emitted event, mirroring the Rust `agent_status_from_event`.
 func (s *Session) updateAgentStatusFromEvent(msg protocol.EventMsg) {

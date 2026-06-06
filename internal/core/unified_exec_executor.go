@@ -14,6 +14,7 @@ import (
 	"github.com/sqlrush/codexgo/internal/features"
 	"github.com/sqlrush/codexgo/internal/modelsmanager"
 	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/internal/sandbox"
 	"github.com/sqlrush/codexgo/internal/shellcmd"
 	"github.com/sqlrush/codexgo/internal/tools"
 	"github.com/sqlrush/codexgo/internal/unifiedexec"
@@ -27,13 +28,17 @@ import (
 // shell_command tool follows codex's shell_type_for_model_and_features (ported
 // in internal/tools/tool_config.go) per turn.
 //
-// STUB: the approval/sandbox orchestration (ToolOrchestrator), deferred network
-// approvals, and hook payload rewriting are owned by other area agents; this
-// bridge spawns directly through the unified-exec sandbox spawner with the none
-// backend, matching the local exec service. The background exec-end watcher
-// (async_watcher.rs) IS ported: unified_exec_watcher.go arms it per session so a
-// PTY session that outlives its exec_command call still streams output deltas
-// and emits a late exec_command_end on exit.
+// The sandbox-denial approval escalation arm of the ToolOrchestrator IS ported:
+// on a sandbox denial under a permitting approval policy, maybeEscalateUnifiedExec
+// prompts via Session.RequestCommandApproval and, on approval, retries the
+// command WITHOUT the sandbox (see sandbox_escalation.go). The background exec-end
+// watcher (async_watcher.rs) IS ported: unified_exec_watcher.go arms it per
+// session so a PTY session that outlives its exec_command call still streams
+// output deltas and emits a late exec_command_end on exit.
+//
+// STUB: deferred network approvals, per-call sandbox_permissions /
+// additional_permissions, the ApprovedForSession cache, and hook payload
+// rewriting are owned by other area agents.
 
 // ----------------------------------------------------------------------------
 // Per-turn shell tool selection
@@ -233,7 +238,7 @@ func (e unifiedExecCommandExecutor) Handle(ctx context.Context, h *toolHandlerCo
 
 	emitExecCommandBegin(h, argv, cwd)
 
-	out, execErr := e.exec.ExecCommand(ctx, buildUnifiedExecRequest(unifiedExecRequestParams{
+	baseParams := unifiedExecRequestParams{
 		Turn:            h.Turn,
 		Argv:            argv,
 		HookCommand:     args.Cmd,
@@ -243,28 +248,38 @@ func (e unifiedExecCommandExecutor) Handle(ctx context.Context, h *toolHandlerCo
 		MaxOutputTokens: args.MaxOutputTokens,
 		Cwd:             cwd,
 		TTY:             args.TTY,
-	}))
+	}
+	out, execErr := e.exec.ExecCommand(ctx, buildUnifiedExecRequest(baseParams))
 	if execErr != nil {
-		// Sandbox denial is terminal but still carries the captured output, so it
-		// is rendered as a tool response rather than an error (the Rust
-		// UnifiedExecError::SandboxDenied arm).
+		// On a sandbox denial, mirror ToolOrchestrator::run: under a permitting
+		// approval policy, prompt for approval and retry WITHOUT the sandbox. On
+		// approval the escalated retry replaces the denial; otherwise the denial is
+		// surfaced unchanged.
 		var ue *unifiedexec.Error
 		if errors.As(execErr, &ue) && ue.Kind == unifiedexec.ErrSandboxDenied && ue.Output != nil {
-			deniedText := ue.Output.AggregatedText
-			exitCode := ue.Output.ExitCode
-			originalTokens := truncation.ApproxTokenCount(deniedText)
-			emitExecCommandEnd(h, argv, cwd, deniedText, exitCode)
-			return unifiedExecToolOutput{
-				chunkID:            unifiedexec.GenerateChunkID(),
-				rawOutput:          []byte(deniedText),
-				maxOutputTokens:    args.MaxOutputTokens,
-				exitCode:           &exitCode,
-				originalTokenCount: &originalTokens,
-				truncationPolicy:   turnTruncationPolicy(h.Turn),
-			}, nil
+			if retryOut, retried := e.maybeEscalateUnifiedExec(ctx, h, baseParams); retried {
+				out, execErr = retryOut, nil
+			} else {
+				// Sandbox denial is terminal but still carries the captured output,
+				// so it is rendered as a tool response rather than an error (the Rust
+				// UnifiedExecError::SandboxDenied arm).
+				deniedText := ue.Output.AggregatedText
+				exitCode := ue.Output.ExitCode
+				originalTokens := truncation.ApproxTokenCount(deniedText)
+				emitExecCommandEnd(h, argv, cwd, deniedText, exitCode)
+				return unifiedExecToolOutput{
+					chunkID:            unifiedexec.GenerateChunkID(),
+					rawOutput:          []byte(deniedText),
+					maxOutputTokens:    args.MaxOutputTokens,
+					exitCode:           &exitCode,
+					originalTokenCount: &originalTokens,
+					truncationPolicy:   turnTruncationPolicy(h.Turn),
+				}, nil
+			}
+		} else {
+			return nil, tools.RespondToModelError(fmt.Sprintf(
+				"exec_command failed for `%s`: %v", shellcmd.ShlexJoin(argv), execErr))
 		}
-		return nil, tools.RespondToModelError(fmt.Sprintf(
-			"exec_command failed for `%s`: %v", shellcmd.ShlexJoin(argv), execErr))
 	}
 
 	// Emit the end event when the process finished within this call. A live
@@ -276,6 +291,41 @@ func (e unifiedExecCommandExecutor) Handle(ctx context.Context, h *toolHandlerCo
 	}
 
 	return newUnifiedExecToolOutput(out, turnTruncationPolicy(h.Turn)), nil
+}
+
+// maybeEscalateUnifiedExec consults the approval policy after a sandbox denial
+// and, on approval, retries the command WITHOUT the sandbox. It is the
+// unified-exec port of the ToolOrchestrator::run retry branch: prompt under a
+// permitting policy, then re-run with SandboxType none. It returns the escalated
+// output and true only when the retry ran and succeeded (no second denial);
+// otherwise it returns (nil, false) so the caller surfaces the original denial.
+//
+// Under danger-full-access the first attempt already runs unsandboxed, so a
+// denial cannot reach this path; under approval_policy=never the escalation is
+// skipped (wantsNoSandboxApproval is false), preserving existing behavior.
+func (e unifiedExecCommandExecutor) maybeEscalateUnifiedExec(ctx context.Context, h *toolHandlerContext, base unifiedExecRequestParams) (*unifiedexec.Output, bool) {
+	decision := resolveSandboxEscalation(ctx, h.Session, sandboxEscalationRequest{
+		Turn:    h.Turn,
+		CallID:  h.CallID,
+		Command: base.Argv,
+		Cwd:     base.Cwd,
+	})
+	if decision != sandboxEscalationRetryUnsandboxed {
+		return nil, false
+	}
+
+	// The denied attempt's process id was released, so the retry reserves a fresh
+	// one and re-runs with the sandbox forced off (SandboxType none).
+	retryParams := base
+	retryParams.ProcessID = e.exec.Manager().AllocateProcessID()
+	retryParams.ForceSandboxNone = true
+	retryOut, retryErr := e.exec.ExecCommand(ctx, buildUnifiedExecRequest(retryParams))
+	if retryErr != nil {
+		// A second denial (or failure) is not re-escalated; surface the original
+		// denial unchanged, matching the orchestrator's single-retry contract.
+		return nil, false
+	}
+	return retryOut, true
 }
 
 // unifiedExecRequestParams bundles the inputs needed to construct an
@@ -302,6 +352,10 @@ type unifiedExecRequestParams struct {
 	Cwd string
 	// TTY requests a pseudo-terminal.
 	TTY bool
+	// ForceSandboxNone forces the spawn to run with SandboxType none regardless of
+	// the turn policy. It is set only on the escalated (post-approval) retry,
+	// mirroring ToolOrchestrator::run's retry_sandbox = SandboxType::None.
+	ForceSandboxNone bool
 }
 
 // buildUnifiedExecRequest constructs the ExecCommandRequest for an exec_command
@@ -324,7 +378,7 @@ func buildUnifiedExecRequest(p unifiedExecRequestParams) *unifiedexec.ExecComman
 		}
 	}
 
-	return &unifiedexec.ExecCommandRequest{
+	req := &unifiedexec.ExecCommandRequest{
 		Command:                 p.Argv,
 		HookCommand:             p.HookCommand,
 		CallID:                  p.CallID,
@@ -340,6 +394,13 @@ func buildUnifiedExecRequest(p unifiedExecRequestParams) *unifiedexec.ExecComman
 		FileSystemSandboxPolicy: pol.FileSystemSandboxPolicy,
 		NetworkSandboxPolicy:    pol.NetworkSandboxPolicy,
 	}
+	// The escalated retry forces the sandbox off (ToolOrchestrator::run's
+	// retry_sandbox = SandboxType::None); the policy fields are left at the
+	// resolved values but are inert once the backend is none.
+	if p.ForceSandboxNone {
+		req.SandboxType = sandbox.SandboxTypeNone
+	}
+	return req
 }
 
 // parseUnifiedExecCommandArgs decodes and validates exec_command arguments.
