@@ -26,13 +26,17 @@ client 侧 0 调用;`networkproxy`/MITM 与 `execpolicy` 的接线代码
 
 ---
 
-## A 类 · 交互安全 / 可用性底线(建议最先补)
+## A 类 · 交互安全 / 可用性底线 ✅ 已于 v0.3.0 全部接线
 
-| # | 功能 | 现状 | 缺什么 | 规模 |
-|---|------|------|--------|------|
-| A1 | **TUI 审批弹窗** | 审批引擎(`internal/core/approvals.go` 等,28 处逻辑)+ overlay 组件(`internal/tui/overlay_approval.go`)都在;headless `exec` 默认 `on-request` 策略可用 | `internal/tui/chat.go` applyEvent 缺 `exec_approval_request` / `apply_patch_approval_request` 分支 → 交互模式下需审批/需升权的命令不弹窗,模型只能放弃(已实测:read-only 沙箱下写文件被拦、升权请求无法批准) | 小 |
-| A2 | **自动压缩触发** | `internal/core/event_compact.go::runInlineAutoCompactTask` 已移植,`auto_compact_window.go` 窗口会计完整 | **零调用者** —— 超 token 限制不会自动压缩,只能手动 `/compact` | 小 |
-| A3 | **request_user_input / request_permissions 事件** | 工具执行器在 | TUI 无事件分支,模型请求用户输入/权限时无提示 | 小 |
+| # | 功能 | 状态 |
+|---|------|------|
+| A1 | **TUI 审批弹窗** | ✅ v0.3.0:`chat_bottom.handleCoreEvent` 路由 `exec_approval_request` / `apply_patch_approval_request` → ApprovalOverlay;决策延迟成 tea.Cmd 回送(修复了与 /model 同类的事件循环死锁) |
+| A2 | **自动压缩触发** | ✅ v0.3.0:`runTurn` 在首次 sampling 前调 `maybePreSamplingAutoCompact`,token 总量 ≥ 模型 `auto_compact_token_limit` 时自动内联压缩(port of run_pre_sampling_compact);失败不阻断 turn |
+| A3 | **request_user_input / request_permissions 事件** | ✅ v0.3.0:`request_user_input` → RequestUserInputOverlay,`request_permissions` → ApprovalOverlay(permissions);两个 overlay 的同步 sender 死锁一并修复 |
+
+> 附带(v0.3.0):**命令文本折叠**——ExecCell header 把多行/超长命令压成单行
+> `▸ … [...]` 摘要(对齐 codex exec.rs),不再刷屏;**Working 状态行 + Worked-for
+> 分隔线**(v0.2.3)。
 
 ## B 类 · 功能可见性(组件在,UI 不显示)
 

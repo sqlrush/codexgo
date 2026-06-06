@@ -152,3 +152,29 @@ func TestSeparatorGatedOnWorkActivity(t *testing.T) {
 		t.Errorf("elapsed = %ds, want 125", sep.ElapsedSeconds)
 	}
 }
+
+// TestExecCommandFolds verifies a multi-line / overlong command renders as a
+// single folded header line with a " [...]" suffix (no viewport-flooding wrap).
+func TestExecCommandFolds(t *testing.T) {
+	heredoc := "/bin/zsh -lc cat > f << EOF\n" + strings.Repeat("x\n", 200) + "EOF"
+	cell := NewExecCell(LoadTheme(nil, Capabilities{}), []string{"/bin/zsh", "-lc", heredoc})
+	lines := cell.Lines(60)
+	// Header must be one line; without folding the heredoc would explode into
+	// hundreds of wrapped rows. The first line is the command header.
+	if len(lines) == 0 {
+		t.Fatalf("no lines rendered")
+	}
+	header := ""
+	for _, sp := range lines[0].Spans {
+		header += sp.Text
+	}
+	if strings.Contains(header, "\n") {
+		t.Fatalf("header contains newline (not folded): %q", header)
+	}
+	if w := runeDisplayWidth(header); w > 60 {
+		t.Fatalf("header width %d exceeds 60: %q", w, header)
+	}
+	if !strings.Contains(header, "[...]") {
+		t.Errorf("folded header should carry the [...] suffix: %q", header)
+	}
+}

@@ -7,6 +7,21 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// runCmd executes a tea.Cmd (and any nested batch commands) synchronously, so
+// tests can observe the events deferred-callback overlays emit. The test
+// AppEventSender delivers synchronously, so a single execution suffices per cmd.
+func runCmd(cmd tea.Cmd) {
+	if cmd == nil {
+		return
+	}
+	msg := cmd()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, c := range batch {
+			runCmd(c)
+		}
+	}
+}
+
 // keyMsg builds a tea.KeyMsg for the given key string for tests.
 func keyMsg(s string) tea.KeyMsg {
 	switch s {
@@ -394,7 +409,7 @@ func TestApprovalExecApproveEmitsDecision(t *testing.T) {
 	o := NewApprovalOverlay(ApprovalRequest{
 		Kind: ApprovalExec, ThreadID: "t1", ID: "call-1", Command: []string{"ls"},
 	}, sender)
-	o.HandleKey(keyMsg("y")) // approve shortcut
+	runCmd(o.HandleKey(keyMsg("y"))) // approve shortcut (decision is deferred)
 	if !o.IsComplete() {
 		t.Fatalf("overlay should be complete after decision")
 	}
@@ -418,6 +433,7 @@ func TestApprovalEscCancelsWithAbort(t *testing.T) {
 	if o.OnCtrlC() != CancellationHandled {
 		t.Fatalf("ctrl+c should be handled")
 	}
+	runCmd(o.PendingCmd()) // cancel decision is deferred
 	if !o.IsComplete() {
 		t.Fatalf("overlay should be done after cancel")
 	}
@@ -431,11 +447,11 @@ func TestApprovalQueueAdvances(t *testing.T) {
 	sender, got := captureSender()
 	o := NewApprovalOverlay(ApprovalRequest{Kind: ApprovalExec, ThreadID: "t", ID: "a", Command: []string{"x"}}, sender)
 	o.EnqueueRequest(ApprovalRequest{Kind: ApprovalPatch, ThreadID: "t", ID: "b"})
-	o.HandleKey(keyMsg("y")) // answer first; advance to queued patch
+	runCmd(o.HandleKey(keyMsg("y"))) // answer first; advance to queued patch
 	if o.IsComplete() {
 		t.Fatalf("overlay should not be complete while a queued request remains")
 	}
-	o.HandleKey(keyMsg("y")) // approve patch
+	runCmd(o.HandleKey(keyMsg("y"))) // approve patch
 	if !o.IsComplete() {
 		t.Fatalf("overlay should complete after queue drained")
 	}
@@ -453,7 +469,7 @@ func TestApprovalElicitationCancelOnEsc(t *testing.T) {
 	o := NewApprovalOverlay(ApprovalRequest{
 		Kind: ApprovalMcpElicitation, ThreadID: "t", ServerName: "srv", RequestID: "r1", Message: "approve?",
 	}, sender)
-	o.HandleKey(keyMsg("esc"))
+	runCmd(o.HandleKey(keyMsg("esc")))
 	ev := (*got)[0].(SubmitThreadOpEvent)
 	if ev.Command.Kind != AppCommandResolveElicitation {
 		t.Fatalf("expected resolve elicitation, got %#v", ev.Command)
@@ -473,8 +489,8 @@ func TestUserInputOptionSubmit(t *testing.T) {
 			ID: "q1", Question: "Pick", Options: []UserInputOption{{Label: "A"}, {Label: "B"}},
 		}},
 	}, sender)
-	o.HandleKey(keyMsg("down"))  // select B
-	o.HandleKey(keyMsg("enter")) // submit (last question)
+	o.HandleKey(keyMsg("down"))          // select B
+	runCmd(o.HandleKey(keyMsg("enter"))) // submit (deferred answer cmd)
 	if !o.IsComplete() {
 		t.Fatalf("overlay should complete after submitting the only question")
 	}
@@ -499,6 +515,7 @@ func TestUserInputInterruptOnCtrlC(t *testing.T) {
 	if o.OnCtrlC() != CancellationHandled {
 		t.Fatalf("ctrl+c should be handled")
 	}
+	runCmd(o.PendingCmd()) // interrupt is deferred
 	if !o.IsComplete() {
 		t.Fatalf("overlay should finish on interrupt")
 	}
@@ -590,7 +607,11 @@ func TestOverlayStackRoutesToTop(t *testing.T) {
 		Kind: ApprovalExec, ThreadID: "t", ID: "c", Command: []string{"ls"},
 	}, sender))
 	// Esc routes through cancellation since approval does not prefer esc-to-key.
-	s, _ = s.HandleKey(keyMsg("esc"))
+	// The cancel decision is deferred into the returned command (drained by the
+	// stack's cancel-key branch via PendingCmd).
+	var cmd tea.Cmd
+	s, cmd = s.HandleKey(keyMsg("esc"))
+	runCmd(cmd)
 	if !s.IsEmpty() {
 		t.Fatalf("approval should be pruned after esc cancel")
 	}

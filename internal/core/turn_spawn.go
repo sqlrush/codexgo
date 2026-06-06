@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 
+	"github.com/sqlrush/codexgo/internal/modelsmanager"
 	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
@@ -64,6 +65,12 @@ func newTurnContext(ctx context.Context, sess *Session, subID string, update *Se
 	if mm := sess.services.ModelsManager; mm != nil {
 		if mi, err := mm.ModelInfo(ctx, tc.ModelSlug); err == nil {
 			tc.ModelInfo = mi
+			// Surface the auto-compaction budget as an explicit field so runTurn
+			// does not have to interpret the opaque ModelInfo. The concrete type
+			// is modelsmanager.ModelInfo in the assembled binary.
+			if info, ok := mi.(modelsmanager.ModelInfo); ok {
+				tc.AutoCompactTokenLimit = info.AutoCompactTokenLimitResolved()
+			}
 		}
 	}
 	if mc := sess.services.ModelClient; mc != nil {

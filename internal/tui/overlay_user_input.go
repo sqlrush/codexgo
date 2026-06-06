@@ -76,6 +76,9 @@ type RequestUserInputOverlay struct {
 	focus    uiFocus
 	done     bool
 	notesBuf string
+	// pending holds a deferred sender command (answer submission / cancel
+	// interrupt) drained by HandleKey / PendingCmd after Update returns.
+	pending tea.Cmd
 }
 
 // NewRequestUserInputOverlay builds the overlay for an initial request.
@@ -276,7 +279,12 @@ func (o *RequestUserInputOverlay) submitAnswers() {
 		answers[q.ID] = map[string]any{"answers": answerList}
 	}
 	raw, _ := json.Marshal(map[string]any{"answers": answers})
-	o.sender.UserInputAnswer(o.request.TurnID, raw)
+	// Deferred: UserInputAnswer → AppEventSender.Send → unbuffered Program.Send
+	// deadlocks if called synchronously inside Update. The wrapper HandleKey /
+	// PendingCmd drain o.pending after Update returns.
+	s := o.sender
+	tid := o.request.TurnID
+	o.pending = func() tea.Msg { s.UserInputAnswer(tid, raw); return nil }
 	o.advanceQueueOrComplete()
 }
 
@@ -292,11 +300,34 @@ func (o *RequestUserInputOverlay) advanceQueueOrComplete() {
 	o.done = true
 }
 
-// HandleKey implements OverlayView.
+// HandleKey implements OverlayView. It wraps handleKeyInner to drain any
+// deferred sender command (e.g. answer submission) set during key handling,
+// so the sender call runs on bubbletea's command goroutine, not inside Update.
+func (o *RequestUserInputOverlay) HandleKey(msg tea.KeyMsg) tea.Cmd {
+	cmd := o.handleKeyInner(msg)
+	if p := o.pending; p != nil {
+		o.pending = nil
+		if cmd != nil {
+			return tea.Batch(cmd, p)
+		}
+		return p
+	}
+	return cmd
+}
+
+// PendingCmd implements the overlay-stack deferred-callback seam (drained
+// after the cancel-key branch in OverlayStack.HandleKey).
+func (o *RequestUserInputOverlay) PendingCmd() tea.Cmd {
+	c := o.pending
+	o.pending = nil
+	return c
+}
+
+// handleKeyInner is the original key dispatch.
 //
 // Port of RequestUserInputOverlay::handle_key_event (core paths; the confirm
 // unanswered sub-modal and paste handling are omitted as deviations).
-func (o *RequestUserInputOverlay) HandleKey(msg tea.KeyMsg) tea.Cmd {
+func (o *RequestUserInputOverlay) handleKeyInner(msg tea.KeyMsg) tea.Cmd {
 	key := msg.String()
 
 	// Esc clears notes back to options for option questions.
@@ -498,7 +529,8 @@ func (o *RequestUserInputOverlay) OnCtrlC() CancellationEvent {
 		}
 		return CancellationHandled
 	}
-	o.sender.Interrupt()
+	s := o.sender
+	o.pending = func() tea.Msg { s.Interrupt(); return nil }
 	o.done = true
 	return CancellationHandled
 }

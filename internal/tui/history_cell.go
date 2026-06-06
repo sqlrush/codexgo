@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/mattn/go-runewidth"
+
 	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
@@ -256,28 +258,65 @@ func (c ExecCell) Complete(exit int32) ExecCell {
 const maxExecOutputLines = 20
 
 // Lines implements HistoryCell.
+//
+// The command header is folded to a SINGLE line: the first line of the joined
+// command, width-clamped with a " [...]" suffix when it overflows or the
+// command spans multiple lines (port of the exec.rs first-line/grapheme-budget
+// truncation). Without this a heredoc-style command (e.g. `cat > f << EOF …200
+// lines… EOF`) would word-wrap across the whole viewport. The header line is
+// kept out of WordWrapLines so it can never re-expand; only the output body
+// wraps.
 func (c ExecCell) Lines(width int) []Line {
-	var out []Line
 	header := c.headerStyle()
-	cmd := strings.Join(c.command, " ")
-	out = append(out, Line{Spans: []Span{
-		{Text: c.statusGlyph() + " ", Style: header},
+	glyph := c.statusGlyph() + " "
+	budget := width - runeDisplayWidth(glyph)
+	cmd := foldCommandText(strings.Join(c.command, " "), budget)
+	headerLine := Line{Spans: []Span{
+		{Text: glyph, Style: header},
 		{Text: cmd, Style: Style{Fg: c.theme.Foreground, Bold: true}},
-	}})
+	}}
 
+	var body []Line
 	outLines := splitTrimmed(c.output)
 	if len(outLines) > maxExecOutputLines {
 		hidden := len(outLines) - maxExecOutputLines
 		outLines = outLines[len(outLines)-maxExecOutputLines:]
-		out = append(out, Line{Spans: []Span{{Text: fmt.Sprintf("  … %d earlier lines hidden", hidden), Style: Style{Fg: c.theme.Dim}}}})
+		body = append(body, Line{Spans: []Span{{Text: fmt.Sprintf("  … %d earlier lines hidden", hidden), Style: Style{Fg: c.theme.Dim}}}})
 	}
 	for _, l := range outLines {
-		out = append(out, Line{Spans: []Span{{Text: "  " + l, Style: Style{Fg: c.theme.Dim}}}})
+		body = append(body, Line{Spans: []Span{{Text: "  " + l, Style: Style{Fg: c.theme.Dim}}}})
 	}
 	if width > 0 {
-		out = WordWrapLines(out, width)
+		body = WordWrapLines(body, width)
 	}
-	return out
+	return append([]Line{headerLine}, body...)
+}
+
+// foldCommandText reduces a (possibly multi-line, possibly very long) command
+// string to a single display line within budget columns, appending " [...]"
+// when content was dropped — mirroring codex's exec-cell command truncation.
+func foldCommandText(s string, budget int) string {
+	const suffix = " [...]"
+	if budget < runewidth.StringWidth(suffix)+1 {
+		budget = runewidth.StringWidth(suffix) + 1
+	}
+	first := s
+	multiline := false
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		first = s[:i]
+		multiline = true
+	}
+	if runewidth.StringWidth(first) > budget {
+		// Truncate appends suffix and guarantees the result fits in budget.
+		return runewidth.Truncate(first, budget, suffix)
+	}
+	if multiline {
+		if runewidth.StringWidth(first)+runewidth.StringWidth(suffix) <= budget {
+			return first + suffix
+		}
+		return runewidth.Truncate(first, budget, suffix)
+	}
+	return first
 }
 
 func (c ExecCell) statusGlyph() string {

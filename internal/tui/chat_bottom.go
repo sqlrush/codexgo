@@ -131,7 +131,8 @@ func (p ChatBottomPane) Update(msg tea.Msg) (BottomPane, tea.Cmd) {
 
 // handleCoreEvent tracks turn lifecycle events to drive the working-status row
 // (the Rust ChatWidget flips its StatusIndicatorWidget on TaskStarted /
-// TaskComplete; errors and aborts also clear it).
+// TaskComplete; errors and aborts also clear it) and pushes interaction
+// overlays for approval / permission / user-input requests.
 func (p ChatBottomPane) handleCoreEvent(ev CoreEventMsg) (BottomPane, tea.Cmd) {
 	switch ev.Event.Msg.Type {
 	case protocol.EventMsgKindTurnStarted:
@@ -147,7 +148,40 @@ func (p ChatBottomPane) handleCoreEvent(ev CoreEventMsg) (BottomPane, tea.Cmd) {
 		p.taskRunning = false
 		p.composer = p.composer.SetTaskRunning(false)
 		return p, nil
+
+	// A1: exec / apply-patch approval requests -> approval modal.
+	case protocol.EventMsgKindExecApprovalRequest:
+		if r := ev.Event.Msg.ExecApprovalRequest; r != nil && p.sender != nil {
+			return p.pushApproval(execApprovalRequest(r))
+		}
+	case protocol.EventMsgKindApplyPatchApprovalRequest:
+		if r := ev.Event.Msg.ApplyPatchApprovalRequest; r != nil && p.sender != nil {
+			return p.pushApproval(patchApprovalRequest(r))
+		}
+	// A3: permission grant requests -> approval modal (permissions kind).
+	case protocol.EventMsgKindRequestPermissions:
+		if r := ev.Event.Msg.RequestPermissions; r != nil && p.sender != nil {
+			return p.pushApproval(permissionsApprovalRequest(r))
+		}
+	// A3: free-form user-input questions -> input overlay.
+	case protocol.EventMsgKindRequestUserInput:
+		if r := ev.Event.Msg.RequestUserInput; r != nil && p.sender != nil {
+			p.overlays = p.overlays.Push(NewRequestUserInputOverlay(userInputRequestFromEvent(r), p.sender))
+			return p, nil
+		}
 	}
+	return p, nil
+}
+
+// pushApproval pushes (or enqueues onto an existing) approval overlay.
+func (p ChatBottomPane) pushApproval(req ApprovalRequest) (BottomPane, tea.Cmd) {
+	if top, ok := p.overlays.Top(); ok {
+		if ao, isApproval := top.(*ApprovalOverlay); isApproval {
+			ao.EnqueueRequest(req)
+			return p, nil
+		}
+	}
+	p.overlays = p.overlays.Push(NewApprovalOverlay(req, p.sender))
 	return p, nil
 }
 

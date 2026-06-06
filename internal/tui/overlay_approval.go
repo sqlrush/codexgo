@@ -102,6 +102,9 @@ type ApprovalOverlay struct {
 	done     bool // overlay finished
 	title    string
 	header   []string
+	// pending holds a deferred cancel command for the OnCtrlC path (drained
+	// via PendingCmd by the overlay stack).
+	pending tea.Cmd
 }
 
 // NewApprovalOverlay builds the overlay for an initial request.
@@ -143,33 +146,43 @@ func (o *ApprovalOverlay) setCurrent(request ApprovalRequest) {
 	}, o.sender)
 }
 
-func (o *ApprovalOverlay) applySelection(idx int) {
+// applySelection records the decision and returns a command that delivers it.
+// The sender call is DEFERRED into the returned tea.Cmd: routing a decision
+// calls AppEventSender.Send → the unbuffered Program.Send, which deadlocks if
+// invoked synchronously inside Update (same hazard fixed for the list overlay).
+func (o *ApprovalOverlay) applySelection(idx int) tea.Cmd {
 	if o.complete || o.current == nil {
-		return
+		return nil
 	}
 	if idx < 0 || idx >= len(o.options) {
-		return
+		return nil
 	}
-	o.routeDecision(o.options[idx])
+	cmd := o.routeDecision(o.options[idx])
 	o.complete = true
 	o.advanceQueue()
+	return cmd
 }
 
-func (o *ApprovalOverlay) routeDecision(opt approvalOption) {
+func (o *ApprovalOverlay) routeDecision(opt approvalOption) tea.Cmd {
 	req := o.current
+	s := o.sender
 	switch opt.kind {
 	case decExec:
-		o.sender.ExecApproval(req.ThreadID, req.ID, opt.execDec)
+		tid, id, dec := req.ThreadID, req.ID, opt.execDec
+		return func() tea.Msg { s.ExecApproval(tid, id, dec); return nil }
 	case decPatch:
-		o.sender.PatchApproval(req.ThreadID, req.ID, opt.execDec)
+		tid, id, dec := req.ThreadID, req.ID, opt.execDec
+		return func() tea.Msg { s.PatchApproval(tid, id, dec); return nil }
 	case decPermissions:
-		o.routePermissions(req, opt.permsDec)
+		return o.routePermissions(req, opt.permsDec)
 	case decElicitation:
-		o.sender.ResolveElicitation(req.ThreadID, req.ServerName, req.RequestID, opt.elicitDec, nil)
+		tid, sn, rid, dec := req.ThreadID, req.ServerName, req.RequestID, opt.elicitDec
+		return func() tea.Msg { s.ResolveElicitation(tid, sn, rid, dec, nil); return nil }
 	}
+	return nil
 }
 
-func (o *ApprovalOverlay) routePermissions(req *ApprovalRequest, dec permissionsDecision) {
+func (o *ApprovalOverlay) routePermissions(req *ApprovalRequest, dec permissionsDecision) tea.Cmd {
 	scope := "turn"
 	strict := false
 	var granted json.RawMessage
@@ -193,7 +206,9 @@ func (o *ApprovalOverlay) routePermissions(req *ApprovalRequest, dec permissions
 		payload["permissions"] = granted
 	}
 	raw, _ := json.Marshal(payload)
-	o.sender.RequestPermissionsResponse(req.ThreadID, req.ID, raw)
+	s := o.sender
+	tid, id := req.ThreadID, req.ID
+	return func() tea.Msg { s.RequestPermissionsResponse(tid, id, raw); return nil }
 }
 
 func (o *ApprovalOverlay) advanceQueue() {
@@ -210,53 +225,68 @@ func (o *ApprovalOverlay) advanceQueue() {
 // finishes the overlay (discarding the queue).
 //
 // Port of ApprovalOverlay::cancel_current_request.
-func (o *ApprovalOverlay) cancelCurrent() {
+func (o *ApprovalOverlay) cancelCurrent() tea.Cmd {
 	if o.done {
-		return
+		return nil
 	}
+	var cmd tea.Cmd
 	if !o.complete && o.current != nil {
+		s := o.sender
 		switch o.current.Kind {
 		case ApprovalExec:
-			o.sender.ExecApproval(o.current.ThreadID, o.current.ID, string(reviewDecisionAbort))
+			tid, id := o.current.ThreadID, o.current.ID
+			cmd = func() tea.Msg { s.ExecApproval(tid, id, string(reviewDecisionAbort)); return nil }
 		case ApprovalPatch:
-			o.sender.PatchApproval(o.current.ThreadID, o.current.ID, string(reviewDecisionAbort))
+			tid, id := o.current.ThreadID, o.current.ID
+			cmd = func() tea.Msg { s.PatchApproval(tid, id, string(reviewDecisionAbort)); return nil }
 		case ApprovalPermissions:
-			o.routePermissions(o.current, denyPermissions)
+			cmd = o.routePermissions(o.current, denyPermissions)
 		case ApprovalMcpElicitation:
-			o.sender.ResolveElicitation(o.current.ThreadID, o.current.ServerName, o.current.RequestID, elicitationCancel, nil)
+			tid, sn, rid := o.current.ThreadID, o.current.ServerName, o.current.RequestID
+			cmd = func() tea.Msg { s.ResolveElicitation(tid, sn, rid, elicitationCancel, nil); return nil }
 		}
 	}
 	o.queue = nil
 	o.done = true
+	return cmd
 }
 
-// HandleKey implements OverlayView.
+// HandleKey implements OverlayView. Decision/cancel sender calls are deferred
+// into the returned command (see applySelection).
 func (o *ApprovalOverlay) HandleKey(msg tea.KeyMsg) tea.Cmd {
 	key := msg.String()
 	if key == "esc" {
-		o.cancelCurrent()
-		return nil
+		return o.cancelCurrent()
 	}
 	// Per-option shortcut match before list navigation.
 	for i, opt := range o.options {
 		for _, sc := range opt.shortcuts {
 			if sc == key {
-				o.applySelection(i)
-				return nil
+				return o.applySelection(i)
 			}
 		}
 	}
 	cmd := o.list.HandleKey(msg)
 	if idx, ok := o.list.TakeLastSelectedIndex(); ok {
-		o.applySelection(idx)
+		if ac := o.applySelection(idx); ac != nil {
+			cmd = tea.Batch(cmd, ac)
+		}
 	}
 	return cmd
 }
 
-// OnCtrlC implements overlayCtrlC.
+// OnCtrlC implements overlayCtrlC. The cancel decision is deferred into
+// PendingCmd (the overlay stack drains it after the cancel-key branch).
 func (o *ApprovalOverlay) OnCtrlC() CancellationEvent {
-	o.cancelCurrent()
+	o.pending = o.cancelCurrent()
 	return CancellationHandled
+}
+
+// PendingCmd implements the overlay-stack deferred-callback seam.
+func (o *ApprovalOverlay) PendingCmd() tea.Cmd {
+	c := o.pending
+	o.pending = nil
+	return c
 }
 
 // IsComplete implements OverlayView.

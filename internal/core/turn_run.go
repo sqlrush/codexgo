@@ -50,6 +50,12 @@ func runTurn(ctx context.Context, sess *Session, tc *TurnContext, input []turnIn
 	// request, mirroring the Rust record/drain ordering (turn-input subset).
 	recordTurnInput(sess, input)
 
+	// A2: pre-sampling auto-compaction. When the running token total has reached
+	// the model's auto-compaction budget, replace history with a summary before
+	// the first sampling request (port of run_pre_sampling_compact). Failures are
+	// non-fatal — the turn proceeds on the un-compacted history.
+	maybePreSamplingAutoCompact(ctx, sess, tc)
+
 	// STUB: build_skills_and_plugins, run_pre_sampling_compact,
 	// run_pending_session_start_hooks, run_hooks_and_record_inputs,
 	// merge_connector_selection, and track_turn_resolved_config_analytics are

@@ -104,6 +104,39 @@ const (
 // provider's supports_remote_compaction flag is not consulted here.
 func shouldUseRemoteCompactTask(_ *TurnContext) bool { return false }
 
+// shouldAutoCompact reports whether the running token total has reached the
+// model's auto-compaction budget. A nil or non-positive limit disables it
+// (mirrors the Rust auto_compact_token_status: limit comes from
+// model_auto_compact_token_limit / model_info.auto_compact_token_limit()).
+func shouldAutoCompact(totalTokens int64, limit *int64) bool {
+	return limit != nil && *limit > 0 && totalTokens >= *limit
+}
+
+// maybePreSamplingAutoCompact runs an inline compaction before the first
+// sampling request when the session's running token total has reached the
+// turn model's auto-compaction budget. It is the turn-loop trigger that was
+// previously missing (run_pre_sampling_compact in the reference). Compaction
+// failures are swallowed: the turn continues on the un-compacted history
+// rather than aborting, matching the reference's best-effort pre-turn pass.
+func maybePreSamplingAutoCompact(ctx context.Context, sess *Session, tc *TurnContext) {
+	if tc.AutoCompactTokenLimit == nil || *tc.AutoCompactTokenLimit <= 0 {
+		return
+	}
+	var total int64
+	sess.WithState(func(st *SessionState) {
+		if info := st.TokenInfo(); info != nil {
+			total = info.TotalTokenUsage.TotalTokens
+		}
+	})
+	if !shouldAutoCompact(total, tc.AutoCompactTokenLimit) {
+		return
+	}
+	if ctx.Err() != nil {
+		return
+	}
+	_ = runInlineAutoCompactTask(ctx, sess, tc, DoNotInjectInitialContext)
+}
+
 // runInlineAutoCompactTask runs an inline auto-compaction using the turn's
 // configured compaction prompt. It is the Go analogue of the Rust
 // `run_inline_auto_compact_task` (the auto-triggered entry point used by the

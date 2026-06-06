@@ -60,6 +60,11 @@ type TurnContext struct {
 	ExperimentalRequestUserInput *bool
 	// ModelContextWindow is the effective context window in tokens, if known.
 	ModelContextWindow *int64
+	// AutoCompactTokenLimit is the resolved auto-compaction token budget for the
+	// turn's model, if known. When the running total reaches it, runTurn fires a
+	// pre-sampling inline compaction (port of run_pre_sampling_compact's
+	// auto_compact_token_status check). Nil/<=0 disables auto-compaction.
+	AutoCompactTokenLimit *int64
 
 	// Tools is the resolved tool specification visible to the model this turn.
 	Tools []tools.ToolSpec
