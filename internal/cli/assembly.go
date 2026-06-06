@@ -86,7 +86,32 @@ func buildAssemblyWithDefaults() (*appserver.Assembly, appserver.Defaults, error
 	if err != nil {
 		return nil, appserver.Defaults{}, fmt.Errorf("cli: build model client factory: %w", err)
 	}
+	// With a real provider client wired, an unconfigured model resolves from the
+	// bundled catalog like codex (ModelsManager::get_default_model -> the first
+	// picker-visible preset), NOT the offline mock slug — the backend rejects
+	// "gpt-mock". CODEXGO_MODEL still wins over the catalog as the env override
+	// (resolveDefaultModel precedence), so only the final fallback changes here.
+	if model == "" && os.Getenv("CODEXGO_MODEL") == "" {
+		if slug := bundledDefaultModelSlug(); slug != "" {
+			model = slug
+		}
+	}
 	return assembleResult(factory, cfg.CodexHome, model, selected.ID, derefSandboxMode(cfg.SandboxMode), trustGate)
+}
+
+// bundledDefaultModelSlug resolves the default model slug from the bundled
+// catalog the way codex's session does with no configured model
+// (session/mod.rs get_default_model -> default_model_from_available): the
+// first picker-visible preset wins (gpt-5.5 in the 0.136.0 catalog). It
+// returns "" when the bundle cannot be decoded so callers can keep their
+// existing fallback.
+func bundledDefaultModelSlug() string {
+	resp, err := modelsmanager.BundledModelsResponse()
+	if err != nil {
+		return ""
+	}
+	mgr := modelsmanager.NewStaticModelsManager(nil, resp)
+	return mgr.GetDefaultModel(context.Background(), nil, modelsmanager.RefreshOffline)
 }
 
 // buildProjectTrustGate returns a per-cwd predicate reporting whether the
