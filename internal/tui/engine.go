@@ -72,9 +72,17 @@ func NewEngine(cfg EngineConfig) *Engine {
 	}
 }
 
+// CodexVersion is the upstream codex CLI version codexgo impersonates as a
+// drop-in (the parity target). It is the version rendered in the session-header
+// card's "(v…)" title and reported in the initialize handshake — codex derives
+// both from its own CARGO_PKG_VERSION (0.136.0). codexgo's build identity
+// (cli.Version, e.g. "0.0.0-dev") is intentionally distinct: the TUI surfaces
+// the impersonated version so the first frame matches real codex byte-for-byte.
+const CodexVersion = "0.136.0"
+
 const (
 	defaultClientName    = "codex_tui"
-	defaultClientVersion = "0.136.0"
+	defaultClientVersion = CodexVersion
 )
 
 // ThreadID returns the active thread id, or "" before [Start] completes.

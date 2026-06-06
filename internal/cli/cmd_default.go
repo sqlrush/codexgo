@@ -38,7 +38,12 @@ func runDefaultNoSubcommand(ctx context.Context, _ ParsedCommandLine, streams St
 		Client:  client,
 		Workdir: resolveCwd(),
 		Model:   defaults.Model,
-		Version: Version,
+		// The session-header card renders the upstream codex version codexgo
+		// impersonates as a drop-in (tui.CodexVersion = 0.136.0), matching real
+		// codex which shows its own CARGO_PKG_VERSION — not codexgo's build
+		// identity (cli.Version). Leaving Version empty would default to the same
+		// value; passing it explicitly documents the intent.
+		Version: tui.CodexVersion,
 	}); err != nil {
 		fmt.Fprintln(streams.Stderr, "codex:", err)
 		return 1

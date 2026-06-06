@@ -35,7 +35,9 @@ type RunConfig struct {
 	// card. When empty the card omits the model value.
 	Model string
 	// Version is the CLI version string shown in the session-header card's title
-	// (rendered as "(v<Version>)"). When empty the card omits the version.
+	// (rendered as "(v<Version>)"). When empty it defaults to [CodexVersion], the
+	// upstream codex version codexgo impersonates as a drop-in, so the first frame
+	// matches real codex (which renders its own CARGO_PKG_VERSION).
 	Version string
 }
 
@@ -61,7 +63,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 
 	theme := LoadTheme(cfg.Tui, caps)
 	transcript := NewChatTranscript(theme).WithSessionHeader(
-		cfg.Version,
+		cfg.version(),
 		cfg.Model,
 		FormatDirectoryDisplay(cfg.workdir()),
 	)
@@ -114,6 +116,16 @@ func (cfg RunConfig) workdir() string {
 		return "."
 	}
 	return cfg.Workdir
+}
+
+// version returns the configured version, defaulting to the impersonated
+// upstream codex version ([CodexVersion]) when empty so the session-header card
+// matches real codex.
+func (cfg RunConfig) version() string {
+	if cfg.Version == "" {
+		return CodexVersion
+	}
+	return cfg.Version
 }
 
 // newWorkdirFileSearch builds an @mention completion function over root.

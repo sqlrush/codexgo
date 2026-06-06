@@ -140,8 +140,11 @@ func buildTheme(base builtinTheme, caps Capabilities) Theme {
 		SystemMessage:    lipgloss.NewStyle().Foreground(info),
 		ErrorMessage:     lipgloss.NewStyle().Foreground(errc).Bold(true),
 		BorderStyle:      lipgloss.NewStyle().Foreground(dim),
-		ComposerPrompt:   lipgloss.NewStyle().Foreground(primary).Bold(true),
-		StatusLine:       lipgloss.NewStyle().Foreground(dim),
+		// codex renders the composer prompt marker "›" with ratatui's `"›".bold()`
+		// (chat_composer.rs) — BOLD only, no foreground color — so the cell carries
+		// just the bold attribute. The gutter space after it is unstyled.
+		ComposerPrompt: lipgloss.NewStyle().Bold(true),
+		StatusLine:     lipgloss.NewStyle().Foreground(dim),
 	}
 }
 

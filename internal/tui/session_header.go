@@ -22,8 +22,11 @@ import (
 // The inner width is min(width-4, 56) clamped to the widest content row, matching
 // SESSION_HEADER_MAX_INNER_WIDTH. The "model:" and "directory:" labels are left
 // padded to the width of "directory:" (10) and each gets one trailing space, then
-// the value. SGR styling (the dim border, bold "OpenAI Codex", cyan "/model") is
-// applied via [Style]; the character grid is identical regardless.
+// the value. SGR styling is ported cell-for-cell from session.rs: the border,
+// the ">_ " prefix, the " " gap, the "(v…)" version, and the labels are all DIM
+// (SGR 2); "OpenAI Codex" is BOLD; "/model" is ratatui's NAMED cyan (SGR 36, via
+// [ANSICyan]); the model value and directory value are unstyled. The character
+// grid is identical regardless of styling.
 //
 // Wave-1 scope: reasoning effort, fast-status, and YOLO-mode rows are omitted
 // (they require state codexgo's headless TUI host does not surface at startup);
@@ -65,7 +68,11 @@ func (c SessionHeaderCell) Lines(width int) []Line {
 
 	dim := Style{Dim: true}
 	bold := Style{Bold: true}
-	cyan := Style{Fg: c.theme.Info}
+	// codex styles the "/model" hint with ratatui's NAMED `Color::Cyan`
+	// (session.rs: CHANGE_MODEL_HINT_COMMAND.cyan()), which renders as SGR 36 at
+	// every color depth — not the theme's info accent. Use the named ANSI cyan so
+	// the cell attribute matches byte-for-byte.
+	cyan := Style{Fg: ANSICyan}
 
 	// Content rows (without border chrome), as span lists.
 	title := []Span{

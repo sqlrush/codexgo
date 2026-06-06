@@ -198,12 +198,15 @@ func buildCodexgoBin(t *testing.T) string {
 // session-header card in scrollback, a one-row top inset, the bordered-less
 // composer block (top-pad + "› <placeholder>" + bottom-pad), and the default
 // status-line footer (model-with-reasoning · current-dir) — all cell-identical
-// to codex. The startup tooltip is disabled for both binaries
+// to codex. Wave 3 threaded the real CLI version (tui.CodexVersion = 0.136.0, the
+// upstream codex version codexgo impersonates), so the header title row
+// "│ >_ OpenAI Codex (v0.136.0) … │" now matches byte-for-byte and is NO LONGER
+// masked. The startup tooltip is disabled for both binaries
 // (writeFrameParityConfig sets tui.show_tooltips = false) because it is a
 // network-fetched, release- and time-volatile random announcement that cannot be
-// byte-matched. With it off, only four genuinely per-run rows remain volatile:
+// byte-matched. With the version unmasked, only three genuinely per-run rows
+// remain volatile:
 //
-//   - the CLI version in the header title ("(v…"),
 //   - the header "directory:" row (absolute per-run cwd, center-truncated),
 //   - the composer placeholder row (one of 8 entries, chosen per run at random
 //     INDEPENDENTLY by each binary — see composer_placeholder.go / chatwidget.rs
@@ -215,7 +218,6 @@ func buildCodexgoBin(t *testing.T) string {
 // only masked here because the trailing path is per-run.
 var frameMask = []string{
 	"directory:",   // header row: absolute per-run cwd (center-truncated)
-	"(v",           // CLI version string in the header title
 	"/private/var", // macOS temp-dir paths anywhere on a row (footer cwd)
 	"/var/folders", // macOS temp-dir paths (canonical form)
 	"/tmp",         // linux temp-dir paths

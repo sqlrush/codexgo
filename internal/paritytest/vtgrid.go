@@ -3,20 +3,35 @@ package paritytest
 // A small, dependency-free ANSI/VT100 terminal emulator used by the TUI
 // frame-differential harness (tui_frame_test.go). It interprets just enough of
 // the control sequences that codex's ratatui backend and codexgo's bubbletea
-// backend emit to reconstruct the visible character grid (a [Grid]) from a raw
-// byte stream captured off a PTY.
+// backend emit to reconstruct the visible cell grid (a [Grid]) from a raw byte
+// stream captured off a PTY.
 //
-// Scope (wave 1 — characters only):
+// Each cell records BOTH its rune AND its final SGR attributes (foreground /
+// background color — including 16-color, 256-indexed, and 24-bit RGB — plus
+// bold / dim / italic / underline / reverse). Two layers of comparison are
+// therefore possible against codex's output:
+//
+//   - characters only (the wave-1/2 bar), via [Grid.Row] / [Grid.String]; and
+//   - per-cell attributes (wave 3), via [Grid.CellAt] / [diffGridAttrs].
+//
+// Because the comparison is done on the reconstructed grid, escape ORDERING is
+// irrelevant: lipgloss (codexgo) and ratatui (codex) emit different SGR byte
+// sequences, but as long as each cell ends up with the same final attributes the
+// grids compare equal at the cell level.
+//
+// Scope of the control-sequence interpretation:
 //
 //   - CUP/HVP cursor positioning (CSI H / CSI f), CUU/CUD/CUF/CUB relative moves,
 //     CR/LF/BS, RI (reverse index, ESC M), NEL (ESC E).
-//   - ED (CSI J) and EL (CSI K) erase, in their 0/1/2 variants.
+//   - ED (CSI J) and EL (CSI K) erase, in their 0/1/2 variants. Erased cells are
+//     reset to a blank cell carrying the CURRENT background (matching how both
+//     backends fill the gap when a styled background is active).
 //   - DECSTBM scroll region (CSI r) plus scrolling on LF/RI within the region.
 //   - Alternate screen enter/leave (CSI ? 1049 h/l) — switches to a cleared grid
 //     so an alt-screen UI is read on its own surface.
-//   - SGR (CSI m) is parsed and dropped (colors are a later wave); cursor
-//     show/hide, bracketed paste, synchronized-update (?2026) and other private
-//     modes are consumed without visible effect.
+//   - SGR (CSI m) is now FULLY parsed into the live pen and stamped onto every
+//     written/erased cell; cursor show/hide, bracketed paste, synchronized-update
+//     (?2026) and other private modes are consumed without visible effect.
 //   - OSC sequences (ESC ] ... BEL | ST) and other ESC-prefixed shorts are
 //     consumed so they do not corrupt the cell stream.
 //
@@ -26,6 +41,7 @@ package paritytest
 // trailing filler cell is reserved), matching how both backends lay out text.
 
 import (
+	"fmt"
 	"strings"
 	"unicode/utf8"
 
@@ -48,25 +64,121 @@ var vtWidthCond = func() *runewidth.Condition {
 // contributes exactly its glyph (not glyph + filler space).
 const wideContinuation = rune(0)
 
+// ColorKind tags how a [Color] is encoded, mirroring ratatui's `Color` enum
+// shape (default, a named 16-color, an indexed palette entry, or 24-bit RGB).
+type ColorKind uint8
+
+const (
+	// ColorDefault is the terminal's default color (no SGR fg/bg override).
+	ColorDefault ColorKind = iota
+	// ColorIndexed is a 0..255 palette index. Values 0..15 carry the 16 named
+	// ANSI colors (so e.g. ratatui's Color::Cyan and an SGR-36 both normalize to
+	// index 6); 16..255 are the xterm fixed palette.
+	ColorIndexed
+	// ColorRGB is a 24-bit true-color value.
+	ColorRGB
+)
+
+// Color is a backend-neutral cell color: a default, a palette index, or 24-bit
+// RGB. Named ANSI colors are normalized to their 0..15 index so a comparison is
+// agnostic to whether a backend emitted "SGR 36" (named cyan) or "SGR 38;5;6"
+// (indexed cyan) — both map to ColorIndexed{6}.
+type Color struct {
+	Kind ColorKind
+	// Idx is the palette index when Kind == ColorIndexed.
+	Idx uint8
+	// R, G, B are the channels when Kind == ColorRGB.
+	R, G, B uint8
+}
+
+// defaultColor is the zero value: the terminal default.
+var defaultColor = Color{Kind: ColorDefault}
+
+// String renders a color compactly for diff output.
+func (c Color) String() string {
+	switch c.Kind {
+	case ColorIndexed:
+		return fmt.Sprintf("idx%d", c.Idx)
+	case ColorRGB:
+		return fmt.Sprintf("#%02x%02x%02x", c.R, c.G, c.B)
+	default:
+		return "default"
+	}
+}
+
+// CellAttr is the final SGR state stamped on a cell.
+type CellAttr struct {
+	Fg, Bg                                Color
+	Bold, Dim, Italic, Underline, Reverse bool
+}
+
+// defaultAttr is the reset pen: default colors, no modifiers.
+var defaultAttr = CellAttr{Fg: defaultColor, Bg: defaultColor}
+
+// String renders the attribute set compactly for diff output (only the
+// non-default fields, so equal cells read as "·").
+func (a CellAttr) String() string {
+	var parts []string
+	if a.Fg.Kind != ColorDefault {
+		parts = append(parts, "fg="+a.Fg.String())
+	}
+	if a.Bg.Kind != ColorDefault {
+		parts = append(parts, "bg="+a.Bg.String())
+	}
+	if a.Bold {
+		parts = append(parts, "bold")
+	}
+	if a.Dim {
+		parts = append(parts, "dim")
+	}
+	if a.Italic {
+		parts = append(parts, "italic")
+	}
+	if a.Underline {
+		parts = append(parts, "underline")
+	}
+	if a.Reverse {
+		parts = append(parts, "reverse")
+	}
+	if len(parts) == 0 {
+		return "·"
+	}
+	return strings.Join(parts, ",")
+}
+
+// Cell is one display column: a rune plus its final SGR attributes.
+type Cell struct {
+	R    rune
+	Attr CellAttr
+}
+
 // Grid is a fixed-size character grid: rows of cells, each cell one display
 // column. It is the cell-level rendering target both binaries are compared on.
 type Grid struct {
 	Rows  int
 	Cols  int
-	cells [][]rune
+	cells [][]Cell
 }
 
-// newGrid builds a blank rows×cols grid filled with spaces.
+// newGrid builds a blank rows×cols grid filled with default-attr spaces.
 func newGrid(rows, cols int) *Grid {
-	cells := make([][]rune, rows)
+	cells := make([][]Cell, rows)
 	for r := range cells {
-		row := make([]rune, cols)
+		row := make([]Cell, cols)
 		for c := range row {
-			row[c] = ' '
+			row[c] = Cell{R: ' ', Attr: defaultAttr}
 		}
 		cells[r] = row
 	}
 	return &Grid{Rows: rows, Cols: cols, cells: cells}
+}
+
+// CellAt returns the cell at (r,c), or a blank default cell when out of range.
+func (g *Grid) CellAt(r, c int) Cell {
+	if r < 0 || r >= g.Rows || c < 0 || c >= g.Cols {
+		return Cell{R: ' ', Attr: defaultAttr}
+	}
+	return g.cells[r][c]
 }
 
 // Row returns row r as a string with trailing spaces stripped (the per-row
@@ -78,15 +190,15 @@ func (g *Grid) Row(r int) string {
 	}
 	var b strings.Builder
 	for _, c := range g.cells[r] {
-		if c == wideContinuation {
+		if c.R == wideContinuation {
 			continue
 		}
-		b.WriteRune(c)
+		b.WriteRune(c.R)
 	}
 	return strings.TrimRight(b.String(), " ")
 }
 
-// Rows returns every row as a trailing-space-stripped string.
+// AllRows returns every row as a trailing-space-stripped string.
 func (g *Grid) AllRows() []string {
 	out := make([]string, g.Rows)
 	for r := 0; r < g.Rows; r++ {
@@ -113,6 +225,9 @@ type vtEmulator struct {
 	// cursor position (0-based).
 	row, col int
 
+	// pen is the live SGR state stamped on every written/erased cell.
+	pen CellAttr
+
 	// scroll region (0-based, inclusive). Defaults to the full grid.
 	top, bot int
 
@@ -130,6 +245,7 @@ func newVTEmulator(rows, cols int) *vtEmulator {
 		primary: primary,
 		alt:     alt,
 		cur:     primary,
+		pen:     defaultAttr,
 		top:     0,
 		bot:     rows - 1,
 	}
@@ -189,26 +305,34 @@ func (e *vtEmulator) putText(raw []byte, i int) int {
 	}
 	w := vtWidthCond.RuneWidth(r)
 	if w == 0 {
-		// Combining / zero-width: drop (wave 1 compares base cells only).
+		// Combining / zero-width: drop (we compare base cells only).
 		return i + size
 	}
 	e.writeRune(r, w)
 	return i + size
 }
 
-// writeRune places r at the cursor and advances. Wide runes (w==2) occupy the
-// current cell and reserve the next as a filler space.
+// blankCell returns a space carrying the CURRENT pen background (with all
+// foreground/modifier attributes reset). This matches how a styled fill paints
+// erased / padding cells: the glyph is a space but the background color is the
+// active one, so e.g. a reverse-video or colored-background run reads correctly.
+func (e *vtEmulator) blankCell() Cell {
+	return Cell{R: ' ', Attr: CellAttr{Fg: defaultColor, Bg: e.pen.Bg}}
+}
+
+// writeRune places r at the cursor (stamped with the live pen) and advances.
+// Wide runes (w==2) occupy the current cell and reserve the next as a filler.
 func (e *vtEmulator) writeRune(r rune, w int) {
 	if e.col >= e.cols {
 		// Stay clamped at the last column; backends generally avoid this by
-		// wrapping explicitly, so we do not auto-wrap (wave-1 simplicity).
+		// wrapping explicitly, so we do not auto-wrap.
 		e.col = e.cols - 1
 	}
 	if e.inBounds(e.row, e.col) {
-		e.cur.cells[e.row][e.col] = r
+		e.cur.cells[e.row][e.col] = Cell{R: r, Attr: e.pen}
 	}
 	if w == 2 && e.col+1 < e.cols && e.inBounds(e.row, e.col+1) {
-		e.cur.cells[e.row][e.col+1] = wideContinuation
+		e.cur.cells[e.row][e.col+1] = Cell{R: wideContinuation, Attr: e.pen}
 	}
 	e.col += w
 	if e.col > e.cols {
@@ -259,13 +383,14 @@ func (e *vtEmulator) scrollDown() {
 	e.clearRow(e.top)
 }
 
-// clearRow fills row r with spaces.
+// clearRow fills row r with blank cells carrying the current pen background.
 func (e *vtEmulator) clearRow(r int) {
 	if r < 0 || r >= e.rows {
 		return
 	}
+	blank := e.blankCell()
 	for c := range e.cur.cells[r] {
-		e.cur.cells[r][c] = ' '
+		e.cur.cells[r][c] = blank
 	}
 }
 
@@ -355,12 +480,13 @@ func stripIntermediates(s string) string {
 
 // parseParams splits a ';'-separated CSI parameter string into integers, mapping
 // empty fields to 0 (the VT default sentinel; callers substitute the real
-// default).
+// default). A ':' sub-parameter separator (used by some SGR color forms) is
+// treated like ';' so e.g. "38:5:6" parses the same as "38;5;6".
 func parseParams(s string) []int {
 	if s == "" {
 		return nil
 	}
-	parts := strings.Split(s, ";")
+	parts := splitParams(s)
 	out := make([]int, 0, len(parts))
 	for _, p := range parts {
 		n := 0
@@ -373,6 +499,24 @@ func parseParams(s string) []int {
 		}
 		out = append(out, n)
 	}
+	return out
+}
+
+// splitParams splits an SGR/CSI parameter string on ';' and ':' while PRESERVING
+// empty fields (VT semantics: an empty field is the default/0). This keeps
+// positional parameters (e.g. the channels of "38;2;r;g;b") aligned.
+func splitParams(s string) []string {
+	var out []string
+	cur := strings.Builder{}
+	for _, r := range s {
+		if r == ';' || r == ':' {
+			out = append(out, cur.String())
+			cur.Reset()
+			continue
+		}
+		cur.WriteRune(r)
+	}
+	out = append(out, cur.String())
 	return out
 }
 
@@ -426,13 +570,104 @@ func (e *vtEmulator) applyCSI(private byte, params []int, final byte) {
 		e.eraseChars(param(params, 0, 1))
 	case 'r': // DECSTBM — set scroll region.
 		e.setScrollRegion(params)
-	case 'm', 's', 'u', 'h', 'l', 'n', 'c', 't', 'q', 'p':
-		// SGR (m), save/restore cursor (s/u — approximated as no-op here since
-		// codex restores to known positions explicitly), mode set/reset,
-		// device-status/attribute queries, window ops, cursor style: no visible
-		// cell effect for wave-1 character comparison.
+	case 'm': // SGR — set graphics rendition (now applied to the live pen).
+		e.applySGR(params)
+	case 's', 'u', 'h', 'l', 'n', 'c', 't', 'q', 'p':
+		// save/restore cursor (s/u — approximated as no-op since codex restores to
+		// known positions explicitly), mode set/reset, device-status/attribute
+		// queries, window ops, cursor style: no visible cell effect.
 	default:
 		// Unknown CSI: ignore.
+	}
+}
+
+// applySGR mutates the live pen from an SGR (CSI m) parameter list. An empty
+// list means SGR 0 (reset). Recognized: reset, bold/dim/italic/underline/reverse
+// and their resets, the 16 named fg/bg colors (30-37/90-97, 40-47/100-107),
+// default fg/bg (39/49), and the extended 256-indexed (38;5;n) / 24-bit RGB
+// (38;2;r;g;b) forms for both fg and bg.
+func (e *vtEmulator) applySGR(params []int) {
+	if len(params) == 0 {
+		e.pen = defaultAttr
+		return
+	}
+	for i := 0; i < len(params); i++ {
+		p := params[i]
+		switch {
+		case p == 0:
+			e.pen = defaultAttr
+		case p == 1:
+			e.pen.Bold = true
+		case p == 2:
+			e.pen.Dim = true
+		case p == 3:
+			e.pen.Italic = true
+		case p == 4:
+			e.pen.Underline = true
+		case p == 7:
+			e.pen.Reverse = true
+		case p == 22:
+			e.pen.Bold = false
+			e.pen.Dim = false
+		case p == 23:
+			e.pen.Italic = false
+		case p == 24:
+			e.pen.Underline = false
+		case p == 27:
+			e.pen.Reverse = false
+		case p >= 30 && p <= 37:
+			e.pen.Fg = Color{Kind: ColorIndexed, Idx: uint8(p - 30)}
+		case p == 39:
+			e.pen.Fg = defaultColor
+		case p >= 40 && p <= 47:
+			e.pen.Bg = Color{Kind: ColorIndexed, Idx: uint8(p - 40)}
+		case p == 49:
+			e.pen.Bg = defaultColor
+		case p >= 90 && p <= 97:
+			e.pen.Fg = Color{Kind: ColorIndexed, Idx: uint8(p - 90 + 8)}
+		case p >= 100 && p <= 107:
+			e.pen.Bg = Color{Kind: ColorIndexed, Idx: uint8(p - 100 + 8)}
+		case p == 38:
+			col, adv := parseExtColor(params, i)
+			e.pen.Fg = col
+			i += adv
+		case p == 48:
+			col, adv := parseExtColor(params, i)
+			e.pen.Bg = col
+			i += adv
+		}
+		// Other SGR codes (e.g. 5 blink, 8 hidden, 9 strike, 21/25/28/29) are not
+		// relevant to the surfaces being compared and are ignored.
+	}
+}
+
+// parseExtColor parses an extended-color SGR run starting at params[i] (which is
+// 38 or 48). It returns the resolved [Color] and the number of EXTRA params it
+// consumed past index i (so the caller advances correctly). Supports the
+// 5;<idx> (indexed) and 2;<r>;<g>;<b> (RGB) forms. Malformed runs fall back to
+// the default color and consume nothing extra.
+func parseExtColor(params []int, i int) (Color, int) {
+	if i+1 >= len(params) {
+		return defaultColor, 0
+	}
+	switch params[i+1] {
+	case 5:
+		if i+2 >= len(params) {
+			return defaultColor, 1
+		}
+		return Color{Kind: ColorIndexed, Idx: uint8(params[i+2])}, 2
+	case 2:
+		if i+4 >= len(params) {
+			return defaultColor, len(params) - 1 - i
+		}
+		return Color{
+			Kind: ColorRGB,
+			R:    uint8(params[i+2]),
+			G:    uint8(params[i+3]),
+			B:    uint8(params[i+4]),
+		}, 4
+	default:
+		return defaultColor, 1
 	}
 }
 
@@ -495,23 +730,25 @@ func (e *vtEmulator) eraseDisplay(mode int) {
 }
 
 // eraseLine implements EL (mode 0: cursor→eol, 1: bol→cursor, 2: whole line).
+// Erased cells carry the current pen background.
 func (e *vtEmulator) eraseLine(mode int) {
 	if e.row < 0 || e.row >= e.rows {
 		return
 	}
 	row := e.cur.cells[e.row]
+	blank := e.blankCell()
 	switch mode {
 	case 0:
 		for c := e.col; c < e.cols; c++ {
-			row[c] = ' '
+			row[c] = blank
 		}
 	case 1:
 		for c := 0; c <= e.col && c < e.cols; c++ {
-			row[c] = ' '
+			row[c] = blank
 		}
 	case 2:
 		for c := 0; c < e.cols; c++ {
-			row[c] = ' '
+			row[c] = blank
 		}
 	}
 }
@@ -548,11 +785,12 @@ func (e *vtEmulator) deleteChars(n int) {
 		return
 	}
 	row := e.cur.cells[e.row]
+	blank := e.blankCell()
 	for c := e.col; c < e.cols; c++ {
 		if c+n < e.cols {
 			row[c] = row[c+n]
 		} else {
-			row[c] = ' '
+			row[c] = blank
 		}
 	}
 }
@@ -563,11 +801,12 @@ func (e *vtEmulator) insertChars(n int) {
 		return
 	}
 	row := e.cur.cells[e.row]
+	blank := e.blankCell()
 	for c := e.cols - 1; c >= e.col; c-- {
 		if c-n >= e.col {
 			row[c] = row[c-n]
 		} else {
-			row[c] = ' '
+			row[c] = blank
 		}
 	}
 }
@@ -578,8 +817,9 @@ func (e *vtEmulator) eraseChars(n int) {
 		return
 	}
 	row := e.cur.cells[e.row]
+	blank := e.blankCell()
 	for c := e.col; c < e.col+n && c < e.cols; c++ {
-		row[c] = ' '
+		row[c] = blank
 	}
 }
 

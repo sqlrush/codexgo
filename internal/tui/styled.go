@@ -63,6 +63,24 @@ func (s Style) Lip() lipgloss.Style {
 	return out
 }
 
+// ANSI named-color indices (0..15), the analogue of ratatui's named `Color`
+// variants (e.g. `Color::Cyan`, `Color::Magenta`). Rendered via lipgloss they
+// emit the classic 16-color SGR codes (30-37 / 90-97 for fg) regardless of the
+// detected color depth — exactly like ratatui, which maps a named color to its
+// SGR code rather than to an RGB or 256-indexed approximation. Using these for
+// spans codex styles with a NAMED color (not a theme color) keeps the emitted
+// SGR — and therefore the reconstructed cell attributes — byte-identical.
+var (
+	// ANSICyan is ratatui's `Color::Cyan` (SGR 36). codex uses it for the
+	// session-header "/model" hint and default status-line model segment.
+	ANSICyan lipgloss.TerminalColor = lipgloss.Color("6")
+	// ANSIGreen is ratatui's `Color::Green` (SGR 32), used for status-line path
+	// segments under the non-theme fallback styling.
+	ANSIGreen lipgloss.TerminalColor = lipgloss.Color("2")
+	// ANSIMagenta is ratatui's `Color::Magenta` (SGR 35).
+	ANSIMagenta lipgloss.TerminalColor = lipgloss.Color("5")
+)
+
 // Span is a run of text sharing one style, the analogue of ratatui's `Span`.
 type Span struct {
 	Text  string

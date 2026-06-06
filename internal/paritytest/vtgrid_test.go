@@ -126,3 +126,72 @@ func TestVTGridLineFeedScrolls(t *testing.T) {
 		t.Fatalf("row1 = %q, want %q", got, "c")
 	}
 }
+
+// --- SGR attribute recording (wave 3) ---
+
+func TestVTGridSGRModifiers(t *testing.T) {
+	// Bold, then dim+italic, then a reset clears them.
+	g := RenderGrid([]byte("\x1b[1mB\x1b[0m\x1b[2;3mD\x1b[0mP"), 1, 10)
+	if a := g.CellAt(0, 0).Attr; !a.Bold || a.Dim || a.Italic {
+		t.Fatalf("cell0 = %s, want bold only", a)
+	}
+	if a := g.CellAt(0, 1).Attr; !a.Dim || !a.Italic || a.Bold {
+		t.Fatalf("cell1 = %s, want dim+italic", a)
+	}
+	if a := g.CellAt(0, 2).Attr; a != defaultAttr {
+		t.Fatalf("cell2 = %s, want default after reset", a)
+	}
+}
+
+func TestVTGridSGRNamedColors(t *testing.T) {
+	// SGR 36 is ANSI cyan → ColorIndexed{6}; SGR 92 is bright green → idx10.
+	g := RenderGrid([]byte("\x1b[36mC\x1b[39m\x1b[92mG"), 1, 10)
+	if a := g.CellAt(0, 0).Attr; a.Fg != (Color{Kind: ColorIndexed, Idx: 6}) {
+		t.Fatalf("cyan cell fg = %s, want idx6", a.Fg)
+	}
+	if a := g.CellAt(0, 1).Attr; a.Fg != (Color{Kind: ColorIndexed, Idx: 10}) {
+		t.Fatalf("bright-green cell fg = %s, want idx10", a.Fg)
+	}
+}
+
+func TestVTGridSGRExtendedColors(t *testing.T) {
+	// 256-indexed fg (38;5;116) then 24-bit RGB bg (48;2;30;30;46).
+	g := RenderGrid([]byte("\x1b[38;5;116mX\x1b[0m\x1b[48;2;30;30;46mY"), 1, 10)
+	if a := g.CellAt(0, 0).Attr; a.Fg != (Color{Kind: ColorIndexed, Idx: 116}) {
+		t.Fatalf("indexed fg = %s, want idx116", a.Fg)
+	}
+	if a := g.CellAt(0, 1).Attr; a.Bg != (Color{Kind: ColorRGB, R: 30, G: 30, B: 46}) {
+		t.Fatalf("rgb bg = %s, want #1e1e2e", a.Bg)
+	}
+}
+
+func TestVTGridSGRColonSubparams(t *testing.T) {
+	// The colon-delimited extended form (38:2::r:g:b is common; here 38:5:6)
+	// must parse like the semicolon form.
+	g := RenderGrid([]byte("\x1b[38:5:6mC"), 1, 10)
+	if a := g.CellAt(0, 0).Attr; a.Fg != (Color{Kind: ColorIndexed, Idx: 6}) {
+		t.Fatalf("colon-form fg = %s, want idx6", a.Fg)
+	}
+}
+
+func TestVTGridSGRBackgroundFillsErasedCells(t *testing.T) {
+	// With a background pen active, an erase-to-EOL paints the gap with that bg.
+	g := RenderGrid([]byte("\x1b[41mab\x1b[K"), 1, 5)
+	// The erased cells (cols 2..4) carry the red background.
+	for c := 2; c < 5; c++ {
+		if bg := g.CellAt(0, c).Attr.Bg; bg != (Color{Kind: ColorIndexed, Idx: 1}) {
+			t.Fatalf("erased cell %d bg = %s, want idx1 (red)", c, bg)
+		}
+	}
+}
+
+func TestVTGridSGRReset22ClearsBoldDim(t *testing.T) {
+	// SGR 22 clears bold AND dim but leaves the foreground color intact.
+	g := RenderGrid([]byte("\x1b[1;2;36mX\x1b[22mY"), 1, 10)
+	if a := g.CellAt(0, 1).Attr; a.Bold || a.Dim {
+		t.Fatalf("cell1 = %s, want no bold/dim after SGR 22", a)
+	}
+	if a := g.CellAt(0, 1).Attr; a.Fg != (Color{Kind: ColorIndexed, Idx: 6}) {
+		t.Fatalf("cell1 fg = %s, want idx6 retained after SGR 22", a.Fg)
+	}
+}

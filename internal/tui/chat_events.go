@@ -92,8 +92,12 @@ func ExpandMentions(text string) string {
 	return text
 }
 
-// lipglossDim returns a dim-foreground lipgloss style for placeholder/secondary
-// text, derived from the theme.
-func lipglossDim(theme Theme) lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(theme.Dim)
+// lipglossDim returns the dim style codex uses for placeholder/secondary text:
+// ratatui's `.dim()` (Modifier::DIM → SGR 2), NOT a dim-colored foreground. The
+// theme argument is retained for the signature but unused: codex's idle
+// placeholder, the status-line separator, and similar secondary text are styled
+// with the bare DIM attribute so they inherit the terminal's default foreground
+// and read identically across themes — matching the captured cell attributes.
+func lipglossDim(_ Theme) lipgloss.Style {
+	return lipgloss.NewStyle().Faint(true)
 }

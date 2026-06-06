@@ -171,20 +171,26 @@ func (p ChatBottomPane) renderComposerBlock(width int) []string {
 
 // renderPromptRows renders the textarea content rows with the "› " prompt
 // gutter, or the dim placeholder when empty.
+//
+// codex styles ONLY the "›" marker (bold, no color); the gutter space and the
+// textarea/placeholder content carry their own styling (chat_composer.rs renders
+// the prompt span separately from the textarea content, with the space coming
+// from the LIVE_PREFIX_COLS gutter). So the marker glyph is rendered with the
+// bold ComposerPrompt style and the trailing gutter space is left unstyled.
 func (p ChatBottomPane) renderPromptRows(width int) []string {
 	text := p.composer.Text()
 	if text == "" {
-		prompt := p.theme.ComposerPrompt.Render("› ")
+		prompt := p.theme.ComposerPrompt.Render("›") + " "
 		placeholder := lipglossDim(p.theme).Render(p.composer.Placeholder())
 		return []string{prompt + placeholder}
 	}
 	var rows []string
 	for i, line := range strings.Split(text, "\n") {
-		marker := "  "
-		if i == 0 {
-			marker = "› "
+		marker := p.theme.ComposerPrompt.Render("›") + " "
+		if i != 0 {
+			marker = "  "
 		}
-		rows = append(rows, p.theme.ComposerPrompt.Render(marker)+truncateTo(line, width-2))
+		rows = append(rows, marker+truncateTo(line, width-2))
 	}
 	return rows
 }

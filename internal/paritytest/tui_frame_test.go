@@ -46,17 +46,44 @@ import (
 	"testing"
 )
 
-// strictFrameEnv, when set to a truthy value, turns the row diff into a hard
-// failure. Off by default so the suite stays green during the multi-wave effort.
+// strictFrameEnv gates how hard the frame comparison fails. It is a small ladder
+// so each fidelity layer can be turned on independently as it lands:
+//
+//	unset / "0"     : log-only (the suite stays green during the multi-wave effort)
+//	"1"/"true"/"yes": CHARACTER strict — non-masked rows' glyphs must match
+//	"2"             : CHARACTER + ATTRIBUTE strict — non-masked rows' glyphs AND
+//	                  per-cell SGR attributes (fg/bg incl. 256/24-bit, bold, dim,
+//	                  italic, underline, reverse) must match
+//
+// Level 2 is a strict SUPERSET of level 1: it always runs the character check
+// first (chars must match before attributes are meaningful), then layers the
+// attribute assertion on top. The cell-grid comparison makes escape ORDERING
+// irrelevant — lipgloss and ratatui emit different SGR byte streams, but only the
+// final per-cell attributes are compared.
 const strictFrameEnv = "CODEX_TUI_FRAME_STRICT"
 
-func strictFrame() bool {
+// strictFrameLevel returns the configured strictness ladder value (0, 1, or 2).
+func strictFrameLevel() int {
 	switch os.Getenv(strictFrameEnv) {
+	case "2":
+		return 2
 	case "1", "true", "yes":
-		return true
+		return 1
 	default:
-		return false
+		return 0
 	}
+}
+
+// strictFrame reports whether the character-level comparison must fail hard
+// (level >= 1).
+func strictFrame() bool {
+	return strictFrameLevel() >= 1
+}
+
+// strictFrameAttrs reports whether the attribute-level comparison must fail hard
+// (level >= 2).
+func strictFrameAttrs() bool {
+	return strictFrameLevel() >= 2
 }
 
 // TestParityTUIFrame is the wave-1 frame-differential harness. For each fixed
@@ -100,6 +127,22 @@ func TestParityTUIFrame(t *testing.T) {
 						name, len(diff.mismatchedRows), strictFrameEnv)
 				}
 			}
+
+			// Attribute layer (CODEX_TUI_FRAME_STRICT=2): compare per-cell SGR
+			// attributes on rows that matched at the character level and are not
+			// masked. Rows whose glyphs already differ are skipped here — their
+			// character mismatch is the actionable signal — so the attribute diff
+			// reports only genuine styling gaps.
+			attrDiff := diffGridAttrs(refGrid, cgoGrid, diff)
+			t.Logf("frame %s: attribute layer — %d cells compared, %d mismatched across %d rows",
+				name, attrDiff.cellsCompared, attrDiff.cellsMismatched, len(attrDiff.rows))
+			if attrDiff.cellsMismatched > 0 {
+				t.Logf("non-masked cell ATTRIBUTE differences (codex | codexgo):\n%s", attrDiff.render())
+				if strictFrameAttrs() {
+					t.Errorf("frame %s: %d non-masked cells differ in SGR attributes (run with %s<2 to log only)",
+						name, attrDiff.cellsMismatched, strictFrameEnv)
+				}
+			}
 		})
 	}
 }
@@ -109,6 +152,7 @@ type gridDiff struct {
 	rows           int
 	maskedRows     int
 	mismatchedRows []int
+	masked         []bool // per-row: true when the row was excluded as volatile
 	refRows        []string
 	cgoRows        []string
 }
@@ -123,6 +167,7 @@ func diffGrids(ref, cgo *Grid) gridDiff {
 	}
 	d := gridDiff{
 		rows:    rows,
+		masked:  make([]bool, rows),
 		refRows: make([]string, rows),
 		cgoRows: make([]string, rows),
 	}
@@ -132,6 +177,7 @@ func diffGrids(ref, cgo *Grid) gridDiff {
 		d.refRows[r] = rr
 		d.cgoRows[r] = cr
 		if rowIsMasked(rr) || rowIsMasked(cr) {
+			d.masked[r] = true
 			d.maskedRows++
 			continue
 		}
@@ -140,6 +186,77 @@ func diffGrids(ref, cgo *Grid) gridDiff {
 		}
 	}
 	return d
+}
+
+// attrEligible reports whether row r should participate in the attribute layer:
+// it must be within range, not masked, and not already differing at the
+// character level (a glyph mismatch is the actionable signal there).
+func (d gridDiff) attrEligible(r int) bool {
+	if r < 0 || r >= len(d.masked) || d.masked[r] {
+		return false
+	}
+	for _, m := range d.mismatchedRows {
+		if m == r {
+			return false
+		}
+	}
+	return d.refRows[r] == d.cgoRows[r]
+}
+
+// cellAttrDiff holds the attribute-layer comparison result for one frame size.
+type cellAttrDiff struct {
+	cellsCompared   int
+	cellsMismatched int
+	rows            []int // rows carrying at least one attribute mismatch
+	// details lists one human-readable line per mismatched cell.
+	details []string
+}
+
+// diffGridAttrs compares per-cell SGR attributes on every attribute-eligible row
+// (see [gridDiff.attrEligible]). Wide-rune continuation cells are skipped (their
+// attribute is a copy of the lead cell and carries no independent signal).
+func diffGridAttrs(ref, cgo *Grid, rowDiff gridDiff) cellAttrDiff {
+	rows := ref.Rows
+	if cgo.Rows < rows {
+		rows = cgo.Rows
+	}
+	cols := ref.Cols
+	if cgo.Cols < cols {
+		cols = cgo.Cols
+	}
+	var d cellAttrDiff
+	for r := 0; r < rows; r++ {
+		if !rowDiff.attrEligible(r) {
+			continue
+		}
+		rowHasMismatch := false
+		for c := 0; c < cols; c++ {
+			rc := ref.CellAt(r, c)
+			cc := cgo.CellAt(r, c)
+			if rc.R == wideContinuation || cc.R == wideContinuation {
+				continue
+			}
+			d.cellsCompared++
+			if rc.Attr != cc.Attr {
+				d.cellsMismatched++
+				rowHasMismatch = true
+				if len(d.details) < 40 { // cap the report so it stays readable
+					d.details = append(d.details, fmt.Sprintf(
+						"row %2d col %2d glyph %q  codex[%s] | codexgo[%s]",
+						r, c, string(rc.R), rc.Attr.String(), cc.Attr.String()))
+				}
+			}
+		}
+		if rowHasMismatch {
+			d.rows = append(d.rows, r)
+		}
+	}
+	return d
+}
+
+// render produces a compact listing of the mismatched cells.
+func (d cellAttrDiff) render() string {
+	return strings.Join(d.details, "\n") + "\n"
 }
 
 // render produces a compact side-by-side listing of the mismatched rows.
