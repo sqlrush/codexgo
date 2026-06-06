@@ -48,6 +48,12 @@ type TurnContext struct {
 	// Empty means the codex default (cached); resolve through
 	// [turnWebSearchMode].
 	WebSearchMode protocol.WebSearchMode
+	// ProviderCapabilities are the active provider's feature upper bounds
+	// (namespace tools, hosted image generation, hosted web search). The zero
+	// value resolves to the codex all-true default; resolve through
+	// [turnProviderCapabilities]. Mirrors the Rust
+	// `turn_context.provider.capabilities()`.
+	ProviderCapabilities ProviderCapabilities
 	// ExperimentalRequestUserInput gates the request_user_input tool
 	// (config.experimental_request_user_input_enabled). Nil means the codex
 	// default (enabled); resolve through [turnRequestUserInputEnabled].

@@ -79,6 +79,13 @@ type BuiltinToolDeps struct {
 	// STUB: the real router discovers these from connected servers; here they
 	// are injected so core can route to them.
 	McpTools []tools.ToolSpec
+	// DeferredMcpTools are the `defer_loading` MCP tools registered as deferred
+	// runtimes: dispatch-only (hidden spec) and advertised solely through
+	// tool_search, mirroring the deferred branch of
+	// spec_plan::add_mcp_runtime_tools. Each carries the metadata the spec +
+	// search text need (server/connector names, namespace description, plugin
+	// display names, raw tool). A nil Mcp caller leaves them unable to dispatch.
+	DeferredMcpTools []tools.McpToolInfo
 	// WebSearch performs web searches.
 	WebSearch WebSearchRunner
 	// GoalTools are the per-thread goal tool executors (get/create/update) from
@@ -140,28 +147,42 @@ func builtinExecutors(deps BuiltinToolDeps) []toolExecutor {
 	execs = append(execs, applyPatchExecutor{fs: deps.PatchFS})
 	execs = append(execs, viewImageExecutor{})
 
-	// MCP runtime tools (spec_plan::add_mcp_runtime_tools).
+	// Deferred search sources are collected in spec_plan's add_tool_sources
+	// order: add_collaboration_tools runs BEFORE add_mcp_runtime_tools, so the
+	// collab agent tools come first in the tool_search corpus, then the deferred
+	// MCP tools. This ordering fixes the BM25 document ids (tie-break order).
+	var deferredSources []deferredToolSource
+
+	// Deferred collab (multi-agent) runtimes (spec_plan::add_collaboration_tools).
+	// They are always registered (dispatch-only) but only participate in
+	// tool_search and direct dispatch when the per-turn deferred-exposure gate
+	// holds (collabExecutor's Spec is hidden and searchInfo is gated on
+	// collabDeferredEligible).
+	for _, ce := range collabExecutorsWithDeps(deps) {
+		execs = append(execs, ce)
+		deferredSources = append(deferredSources, ce)
+	}
+
+	// MCP runtime tools (spec_plan::add_mcp_runtime_tools). Eager tools advertise
+	// directly; `defer_loading` tools register dispatch-only (hidden spec) and
+	// participate in tool_search, mirroring the deferred branch's
+	// add_with_exposure(McpHandler, ToolExposure::Deferred).
 	if deps.Mcp != nil {
 		for _, spec := range deps.McpTools {
 			execs = append(execs, mcpExecutor{caller: deps.Mcp, spec: spec, name: protocol.PlainToolName(spec.Name())})
 		}
 	}
-
-	// Deferred collab (multi-agent) runtimes register before tool_search, in
-	// spec_plan order (spawn, send_input, resume, wait, close). They are always
-	// registered (dispatch-only) but only participate in tool_search and direct
-	// dispatch when the per-turn deferred-exposure gate holds (collabExecutor's
-	// Spec is hidden and searchInfo is gated on collabDeferredEligible). The
-	// registration order fixes the BM25 corpus document ids.
-	for _, ce := range collabExecutorsWithDeps(deps) {
-		execs = append(execs, ce)
+	for _, de := range deferredMcpExecutors(deps) {
+		execs = append(execs, de)
+		deferredSources = append(deferredSources, de)
 	}
 
 	// tool_search appends after every other runtime
 	// (spec_plan::append_tool_search_executor runs after add_tool_sources); its
 	// per-turn gate (search-capable model + namespace tools + deferred sources)
-	// lives in toolSearchExecutor.Spec.
-	execs = append(execs, toolSearchExecutor{})
+	// lives in toolSearchExecutor.Spec. It carries the ordered deferred sources
+	// collected above, mirroring ToolSearchHandler::new(search_infos).
+	execs = append(execs, toolSearchExecutor{deferredSources: deferredSources})
 
 	// Hosted specs come after every runtime in the model-visible order
 	// (build_model_visible_specs_and_registry appends hosted_specs last).
@@ -550,9 +571,14 @@ func (webSearchExecutor) Name() protocol.ToolName { return protocol.PlainToolNam
 // config.web_search_mode, default cached) selects external_web_access, and the
 // model's web_search_tool_type selects the content types.
 //
-// STUB: provider capability gating (provider.capabilities().web_search) is
-// owned by the provider area; codexgo advertises whenever the mode allows.
+// The provider capability gate (provider.capabilities().web_search) mirrors the
+// Rust spec_plan: when the provider does not support hosted web search, the
+// web_search_mode is dropped (None) and create_web_search_tool returns no spec.
+// For OpenAI/configured providers the capability is true, so this is a no-op.
 func (webSearchExecutor) Spec(tc *TurnContext) (tools.ToolSpec, bool) {
+	if !turnProviderCapabilities(tc).WebSearch {
+		return tools.ToolSpec{}, false
+	}
 	mode := turnWebSearchMode(tc)
 	return tools.CreateWebSearchTool(tools.WebSearchToolOptions{
 		WebSearchMode:     &mode,

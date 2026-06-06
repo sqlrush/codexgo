@@ -41,11 +41,20 @@ func newTurnContext(ctx context.Context, sess *Session, subID string, update *Se
 		ReasoningEffort:              cfg.CollaborationMode.Settings.ReasoningEffort,
 		Features:                     cfg.Features,
 		WebSearchMode:                cfg.WebSearchMode,
+		ProviderCapabilities:         cfg.ProviderCapabilities,
 		ExperimentalRequestUserInput: cfg.ExperimentalRequestUserInput,
 		SessionSource:                cfg.SessionSource,
 	}
 	if cfg.ModelReasoningSummary != nil {
 		tc.ReasoningSummary = *cfg.ModelReasoningSummary
+	}
+	// Resolve the provider capability upper bounds for the turn. An explicit
+	// config override (non-zero) wins; otherwise the provider id is mapped
+	// through the installed resolver (modelproviderinfo.CapabilitiesForProvider
+	// in the assembled binary, all-true otherwise). Mirrors reading
+	// turn_context.provider.capabilities() in spec_plan.
+	if tc.ProviderCapabilities == (ProviderCapabilities{}) {
+		tc.ProviderCapabilities = resolveProviderCapabilities(cfg.ProviderID)
 	}
 	if update != nil && update.FinalOutputJSONSchema != nil {
 		tc.FinalOutputJSONSchema = *update.FinalOutputJSONSchema

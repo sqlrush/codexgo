@@ -23,6 +23,15 @@ type SessionConfiguration struct {
 	// ProviderID identifies the model provider ("openai", "openrouter", ...).
 	ProviderID string
 
+	// ProviderCapabilities are the active provider's feature upper bounds
+	// (namespace tools, hosted image generation, hosted web search), resolved
+	// from modelproviderinfo.CapabilitiesForProvider at assembly time. The zero
+	// value (all false) is treated as "not configured" and resolves to the
+	// codex all-true default; see [turnProviderCapabilities]. This mirrors the
+	// Rust `TurnContext::provider.capabilities()` upper bound threaded into the
+	// turn (model-provider/src/provider.rs ProviderCapabilities).
+	ProviderCapabilities ProviderCapabilities
+
 	// CollaborationMode bundles the model + reasoning effort + developer
 	// instructions for the turn.
 	CollaborationMode protocol.CollaborationMode

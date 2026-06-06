@@ -12,6 +12,7 @@ import (
 	"github.com/sqlrush/codexgo/internal/config"
 	"github.com/sqlrush/codexgo/internal/core"
 	"github.com/sqlrush/codexgo/internal/ext/goal"
+	"github.com/sqlrush/codexgo/internal/modelproviderinfo"
 	"github.com/sqlrush/codexgo/internal/modelsmanager"
 	"github.com/sqlrush/codexgo/internal/multiagent"
 	"github.com/sqlrush/codexgo/internal/protocol"
@@ -131,6 +132,18 @@ func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultMode
 	if sandboxMode == "" {
 		sandboxMode = protocol.SandboxModeReadOnly
 	}
+	// Wire the provider capability resolver so the turn path can gate
+	// namespace/tool_search and hosted web_search on the active provider's
+	// upper bounds (all-true for OpenAI/configured providers; Amazon Bedrock
+	// disables the hosted tools). Mirrors turn_context.provider.capabilities().
+	core.SetProviderCapabilitiesResolver(func(providerID string) core.ProviderCapabilities {
+		caps := modelproviderinfo.CapabilitiesForProvider(providerID)
+		return core.ProviderCapabilities{
+			NamespaceTools:  caps.NamespaceTools,
+			ImageGeneration: caps.ImageGeneration,
+			WebSearch:       caps.WebSearch,
+		}
+	})
 	model := resolveDefaultModel(defaultModel)
 	// Open the SQLite state runtime under the codex home so goal tools persist
 	// thread goals exactly like codex (goal_tools_supported requires the state

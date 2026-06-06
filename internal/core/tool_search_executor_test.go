@@ -35,6 +35,68 @@ func TestToolSearchAdvertisedBeforeHostedSpecs(t *testing.T) {
 	}
 }
 
+// TestProviderCapabilitiesGateHostedTools asserts the provider capability upper
+// bounds gate the namespace tool_search surface and the hosted web_search spec:
+// a capabilities-off provider hides both, while the all-true default advertises
+// them. Mirrors spec_plan reading turn_context.provider.capabilities().
+func TestProviderCapabilitiesGateHostedTools(t *testing.T) {
+	tests := []struct {
+		name           string
+		caps           ProviderCapabilities
+		wantToolSearch bool
+		wantWebSearch  bool
+	}{
+		{
+			name:           "default (zero value) advertises both",
+			caps:           ProviderCapabilities{},
+			wantToolSearch: true,
+			wantWebSearch:  true,
+		},
+		{
+			name:           "all-true provider advertises both",
+			caps:           ProviderCapabilities{NamespaceTools: true, ImageGeneration: true, WebSearch: true},
+			wantToolSearch: true,
+			wantWebSearch:  true,
+		},
+		{
+			name:           "namespace-tools-off hides tool_search but keeps web_search",
+			caps:           ProviderCapabilities{NamespaceTools: false, ImageGeneration: true, WebSearch: true},
+			wantToolSearch: false,
+			wantWebSearch:  true,
+		},
+		{
+			name:           "web-search-off hides web_search but keeps tool_search",
+			caps:           ProviderCapabilities{NamespaceTools: true, ImageGeneration: true, WebSearch: false},
+			wantToolSearch: true,
+			wantWebSearch:  false,
+		},
+		{
+			name:           "bedrock-style provider hides web_search, keeps tool_search",
+			caps:           ProviderCapabilities{NamespaceTools: true, ImageGeneration: false, WebSearch: false},
+			wantToolSearch: true,
+			wantWebSearch:  false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			router, err := BuiltinToolRouter(BuiltinToolDeps{Exec: &mockExecService{}})
+			if err != nil {
+				t.Fatalf("build router: %v", err)
+			}
+			turn := newSearchToolTurn(t)
+			turn.ProviderCapabilities = tc.caps
+			names := strings.Join(specNames(t, router, turn), ",")
+
+			if got := strings.Contains(names, "tool_search"); got != tc.wantToolSearch {
+				t.Errorf("tool_search advertised = %v, want %v (names %s)", got, tc.wantToolSearch, names)
+			}
+			if got := strings.Contains(names, "web_search"); got != tc.wantWebSearch {
+				t.Errorf("web_search advertised = %v, want %v (names %s)", got, tc.wantWebSearch, names)
+			}
+		})
+	}
+}
+
 // TestToolSearchGating asserts the advertisement preconditions.
 func TestToolSearchGating(t *testing.T) {
 	noCollab := features.NewFeaturesWithDefaults()

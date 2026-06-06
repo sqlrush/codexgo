@@ -102,7 +102,7 @@ func (e collabExecutor) Handle(ctx context.Context, h *toolHandlerContext) (tool
 }
 
 // searchInfo returns the deferred tool_search entry for this turn when collab
-// tools are deferred-eligible (the turnDeferredCollabSources gate), else false.
+// tools are deferred-eligible (the collabDeferredEligible gate), else false.
 // Mirrors the Rust collab `search_info()` gated by ToolExposure::Deferred.
 func (e collabExecutor) searchInfo(tc *TurnContext) (tools.ToolSearchInfo, bool) {
 	if !collabDeferredEligible(tc) {
@@ -148,13 +148,6 @@ func bareSpawnAgentOptions() maspec.SpawnAgentToolOptions {
 		IncludeUsageHint:            true,
 		UsageHintText:               nil,
 	}
-}
-
-// collabExecutors returns the five deferred collab runtimes with no control
-// plane wired (tool_search-only; direct calls report the manager unavailable).
-// Prefer [collabExecutorsWithDeps] when a [CollabControl] is available.
-func collabExecutors() []collabExecutor {
-	return collabExecutorsWithDeps(BuiltinToolDeps{})
 }
 
 // collabExecutorsWithDeps returns the five deferred collab runtimes in spec_plan

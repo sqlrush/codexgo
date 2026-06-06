@@ -17,7 +17,6 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/sqlrush/codexgo/internal/features"
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/tools"
 )
@@ -29,66 +28,57 @@ func turnSearchToolEnabled(tc *TurnContext) bool {
 }
 
 // turnNamespaceToolsEnabled mirrors spec_plan's namespace_tools_enabled
-// (provider.capabilities().namespace_tools).
-//
-// STUB: provider capabilities are not yet modeled; every built-in provider in
-// codex defaults namespace_tools to true, so the bridge does too. The
-// provider-capabilities surface is owned by the model-provider area agent.
-func turnNamespaceToolsEnabled(_ *TurnContext) bool {
-	return true
+// (turn_context.provider.capabilities().namespace_tools). The capability upper
+// bound is resolved from the turn's provider (all-true for OpenAI/configured
+// providers, see [turnProviderCapabilities]).
+func turnNamespaceToolsEnabled(tc *TurnContext) bool {
+	return turnProviderCapabilities(tc).NamespaceTools
 }
 
-// turnDeferredCollabSources returns the deferred-exposure search sources for the
-// turn. In spec_plan the collab agent tools take ToolExposure::Deferred when
-// search + namespace tools are available and collab tools are enabled
-// (Feature::Collab) outside multi-agent v2; those deferred runtimes feed
-// append_tool_search_executor's search_infos in a bare run.
-func turnDeferredCollabSources(tc *TurnContext) []tools.ToolSearchSourceInfo {
-	feats := turnFeatures(tc)
-	if !feats.Enabled(features.FeatureCollab) || feats.Enabled(features.FeatureMultiAgentV2) {
-		return nil
-	}
-	infos := turnDeferredSearchInfos(tc)
-	sources := make([]tools.ToolSearchSourceInfo, 0, len(infos))
-	for _, info := range infos {
-		if info.SourceInfo != nil {
-			sources = append(sources, *info.SourceInfo)
-		}
-	}
-	return sources
+// toolSearchExecutor advertises and handles the tool_search tool. It carries the
+// ordered deferred search sources collected at registration time (collab agent
+// tools, then deferred MCP tools), mirroring the search_infos handed to the Rust
+// ToolSearchHandler::new by append_tool_search_executor.
+type toolSearchExecutor struct {
+	// deferredSources are the deferred-exposure runtimes that contribute
+	// tool_search entries, in spec_plan registration order.
+	deferredSources []deferredToolSource
 }
 
-// turnDeferredSearchInfos collects the tool_search entries from the turn's
-// deferred runtimes, in registration order. Mirrors append_tool_search_executor
-// filtering the planned runtimes to ToolExposure::Deferred and calling
-// search_info() on each.
-func turnDeferredSearchInfos(tc *TurnContext) []tools.ToolSearchInfo {
+func (toolSearchExecutor) Name() protocol.ToolName {
+	return protocol.PlainToolName(tools.ToolSearchToolName)
+}
+
+// turnDeferredSearchInfos collects the tool_search entries from the carried
+// deferred runtimes for the turn, in registration order. Mirrors
+// append_tool_search_executor filtering the planned runtimes to
+// ToolExposure::Deferred and calling search_info() on each.
+func (e toolSearchExecutor) turnDeferredSearchInfos(tc *TurnContext) []tools.ToolSearchInfo {
 	var infos []tools.ToolSearchInfo
-	for _, ex := range collabExecutors() {
-		if info, ok := ex.searchInfo(tc); ok {
+	for _, source := range e.deferredSources {
+		if info, ok := source.searchInfo(tc); ok {
 			infos = append(infos, info)
 		}
 	}
 	return infos
 }
 
-// toolSearchExecutor advertises and handles the tool_search tool.
-type toolSearchExecutor struct{}
-
-func (toolSearchExecutor) Name() protocol.ToolName {
-	return protocol.PlainToolName(tools.ToolSearchToolName)
-}
-
 // Spec advertises tool_search when the append_tool_search_executor conditions
 // hold for this turn (search-capable model, namespace tools, and at least one
 // deferred search source).
-func (toolSearchExecutor) Spec(tc *TurnContext) (tools.ToolSpec, bool) {
+func (e toolSearchExecutor) Spec(tc *TurnContext) (tools.ToolSpec, bool) {
 	if !turnSearchToolEnabled(tc) || !turnNamespaceToolsEnabled(tc) {
 		return tools.ToolSpec{}, false
 	}
-	sources := turnDeferredCollabSources(tc)
-	if len(sources) == 0 {
+	infos := e.turnDeferredSearchInfos(tc)
+	if len(infos) == 0 {
 		return tools.ToolSpec{}, false
+	}
+	sources := make([]tools.ToolSearchSourceInfo, 0, len(infos))
+	for _, info := range infos {
+		if info.SourceInfo != nil {
+			sources = append(sources, *info.SourceInfo)
+		}
 	}
 	return tools.CreateToolSearchTool(sources, tools.ToolSearchDefaultLimit), true
 }
@@ -99,7 +89,7 @@ func (toolSearchExecutor) MatchesPayload(p tools.ToolPayload) bool {
 
 // Handle validates the query/limit exactly like the Rust ToolSearchHandler, then
 // runs BM25 over the turn's deferred entries and returns the coalesced matches.
-func (toolSearchExecutor) Handle(_ context.Context, h *toolHandlerContext) (tools.ToolOutput, error) {
+func (e toolSearchExecutor) Handle(_ context.Context, h *toolHandlerContext) (tools.ToolOutput, error) {
 	if h.Payload.Kind != tools.ToolPayloadKindToolSearch {
 		return nil, tools.FatalError(tools.ToolSearchToolName + " handler received unsupported payload")
 	}
@@ -118,7 +108,7 @@ func (toolSearchExecutor) Handle(_ context.Context, h *toolHandlerContext) (tool
 		return nil, tools.RespondToModelError("limit must be greater than zero")
 	}
 
-	engine := tools.NewToolSearchEngine(turnDeferredSearchInfos(h.Turn))
+	engine := tools.NewToolSearchEngine(e.turnDeferredSearchInfos(h.Turn))
 	if engine.Empty() {
 		return toolSearchOutput{}, nil
 	}
