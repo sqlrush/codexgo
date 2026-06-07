@@ -49,6 +49,10 @@ type loadedConfig struct {
 	// McpServers is the resolved `[mcp_servers]` table, keyed by server name. The
 	// assembly launches these via the MCP manager so their tools reach the model.
 	McpServers map[string]config.McpServerConfig
+	// Plugins is the resolved `[plugins]` table, keyed by "<plugin>@<marketplace>".
+	// The assembly discovers each enabled plugin's MCP servers (from its .mcp.json)
+	// and merges them with McpServers.
+	Plugins map[string]config.PluginConfig
 }
 
 // loadConfig loads the merged configuration honoring the root -c overrides,
@@ -89,6 +93,7 @@ func loadConfig(root RootOptions) (loadedConfig, error) {
 		ProjectRootMarkers: markers,
 		Marketplaces:       result.Config.Marketplaces,
 		McpServers:         result.Config.McpServers,
+		Plugins:            result.Config.Plugins,
 	}, nil
 }
 

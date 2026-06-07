@@ -53,7 +53,7 @@ func buildAssemblyWithDefaults() (*appserver.Assembly, appserver.Defaults, error
 	if !ok {
 		// Configuration could not be loaded; run with the mock so the engine still
 		// works offline (e.g. in tests or a fresh checkout without a config file).
-		return assembleResult(fallback, "", "", defaultModelProviderID, "", nil, nil)
+		return assembleResult(fallback, "", "", defaultModelProviderID, "", nil, nil, nil)
 	}
 
 	model := configDefaultModel(cfg)
@@ -69,7 +69,7 @@ func buildAssemblyWithDefaults() (*appserver.Assembly, appserver.Defaults, error
 		// A bad provider selection must not break the offline paths; fall back to
 		// the mock so the engine still runs.
 		routed := appserver.NewModelRoutedClientFactory(routes, fallback)
-		return assembleResult(routed, cfg.CodexHome, model, defaultModelProviderID, derefSandboxMode(cfg.SandboxMode), trustGate, cfg.McpServers)
+		return assembleResult(routed, cfg.CodexHome, model, defaultModelProviderID, derefSandboxMode(cfg.SandboxMode), trustGate, cfg.McpServers, cfg.Plugins)
 	}
 
 	resolver, ok := buildProviderAuthResolver(cfg, selected)
@@ -77,7 +77,7 @@ func buildAssemblyWithDefaults() (*appserver.Assembly, appserver.Defaults, error
 		// No credential source applies to the selected provider; use the mock for
 		// unrouted models (routed custom-provider models still work).
 		routed := appserver.NewModelRoutedClientFactory(routes, fallback)
-		return assembleResult(routed, cfg.CodexHome, model, selected.ID, derefSandboxMode(cfg.SandboxMode), trustGate, cfg.McpServers)
+		return assembleResult(routed, cfg.CodexHome, model, selected.ID, derefSandboxMode(cfg.SandboxMode), trustGate, cfg.McpServers, cfg.Plugins)
 	}
 
 	factory, err := appserver.NewModelClientFactory(appserver.RealModelClientFactoryConfig{
@@ -106,7 +106,7 @@ func buildAssemblyWithDefaults() (*appserver.Assembly, appserver.Defaults, error
 		}
 	}
 	routed := appserver.NewModelRoutedClientFactory(routes, factory)
-	return assembleResult(routed, cfg.CodexHome, model, selected.ID, derefSandboxMode(cfg.SandboxMode), trustGate, cfg.McpServers)
+	return assembleResult(routed, cfg.CodexHome, model, selected.ID, derefSandboxMode(cfg.SandboxMode), trustGate, cfg.McpServers, cfg.Plugins)
 }
 
 // buildModelProviderRoutes builds the codexgo model→provider routing table from
@@ -216,7 +216,7 @@ func buildProviderAuthResolver(cfg loadedConfig, selected selectedProvider) (app
 // slug. The same resolved model + provider id flow into both the assembly's
 // models manager and the returned Defaults so the binary's exec/review/TUI paths
 // honor the configured selection.
-func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultModel, providerID string, sandboxMode protocol.SandboxMode, trustGate projectTrustGate, mcpServers map[string]config.McpServerConfig) (*appserver.Assembly, appserver.Defaults, error) {
+func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultModel, providerID string, sandboxMode protocol.SandboxMode, trustGate projectTrustGate, mcpServers map[string]config.McpServerConfig, pluginsCfg map[string]config.PluginConfig) (*appserver.Assembly, appserver.Defaults, error) {
 	if codexHome == "" {
 		codexHome = resolveCodexHome()
 	}
@@ -262,7 +262,7 @@ func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultMode
 	// the wiring that connects the formerly-orphaned MCP client to the runtime).
 	// A nil manager (no servers configured / all failed) leaves the MCP tools off,
 	// exactly as before.
-	mcpManager := buildMcpManager(context.Background(), codexHome, mcpServers)
+	mcpManager := buildMcpManager(context.Background(), codexHome, effectiveMcpServers(codexHome, mcpServers, pluginsCfg))
 	var mcpToolInfos []tools.McpToolInfo
 	if mcpManager != nil {
 		mcpToolInfos = mcpManager.ListAllToolInfos()
