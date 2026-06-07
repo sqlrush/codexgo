@@ -1,0 +1,45 @@
+// Package tools registers the GaussDB MCP tools (db_connect, db_health, …) on
+// the MCP server. Each tool returns STRUCTURED JSON (not pre-rendered text) so
+// codexgo renders the UI — the core optimization over opendb's server-side
+// pre-rendered strings (see OPTIMIZATIONS-OVER-OPENDB).
+package tools
+
+import (
+	"github.com/sqlrush/codexgo-db-gaussdb/internal/db"
+	"github.com/sqlrush/codexgo-db-gaussdb/internal/mcp"
+)
+
+// Register wires all tools onto the server, sharing one connection handle.
+func Register(s *mcp.Server, conn *db.Conn) {
+	// connection + health check
+	registerConnect(s, conn)
+	registerHealth(s, conn)
+	// statement-view tools: slowsql, topsql, sqlfetch, planhistory
+	registerQuery(s, conn)
+	// plan + sessions + indexes
+	registerExplain(s, conn)
+	registerASH(s, conn)
+	registerIndexHealth(s, conn)
+	// tuning + WDR
+	registerSQLTune(s, conn)
+	registerWDR(s, conn)
+}
+
+// jsonObjSchema is a small helper to build a JSON-Schema object for inputSchema.
+func jsonObjSchema(props map[string]any, required ...string) map[string]any {
+	schema := map[string]any{
+		"type":       "object",
+		"properties": props,
+	}
+	if len(required) > 0 {
+		schema["required"] = required
+	}
+	return schema
+}
+
+func strProp(desc string) map[string]any {
+	return map[string]any{"type": "string", "description": desc}
+}
+func intProp(desc string) map[string]any {
+	return map[string]any{"type": "integer", "description": desc}
+}
