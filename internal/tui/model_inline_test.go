@@ -58,7 +58,7 @@ func TestInlineModelDrainsHeaderToScrollback(t *testing.T) {
 	// viewport: the inline view is just the top inset + bottom pane.
 	gm := updated.(Model)
 	out := gm.inlineView()
-	if strings.Contains(out, "OpenAI Codex") {
+	if strings.Contains(out, "CodexGO") {
 		t.Fatalf("header card should be in scrollback, not the live viewport:\n%s", out)
 	}
 
@@ -100,7 +100,7 @@ func TestChatTranscriptDrainScrollback(t *testing.T) {
 	if len(lines) == 0 {
 		t.Fatal("expected header card lines from first drain")
 	}
-	if !strings.Contains(strings.Join(lines, "\n"), "OpenAI Codex") {
+	if !strings.Contains(strings.Join(lines, "\n"), "CodexGO") {
 		t.Fatalf("drained lines missing header:\n%s", strings.Join(lines, "\n"))
 	}
 	// Draining again yields nothing (already flushed).

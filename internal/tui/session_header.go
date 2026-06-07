@@ -75,9 +75,14 @@ func (c SessionHeaderCell) Lines(width int) []Line {
 	cyan := Style{Fg: ANSICyan}
 
 	// Content rows (without border chrome), as span lists.
+	//
+	// Branding deviation: the welcome card shows codexgo's own product name and
+	// version (the version comes from cli.Version via RunConfig.Version), NOT the
+	// upstream "OpenAI Codex (v0.136.0)" the parity frames assert. The title row
+	// is therefore masked in the parity frame tests (see frameMask ">_ ").
 	title := []Span{
 		{Text: ">_ ", Style: dim},
-		{Text: "OpenAI Codex", Style: bold},
+		{Text: "CodexGO", Style: bold},
 		{Text: " ", Style: dim},
 		{Text: fmt.Sprintf("(v%s)", c.version), Style: dim},
 	}

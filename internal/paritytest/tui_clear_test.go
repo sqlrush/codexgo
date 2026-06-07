@@ -48,11 +48,11 @@ func TestParityTUIFrameClear(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			cwd := sharedCanonicalCwd(t)
 
-			refRaw, ok := captureClearFrame(t, ref, cwd, size)
+			refRaw, ok := captureClearFrame(t, ref, cwd, size, "OpenAI Codex")
 			if !ok {
 				t.Skipf("codex /clear did not complete at %s (interactive turn unreachable on this host); skipping", name)
 			}
-			cgoRaw, ok := captureClearFrame(t, cgo, cwd, size)
+			cgoRaw, ok := captureClearFrame(t, cgo, cwd, size, "CodexGO")
 			if !ok {
 				t.Skipf("codexgo /clear did not complete at %s; skipping", name)
 			}
@@ -62,8 +62,10 @@ func TestParityTUIFrameClear(t *testing.T) {
 
 			// Sanity: the fresh session-header card must be present in BOTH grids,
 			// proving /clear ran and re-seeded the fresh session. If not, treat the
-			// scenario as unreachable and skip rather than fail confusingly.
-			if !gridContains(refGrid, "OpenAI Codex") || !gridContains(cgoGrid, "OpenAI Codex") {
+			// scenario as unreachable and skip rather than fail confusingly. The
+			// reference brands the card "OpenAI Codex"; codexgo brands it "CodexGO"
+			// (intentional branding deviation), so each side is matched separately.
+			if !gridContains(refGrid, "OpenAI Codex") || !gridContains(cgoGrid, "CodexGO") {
 				t.Skipf("fresh session header not found in both grids at %s (/clear did not render); skipping", name)
 			}
 			// Guard against capturing a transient mid-clear frame still showing the
@@ -104,7 +106,10 @@ func TestParityTUIFrameClear(t *testing.T) {
 // command, then polls until the post-clear (fresh idle) frame is present AND
 // output has gone quiet. It returns the raw byte stream and whether /clear
 // completed within the deadline.
-func captureClearFrame(t *testing.T, bin, canonicalCwd string, size frameSize) ([]byte, bool) {
+// headerMarker is the product-name string that marks the fresh session-header
+// card for this binary ("OpenAI Codex" for the reference, "CodexGO" for
+// codexgo — the branding deviation).
+func captureClearFrame(t *testing.T, bin, canonicalCwd string, size frameSize, headerMarker string) ([]byte, bool) {
 	t.Helper()
 
 	home := t.TempDir()
@@ -196,7 +201,7 @@ loop:
 		// present and the screen has gone quiet, and the typed "/clear" / popup is
 		// gone from the latest output.
 		if cleared && time.Since(clearedAt) > 300*time.Millisecond &&
-			bytes.Contains(buf, []byte("OpenAI Codex")) && quiet > quietFor {
+			bytes.Contains(buf, []byte(headerMarker)) && quiet > quietFor {
 			break loop
 		}
 
@@ -213,7 +218,7 @@ loop:
 	}()
 	sp.Process.Terminate()
 
-	if !cleared || !bytes.Contains(buf, []byte("OpenAI Codex")) {
+	if !cleared || !bytes.Contains(buf, []byte(headerMarker)) {
 		return nil, false
 	}
 	return buf, true

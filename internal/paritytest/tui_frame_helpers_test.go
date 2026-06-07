@@ -219,6 +219,7 @@ func buildCodexgoBin(t *testing.T) string {
 // byte-for-byte (verified when both binaries share a short enough cwd); it is
 // only masked here because the trailing path is per-run.
 var frameMask = []string{
+	">_ ",          // header title row: codexgo brands it "CodexGO (vX)" vs the reference "OpenAI Codex (v0.136.0)" — intentional branding deviation (DEVIATIONS.md "TUI branding"). The ">_ " prefix is unique to the header title (the composer uses "› ").
 	"directory:",   // header row: absolute per-run cwd (center-truncated)
 	"/private/var", // macOS temp-dir paths anywhere on a row (footer cwd)
 	"/var/folders", // macOS temp-dir paths (canonical form)

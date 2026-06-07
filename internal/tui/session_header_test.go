@@ -18,7 +18,7 @@ func TestSessionHeaderCardLayout80(t *testing.T) {
 	pad := func(s string) string { return s + strings.Repeat(" ", inner-len(s)) }
 	want := []string{
 		"╭" + strings.Repeat("─", inner+2) + "╮",
-		"│ " + pad(">_ OpenAI Codex (v0.136.0)") + " │",
+		"│ " + pad(">_ CodexGO (v0.136.0)") + " │",
 		"│ " + pad("") + " │",
 		"│ " + pad("model:     gpt-5.5   /model to change") + " │",
 		"│ " + pad("directory: /work") + " │",
