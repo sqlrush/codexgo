@@ -366,7 +366,12 @@ func TestBuiltinToolRouterRegistration(t *testing.T) {
 				UserInput:   &mockUserInput{},
 				Permissions: &mockPermissions{},
 				Mcp:         &mockMcpCaller{},
-				McpTools:    []tools.ToolSpec{functionSpecStub("srv__tool", "an mcp tool")},
+				McpTools: []tools.McpToolInfo{{
+					ServerName:        "srv",
+					CallableName:      "srv__tool",
+					CallableNamespace: "mcp__srv__",
+					Tool:              protocol.Tool{Name: "tool", InputSchema: json.RawMessage(`{"type":"object"}`)},
+				}},
 			},
 			wantTools: []string{
 				"apply_patch", "exec_command",

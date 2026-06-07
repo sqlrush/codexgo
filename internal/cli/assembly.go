@@ -17,6 +17,7 @@ import (
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/rollout"
 	"github.com/sqlrush/codexgo/internal/state"
+	"github.com/sqlrush/codexgo/internal/tools"
 	"github.com/sqlrush/codexgo/internal/unifiedexec"
 	"github.com/sqlrush/codexgo/internal/utils/abspath"
 )
@@ -52,7 +53,7 @@ func buildAssemblyWithDefaults() (*appserver.Assembly, appserver.Defaults, error
 	if !ok {
 		// Configuration could not be loaded; run with the mock so the engine still
 		// works offline (e.g. in tests or a fresh checkout without a config file).
-		return assembleResult(fallback, "", "", defaultModelProviderID, "", nil)
+		return assembleResult(fallback, "", "", defaultModelProviderID, "", nil, nil)
 	}
 
 	model := configDefaultModel(cfg)
@@ -68,7 +69,7 @@ func buildAssemblyWithDefaults() (*appserver.Assembly, appserver.Defaults, error
 		// A bad provider selection must not break the offline paths; fall back to
 		// the mock so the engine still runs.
 		routed := appserver.NewModelRoutedClientFactory(routes, fallback)
-		return assembleResult(routed, cfg.CodexHome, model, defaultModelProviderID, derefSandboxMode(cfg.SandboxMode), trustGate)
+		return assembleResult(routed, cfg.CodexHome, model, defaultModelProviderID, derefSandboxMode(cfg.SandboxMode), trustGate, cfg.McpServers)
 	}
 
 	resolver, ok := buildProviderAuthResolver(cfg, selected)
@@ -76,7 +77,7 @@ func buildAssemblyWithDefaults() (*appserver.Assembly, appserver.Defaults, error
 		// No credential source applies to the selected provider; use the mock for
 		// unrouted models (routed custom-provider models still work).
 		routed := appserver.NewModelRoutedClientFactory(routes, fallback)
-		return assembleResult(routed, cfg.CodexHome, model, selected.ID, derefSandboxMode(cfg.SandboxMode), trustGate)
+		return assembleResult(routed, cfg.CodexHome, model, selected.ID, derefSandboxMode(cfg.SandboxMode), trustGate, cfg.McpServers)
 	}
 
 	factory, err := appserver.NewModelClientFactory(appserver.RealModelClientFactoryConfig{
@@ -105,7 +106,7 @@ func buildAssemblyWithDefaults() (*appserver.Assembly, appserver.Defaults, error
 		}
 	}
 	routed := appserver.NewModelRoutedClientFactory(routes, factory)
-	return assembleResult(routed, cfg.CodexHome, model, selected.ID, derefSandboxMode(cfg.SandboxMode), trustGate)
+	return assembleResult(routed, cfg.CodexHome, model, selected.ID, derefSandboxMode(cfg.SandboxMode), trustGate, cfg.McpServers)
 }
 
 // buildModelProviderRoutes builds the codexgo model→provider routing table from
@@ -215,7 +216,7 @@ func buildProviderAuthResolver(cfg loadedConfig, selected selectedProvider) (app
 // slug. The same resolved model + provider id flow into both the assembly's
 // models manager and the returned Defaults so the binary's exec/review/TUI paths
 // honor the configured selection.
-func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultModel, providerID string, sandboxMode protocol.SandboxMode, trustGate projectTrustGate) (*appserver.Assembly, appserver.Defaults, error) {
+func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultModel, providerID string, sandboxMode protocol.SandboxMode, trustGate projectTrustGate, mcpServers map[string]config.McpServerConfig) (*appserver.Assembly, appserver.Defaults, error) {
 	if codexHome == "" {
 		codexHome = resolveCodexHome()
 	}
@@ -255,6 +256,18 @@ func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultMode
 	} else {
 		fmt.Fprintf(os.Stderr, "warning: skills manager unavailable, skills instructions disabled: %v\n", err)
 	}
+	// Launch the configured MCP servers once, process-wide. The manager and its
+	// lowered tool specs are captured by the per-thread router factory below so
+	// every thread advertises and can call the same external MCP tools (this is
+	// the wiring that connects the formerly-orphaned MCP client to the runtime).
+	// A nil manager (no servers configured / all failed) leaves the MCP tools off,
+	// exactly as before.
+	mcpManager := buildMcpManager(context.Background(), codexHome, mcpServers)
+	var mcpToolInfos []tools.McpToolInfo
+	if mcpManager != nil {
+		mcpToolInfos = mcpManager.ListAllToolInfos()
+	}
+
 	// Multi-agent control plane + goal event sink: the thread manager only exists
 	// after Assemble returns, while the per-thread router factory below closes over
 	// it, so the manager is published through a guarded holder after assembly. The
@@ -286,6 +299,13 @@ func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultMode
 				// interactive client, so calls resolve as cancelled; the TUI /
 				// app-server clients supply a real requester when they land.
 				UserInput: headlessUserInputRequester{},
+			}
+			// Advertise + route external MCP tools when servers are running. The
+			// manager satisfies McpToolCaller (CallQualifiedTool); the eager specs
+			// make the tools model-visible. Shared across threads (one manager).
+			if mcpManager != nil {
+				deps.Mcp = mcpManager
+				deps.McpTools = mcpToolInfos
 			}
 			if goalStateRuntime != nil {
 				// Goal tools persist per-thread goals in the goals DB; the event

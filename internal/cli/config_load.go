@@ -46,6 +46,9 @@ type loadedConfig struct {
 	// Marketplaces is the resolved `[marketplaces]` table, keyed by name. The
 	// plugin marketplace-upgrade command reads it to refresh git marketplaces.
 	Marketplaces map[string]config.MarketplaceConfig
+	// McpServers is the resolved `[mcp_servers]` table, keyed by server name. The
+	// assembly launches these via the MCP manager so their tools reach the model.
+	McpServers map[string]config.McpServerConfig
 }
 
 // loadConfig loads the merged configuration honoring the root -c overrides,
@@ -85,6 +88,7 @@ func loadConfig(root RootOptions) (loadedConfig, error) {
 		Merged:             result.Merged,
 		ProjectRootMarkers: markers,
 		Marketplaces:       result.Config.Marketplaces,
+		McpServers:         result.Config.McpServers,
 	}, nil
 }
 

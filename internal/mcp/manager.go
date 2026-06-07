@@ -209,6 +209,18 @@ func (m *Manager) ListAllToolSpecs(deferred bool) ([]tools.ToolSpec, error) {
 	return ToolSpecs(m.ListAllTools(), deferred)
 }
 
+// ListAllToolInfos lowers every connected tool into a [tools.McpToolInfo],
+// carrying the server identity needed to route eager tool calls back to the
+// owning server. Ordered like ListAllTools (server name, then tool name).
+func (m *Manager) ListAllToolInfos() []tools.McpToolInfo {
+	all := m.ListAllTools()
+	infos := make([]tools.McpToolInfo, 0, len(all))
+	for _, nt := range all {
+		infos = append(infos, nt.ToolInfo())
+	}
+	return infos
+}
+
 // CallTool routes a tool call to the named server, validating the tool against
 // the server's filter. arguments and meta must each be a JSON object or nil.
 func (m *Manager) CallTool(ctx context.Context, serverName, toolName string, arguments, meta json.RawMessage) (protocol.CallToolResult, error) {

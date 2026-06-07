@@ -75,10 +75,12 @@ type BuiltinToolDeps struct {
 	UnifiedExec *unifiedexec.Executor
 	// Mcp invokes MCP tools.
 	Mcp McpToolCaller
-	// McpTools are the model-visible MCP tool specs to advertise this turn.
-	// STUB: the real router discovers these from connected servers; here they
-	// are injected so core can route to them.
-	McpTools []tools.ToolSpec
+	// McpTools are the eager (directly-advertised) MCP tools for this turn. Each
+	// carries its server identity so the executor advertises the raw tool name to
+	// the model while routing the call back via the canonical
+	// "mcp__<server>__<tool>" name. The host discovers these from the connected
+	// servers (Manager.ListAllToolInfos).
+	McpTools []tools.McpToolInfo
 	// DeferredMcpTools are the `defer_loading` MCP tools registered as deferred
 	// runtimes: dispatch-only (hidden spec) and advertised solely through
 	// tool_search, mirroring the deferred branch of
@@ -168,8 +170,20 @@ func builtinExecutors(deps BuiltinToolDeps) []toolExecutor {
 	// participate in tool_search, mirroring the deferred branch's
 	// add_with_exposure(McpHandler, ToolExposure::Deferred).
 	if deps.Mcp != nil {
-		for _, spec := range deps.McpTools {
-			execs = append(execs, mcpExecutor{caller: deps.Mcp, spec: spec, name: protocol.PlainToolName(spec.Name())})
+		for _, info := range deps.McpTools {
+			apiTool, err := tools.McpToolToResponsesApiTool(info.CanonicalToolName(), info.Tool)
+			if err != nil {
+				// Mirror the Rust warn!+skip on a tool whose spec fails to build.
+				continue
+			}
+			execs = append(execs, mcpExecutor{
+				caller: deps.Mcp,
+				spec:   tools.FunctionToolSpec(apiTool),
+				// Advertised (model-visible) name is the raw tool name; dispatch uses
+				// the canonical "mcp__<server>__<tool>" so routing recovers the server.
+				name:      protocol.PlainToolName(info.CallableName),
+				qualified: info.CanonicalToolName(),
+			})
 		}
 	}
 	for _, de := range deferredMcpExecutors(deps) {
@@ -644,7 +658,23 @@ func (e webSearchExecutor) Handle(ctx context.Context, h *toolHandlerContext) (t
 type mcpExecutor struct {
 	caller McpToolCaller
 	spec   tools.ToolSpec
-	name   protocol.ToolName
+	// name is the model-visible name the router matches an incoming call against.
+	name protocol.ToolName
+	// qualified is the fully-qualified "mcp__<server>__<tool>" name used to route
+	// the call back to the owning server. When zero it falls back to name (the
+	// deferred path sets name to the canonical namespaced form already).
+	qualified protocol.ToolName
+}
+
+// dispatchName returns the fully-qualified name used to route the MCP call. It
+// prefers the explicit qualified name (eager tools, whose model-visible name is
+// the raw tool name) and falls back to name (deferred tools, whose name is the
+// canonical namespaced form).
+func (e mcpExecutor) dispatchName() protocol.ToolName {
+	if e.qualified.Name != "" {
+		return e.qualified
+	}
+	return e.name
 }
 
 func (e mcpExecutor) Name() protocol.ToolName { return e.name }
@@ -664,7 +694,8 @@ func (e mcpExecutor) Handle(ctx context.Context, h *toolHandlerContext) (tools.T
 	if len(strings.TrimSpace(args)) == 0 {
 		arguments = json.RawMessage("{}")
 	}
-	server, tool := splitQualifiedToolName(e.name.String())
+	dispatch := e.dispatchName().String()
+	server, tool := splitQualifiedToolName(dispatch)
 
 	if h.Session != nil {
 		h.Session.SendEvent(h.Turn.SubID, protocol.EventMsg{
@@ -680,7 +711,7 @@ func (e mcpExecutor) Handle(ctx context.Context, h *toolHandlerContext) (tools.T
 		})
 	}
 
-	result, callErr := e.caller.CallQualifiedTool(ctx, e.name.String(), arguments, nil)
+	result, callErr := e.caller.CallQualifiedTool(ctx, dispatch, arguments, nil)
 	if callErr != nil {
 		if h.Session != nil {
 			errMsg := callErr.Error()
@@ -717,15 +748,19 @@ func (e mcpExecutor) Handle(ctx context.Context, h *toolHandlerContext) (tools.T
 	return mcpToolOutput{result: result}, nil
 }
 
-// splitQualifiedToolName splits a "server__tool" qualified name into its server
-// and tool components. When no separator is present the whole name is returned as
-// the tool with an empty server.
+// splitQualifiedToolName splits a fully-qualified "mcp__<server>__<tool>" name
+// into its server and tool components (used for tool-call event display). The
+// leading "mcp__" prefix is stripped first so the split lands on the
+// server/tool boundary rather than after "mcp". When no separator is present the
+// whole (prefix-stripped) name is returned as the tool with an empty server.
 func splitQualifiedToolName(qualified string) (server, tool string) {
+	const prefix = "mcp__"
 	const sep = "__"
-	if idx := strings.Index(qualified, sep); idx >= 0 {
-		return qualified[:idx], qualified[idx+len(sep):]
+	rest := strings.TrimPrefix(qualified, prefix)
+	if idx := strings.Index(rest, sep); idx >= 0 {
+		return rest[:idx], rest[idx+len(sep):]
 	}
-	return "", qualified
+	return "", rest
 }
 
 // ----------------------------------------------------------------------------

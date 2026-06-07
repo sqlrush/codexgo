@@ -66,6 +66,21 @@ func (n NamespacedTool) QualifiedName() string {
 	return FullyQualifiedToolName(n.ServerName, n.Tool.Name)
 }
 
+// ToolInfo lowers a namespaced tool into the [tools.McpToolInfo] the runtime
+// executors consume. It carries the server identity (lost by a bare ToolSpec)
+// so the eager executor can route the call back to the owning server via the
+// canonical "mcp__<server>__<tool>" name while still advertising the raw tool
+// name to the model. CallableNamespace carries the trailing delimiter so
+// CanonicalToolName().String() reconstructs the fully-qualified name.
+func (n NamespacedTool) ToolInfo() tools.McpToolInfo {
+	return tools.McpToolInfo{
+		ServerName:        n.ServerName,
+		CallableName:      n.Tool.Name,
+		CallableNamespace: NamespaceForServer(n.ServerName) + mcpToolNameDelimiter,
+		Tool:              n.Tool,
+	}
+}
+
 // ToolSpec lowers a namespaced MCP tool into a Responses API function tool spec
 // named with its fully-qualified identifier. deferred controls whether the tool
 // is exposed for deferred loading.
