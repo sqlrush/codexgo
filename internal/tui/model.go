@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/sqlrush/codexgo/internal/appserverproto"
 	"github.com/sqlrush/codexgo/internal/config"
 )
 
@@ -57,6 +58,11 @@ type Model struct {
 	// persistModel persists a /model picker selection (host callback writing
 	// `model = "<slug>"` into config.toml). Nil disables persistence.
 	persistModel func(slug string) error
+
+	// mcpTools maps a lowercased MCP tool name to its descriptor, fetched at
+	// startup. It powers the deterministic slash→tool-call entry: typing
+	// /<tool-name> invokes the tool directly. Empty when no MCP servers connect.
+	mcpTools map[string]appserverproto.McpToolDescriptor
 }
 
 // ModelConfig parameterizes a root [Model].
@@ -130,7 +136,10 @@ func (m Model) Capabilities() Capabilities { return m.caps }
 // and startup work are launched by the caller (cmd/codex-tui) after the program
 // is attached so async sends are delivered.
 func (m Model) Init() tea.Cmd {
-	return EventCmd(RedrawEvent{})
+	// Fetch the connected MCP tools so /<tool-name> deterministic commands work.
+	// engine.Start (initialize + thread/start) has already run, so the request is
+	// safe here; a failure degrades to no dynamic commands.
+	return tea.Batch(EventCmd(RedrawEvent{}), m.loadMcpToolsCmd())
 }
 
 // Update implements tea.Model. It routes spine messages (resize, key, app
@@ -160,6 +169,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case EngineClosedMsg:
 		m.quitting = true
 		return m, tea.Quit
+
+	case mcpToolsLoadedMsg:
+		m.mcpTools = indexMcpTools(msg.tools)
+		return m, nil
 
 	case AppEvent:
 		model, cmd := m.handleAppEvent(msg)
@@ -233,6 +246,13 @@ func (m Model) handleAppEvent(ev AppEvent) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case SubmitUserMessageEvent:
+		// Deterministic dual-entry: a "/<tool-name>" that matches a connected MCP
+		// tool runs that tool directly (no LLM turn) and renders its result. A
+		// built-in slash never reaches here (it is dispatched earlier), and an
+		// unknown slash falls through to a normal user turn as before.
+		if desc, args, ok := m.matchMcpSlash(ev.Text); ok {
+			return m.runMcpTool(desc, args, ev.Text)
+		}
 		// Echo the submitted message into history TUI-side (codex's
 		// on_user_message_display), then forward the turn to the engine. The
 		// withScrollback wrapper applied to the returned cmd drains the new user

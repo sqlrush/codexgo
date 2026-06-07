@@ -228,6 +228,30 @@ func (e *Engine) SubmitCommand(ctx context.Context, cmd AppCommand, targetThread
 	}
 }
 
+// ListMcpTools fetches the connected MCP tools (codexgo extension method) for
+// the deterministic slash→tool-call entry. Returns nil with no error when no
+// MCP servers are connected.
+func (e *Engine) ListMcpTools(ctx context.Context) ([]appserverproto.McpToolDescriptor, error) {
+	var resp appserverproto.McpListToolsResponse
+	if err := e.client.RequestTyped(ctx, "mcp/listTools", appserverproto.McpListToolsParams{}, &resp); err != nil {
+		return nil, fmt.Errorf("tui: mcp/listTools: %w", err)
+	}
+	return resp.Tools, nil
+}
+
+// CallMcpTool invokes one MCP tool deterministically (no LLM turn) by its
+// canonical "mcp__<server>__<tool>" name and returns the flattened result.
+func (e *Engine) CallMcpTool(ctx context.Context, qualifiedName string, arguments json.RawMessage) (appserverproto.McpCallToolResponse, error) {
+	var resp appserverproto.McpCallToolResponse
+	if err := e.client.RequestTyped(ctx, "mcp/callTool", appserverproto.McpCallToolParams{
+		QualifiedName: qualifiedName,
+		Arguments:     arguments,
+	}, &resp); err != nil {
+		return appserverproto.McpCallToolResponse{}, fmt.Errorf("tui: mcp/callTool %s: %w", qualifiedName, err)
+	}
+	return resp, nil
+}
+
 // Pump drains the engine event stream, decoding each `codex/event` notification
 // into a [CoreEventMsg] and delivering it to the model via the sender. It runs
 // until ctx is cancelled or the stream closes, then sends [EngineClosedMsg].

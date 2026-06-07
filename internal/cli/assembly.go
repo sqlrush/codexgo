@@ -264,8 +264,13 @@ func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultMode
 	// exactly as before.
 	mcpManager := buildMcpManager(context.Background(), codexHome, effectiveMcpServers(codexHome, mcpServers, pluginsCfg))
 	var mcpToolInfos []tools.McpToolInfo
+	// mcpGateway exposes the manager for the deterministic slash→tool-call methods.
+	// It stays a nil interface when no manager is running (a non-nil interface over
+	// a nil *Manager would defeat the processor's nil check and panic on call).
+	var mcpGateway appserver.McpToolGateway
 	if mcpManager != nil {
 		mcpToolInfos = mcpManager.ListAllToolInfos()
+		mcpGateway = mcpManager
 	}
 
 	// Multi-agent control plane + goal event sink: the thread manager only exists
@@ -281,6 +286,9 @@ func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultMode
 		SkillsManager:      skillsManager,
 		CodexHome:          codexHome,
 		DefaultModel:       model,
+		// Expose the MCP manager for the deterministic slash→tool-call methods
+		// (mcp/listTools, mcp/callTool) the TUI uses for human /<tool> entry.
+		McpGateway: mcpGateway,
 		// The bundled catalog lets the per-turn tool selection read the real
 		// model metadata (shell_type, truncation policy) — without it every turn
 		// falls back to slug-derived defaults.

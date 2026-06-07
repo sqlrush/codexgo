@@ -2,6 +2,7 @@ package appserver
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/rollout"
 	"github.com/sqlrush/codexgo/internal/threadstore"
+	"github.com/sqlrush/codexgo/internal/tools"
 )
 
 // ModelClientFactory builds the per-thread [core.ModelClient] for a spawning
@@ -73,11 +75,26 @@ type AssemblyConfig struct {
 	ExecService     core.ExecService
 	RolloutRecorder core.RolloutRecorder
 
+	// McpGateway, when set, exposes the connected MCP tools for the deterministic
+	// "slash → tool call" entry (mcp/listTools, mcp/callTool). It is the same
+	// process-wide manager that backs the per-thread tool router. Nil disables
+	// those methods (they return an empty list / "no MCP" error).
+	McpGateway McpToolGateway
+
 	// ToolRouterFactory, when set, builds the per-thread tool router; it
 	// receives the spawning thread's id so per-thread tools (e.g. the goal
 	// trio, which persists goals keyed by thread) can be scoped. When nil,
 	// core.NewDefaultToolRouter is used.
 	ToolRouterFactory func(threadID protocol.ThreadID) (core.ToolRouter, error)
+}
+
+// McpToolGateway is the minimal surface the deterministic slash→tool-call
+// methods need: list the connected tools and invoke one by its canonical name.
+// It is satisfied by *mcp.Manager. Kept as an interface here so appserver does
+// not import internal/mcp.
+type McpToolGateway interface {
+	ListAllToolInfos() []tools.McpToolInfo
+	CallQualifiedTool(ctx context.Context, qualifiedName string, arguments, meta json.RawMessage) (protocol.CallToolResult, error)
 }
 
 // Assembly is the constructed engine: the thread manager plus the models
@@ -90,6 +107,9 @@ type Assembly struct {
 	ModelsManager core.ModelsManager
 	// CodexHome is surfaced in the initialize response.
 	CodexHome string
+	// McpGateway exposes connected MCP tools for mcp/listTools + mcp/callTool;
+	// nil when no MCP servers are wired.
+	McpGateway McpToolGateway
 }
 
 // Assemble builds the Codex engine from cfg, following the codex init order:
@@ -168,5 +188,6 @@ func Assemble(cfg AssemblyConfig) (*Assembly, error) {
 		ThreadManager: manager,
 		ModelsManager: models,
 		CodexHome:     cfg.CodexHome,
+		McpGateway:    cfg.McpGateway,
 	}, nil
 }

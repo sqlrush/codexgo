@@ -23,9 +23,17 @@
    `${CODEX_PLUGIN_ROOT}` 替换(兼容 `${CLAUDE_PLUGIN_ROOT}`/`${PLUGIN_ROOT}`),
    解析为 MCP server 并入有效集合。配置的 `[mcp_servers]` 在重名时覆盖插件项
    (`effectiveMcpServers`)。
+5. **slash → tools/call(人类确定性入口)**:新增 app-server 方法 `mcp/listTools`
+   + `mcp/callTool`(codexgo 扩展,不影响 codex 协议),把进程级 MCP manager 作为
+   gateway 暴露给 Processor。TUI 启动时拉取工具清单,输入 `/<工具名>`(如
+   `/db_health`、`/db_slowsql {"threshold_ms":500}`)即**绕过 LLM 直接调用**该 MCP
+   工具并渲染结果。命令集**完全来自已连接的 MCP 工具**,core 不硬编码任何 DB 命令
+   (零耦合)。
 
 > 核心改动:`internal/cli/{assembly,mcp_wiring,plugin_mcp,config_load}.go`、
-> `internal/core/tool_executors.go`、`internal/mcp/{manager,namespace}.go`。
+> `internal/core/tool_executors.go`、`internal/mcp/{manager,namespace}.go`、
+> `internal/appserverproto/mcp_tools_codexgo.go`、`internal/appserver/{assembly,mcp_tools}.go`、
+> `internal/tui/{engine,model,chat,mcp_slash}.go`。
 
 ## 如何验证(连真实 GaussDB)
 
@@ -64,14 +72,24 @@ startup_timeout_sec = 20
 tool_timeout_sec = 60
 ```
 
-### 让模型调用
+### 两种调用方式
 
-启动后对模型说(示例):
+**A) 模型驱动**:对模型说"连接 GaussDB(host/port/user/库)并做一次健康体检",
+模型会依次调 `db_connect` → `db_health`,事件里能看到结构化结果。
 
-> 连接 GaussDB(host=… port=… user=… 库=…)并做一次健康体检。
+**B) 人类 slash 直达(确定性,不走 LLM)**:直接输入工具名 slash:
 
-模型应依次调用 `db_connect` → `db_health`,工具事件里能看到 `gaussdb / db_health`
-的调用与结构化结果;随后可继续 `db_slowsql`、`db_sqltune` 等。
+```
+/db_connect {"host":"...","port":8000,"user":"...","password":"...","database":"postgres"}
+/db_health
+/db_slowsql {"threshold_ms":500}
+```
+
+无参工具(如 `/db_health`)直接回车;带参工具传 JSON 对象。结果以 notice 形式
+渲染在命令下方。命令集来自已连接的 MCP 工具(`/<工具名>`),无需任何 codexgo 侧
+硬编码。
+
+> 说明:动态命令暂未进入 `/` 自动补全弹窗(避免改动枚举式 slash 系统),输入即生效。
 
 ### 快速冒烟(不连库也能验证)
 
@@ -80,8 +98,7 @@ make -C plugins/codexgo-db-gaussdb smoke              # initialize + tools/list 
 go test ./internal/cli/ -run 'TestBuildMcpManager|TestDiscoverPlugin|TestEffectiveMcp'
 ```
 
-## 待办(#26 余项)
+## 待办
 
-- **slash → tools/call**:让 `/health` 这类人类命令确定性直达 MCP 工具(当前模型
-  侧已可调用;人类 slash 直达入口待接)。
 - 真机验证通过后:升 0.4.0 + 部署(见 [release-workflow])。
+- (可选增强)动态命令进入 `/` 自动补全弹窗;raw 名跨 server 冲突时按 server 消歧。

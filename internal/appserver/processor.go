@@ -161,6 +161,10 @@ func (p *Processor) dispatch(ctx context.Context, conn *Conn, req appserverproto
 		return p.fs.remove(ctx, params.(*appserverproto.FsRemoveParams))
 	case "fs/copy":
 		return p.fs.copy(ctx, params.(*appserverproto.FsCopyParams))
+	case "mcp/listTools":
+		return p.handleMcpListTools(params.(*appserverproto.McpListToolsParams))
+	case "mcp/callTool":
+		return p.handleMcpCallTool(ctx, params.(*appserverproto.McpCallToolParams))
 	default:
 		// The method is registered but not implemented in this turn-driving subset.
 		return nil, methodNotFound("method %q is not implemented", req.Method)

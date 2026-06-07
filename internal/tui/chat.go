@@ -140,6 +140,20 @@ func (t ChatTranscript) Update(msg tea.Msg) (TranscriptView, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		t.lastWidth = m.Width
 		return t, nil
+	case McpToolResultMsg:
+		// Deterministic slash→tool-call result: render below the echoed command
+		// as a notice cell (error styling when the tool reported an error).
+		t = t.commitStream()
+		kind := NoticeInfo
+		if m.IsError {
+			kind = NoticeError
+		}
+		body := m.Text
+		if strings.TrimSpace(body) == "" {
+			body = "(no output)"
+		}
+		t.cells = t.appendCell(NewNoticeCell(t.theme, kind, body))
+		return t, nil
 	case tea.KeyMsg:
 		switch m.Type {
 		case tea.KeyPgUp:
