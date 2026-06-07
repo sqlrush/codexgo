@@ -9,8 +9,8 @@ import (
 
 func sampleMcpTools() []appserverproto.McpToolDescriptor {
 	return []appserverproto.McpToolDescriptor{
-		{QualifiedName: "mcp__gaussdb__db_health", Server: "gaussdb", Tool: "db_health"},
-		{QualifiedName: "mcp__gaussdb__db_slowsql", Server: "gaussdb", Tool: "db_slowsql"},
+		{QualifiedName: "mcp__gaussdb__health", Server: "gaussdb", Tool: "health"},
+		{QualifiedName: "mcp__gaussdb__slowsql", Server: "gaussdb", Tool: "slowsql"},
 	}
 }
 
@@ -23,9 +23,9 @@ func TestMatchMcpSlash(t *testing.T) {
 		wantQN   string
 		wantArgs string
 	}{
-		{"/db_health", true, "mcp__gaussdb__db_health", ""},
-		{"/DB_HEALTH", true, "mcp__gaussdb__db_health", ""}, // case-insensitive
-		{`/db_slowsql {"threshold_ms":500}`, true, "mcp__gaussdb__db_slowsql", `{"threshold_ms":500}`},
+		{"/health", true, "mcp__gaussdb__health", ""},
+		{"/HEALTH", true, "mcp__gaussdb__health", ""}, // case-insensitive
+		{`/slowsql {"threshold_ms":500}`, true, "mcp__gaussdb__slowsql", `{"threshold_ms":500}`},
 		{"/unknown_tool", false, "", ""},
 		{"hello world", false, "", ""},
 		{"/", false, "", ""},
@@ -44,7 +44,7 @@ func TestMatchMcpSlash(t *testing.T) {
 
 func TestMatchMcpSlashNoToolsNeverMatches(t *testing.T) {
 	m := Model{} // no tools loaded
-	if _, _, ok := m.matchMcpSlash("/db_health"); ok {
+	if _, _, ok := m.matchMcpSlash("/health"); ok {
 		t.Error("expected no match when no MCP tools are loaded")
 	}
 }
@@ -76,7 +76,7 @@ func TestPrettyJSON(t *testing.T) {
 
 func TestTranscriptRendersMcpToolResult(t *testing.T) {
 	tr := NewChatTranscript(testTheme())
-	view, _ := tr.Update(McpToolResultMsg{Command: "db_health", Text: "health score 88", IsError: false})
+	view, _ := tr.Update(McpToolResultMsg{Command: "health", Text: "health score 88", IsError: false})
 	out := view.View(Rect{Width: 60, Height: 8})
 	if !strings.Contains(out, "health score 88") {
 		t.Fatalf("MCP tool result not rendered: %q", out)
@@ -85,8 +85,8 @@ func TestTranscriptRendersMcpToolResult(t *testing.T) {
 
 func TestIndexMcpToolsKeyedByLowerName(t *testing.T) {
 	idx := indexMcpTools(sampleMcpTools())
-	if _, ok := idx["db_health"]; !ok {
-		t.Error("expected db_health key")
+	if _, ok := idx["health"]; !ok {
+		t.Error("expected health key")
 	}
 	if len(idx) != 2 {
 		t.Errorf("expected 2 tools, got %d", len(idx))

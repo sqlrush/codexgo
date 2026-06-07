@@ -49,8 +49,8 @@ func TestBuildMcpManagerLaunchesGaussdbPlugin(t *testing.T) {
 	// info keeps the raw model-visible CallableName while carrying the server
 	// identity so the canonical "mcp__gaussdb__<tool>" routes the call back.
 	infos := mgr.ListAllToolInfos()
-	if len(infos) != 12 {
-		t.Fatalf("expected 12 gaussdb tools, got %d", len(infos))
+	if len(infos) != 13 {
+		t.Fatalf("expected 13 gaussdb tools, got %d", len(infos))
 	}
 	byName := map[string]string{} // raw callable name -> qualified dispatch name
 	for _, info := range infos {
@@ -59,7 +59,8 @@ func TestBuildMcpManagerLaunchesGaussdbPlugin(t *testing.T) {
 		}
 		byName[info.CallableName] = info.CanonicalToolName().String()
 	}
-	for _, raw := range []string{"db_connect", "db_health", "db_slowsql", "db_wdranalyze"} {
+	// Tool names match opendb's command names (no db_ prefix), incl. help.
+	for _, raw := range []string{"connect", "health", "slowsql", "wdranalyze", "help"} {
 		qn, ok := byName[raw]
 		if !ok {
 			t.Errorf("missing MCP tool %q", raw)

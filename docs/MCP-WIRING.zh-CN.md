@@ -16,7 +16,7 @@
    并调用。
 3. **回路由修复**:eager(直接广告)的 MCP 工具此前只带"原始工具名"、丢了
    server 身份,导致 `CallQualifiedTool` 无法解析。改为与 deferred 路径对称——
-   模型可见名仍是原始名(如 `db_health`),但用规范名 `mcp__gaussdb__db_health`
+   模型可见名仍是原始名(如 `health`),但用规范名 `mcp__gaussdb__health`
    回路由到对应 server。事件展示的 server/tool 切分也一并修正。
 4. **插件自动发现**(`plugin_mcp.go`):从已启用、已安装的插件(`[plugins]` 表 +
    插件 store cache)读取其 `.codex-plugin/plugin.json` → `.mcp.json`,做
@@ -26,7 +26,7 @@
 5. **slash → tools/call(人类确定性入口)**:新增 app-server 方法 `mcp/listTools`
    + `mcp/callTool`(codexgo 扩展,不影响 codex 协议),把进程级 MCP manager 作为
    gateway 暴露给 Processor。TUI 启动时拉取工具清单,输入 `/<工具名>`(如
-   `/db_health`、`/db_slowsql {"threshold_ms":500}`)即**绕过 LLM 直接调用**该 MCP
+   `/health`、`/slowsql {"threshold_ms":500}`)即**绕过 LLM 直接调用**该 MCP
    工具并渲染结果。命令集**完全来自已连接的 MCP 工具**,core 不硬编码任何 DB 命令
    (零耦合)。
 
@@ -75,17 +75,17 @@ tool_timeout_sec = 60
 ### 两种调用方式
 
 **A) 模型驱动**:对模型说"连接 GaussDB(host/port/user/库)并做一次健康体检",
-模型会依次调 `db_connect` → `db_health`,事件里能看到结构化结果。
+模型会依次调 `connect` → `health`,事件里能看到结构化结果。
 
 **B) 人类 slash 直达(确定性,不走 LLM)**:直接输入工具名 slash:
 
 ```
-/db_connect {"host":"...","port":8000,"user":"...","password":"...","database":"postgres"}
-/db_health
-/db_slowsql {"threshold_ms":500}
+/connect {"host":"...","port":8000,"user":"...","password":"...","database":"postgres"}
+/health
+/slowsql {"threshold_ms":500}
 ```
 
-无参工具(如 `/db_health`)直接回车;带参工具传 JSON 对象。结果以 notice 形式
+无参工具(如 `/health`)直接回车;带参工具传 JSON 对象。结果以 notice 形式
 渲染在命令下方。命令集来自已连接的 MCP 工具(`/<工具名>`),无需任何 codexgo 侧
 硬编码。
 

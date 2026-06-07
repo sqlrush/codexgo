@@ -30,7 +30,7 @@ type slowSQLArgs struct {
 
 func registerSlowSQL(s *mcp.Server, conn *db.Conn) {
 	tool := mcp.Tool{
-		Name:        "db_slowsql",
+		Name:        "slowsql",
 		Description: "List slow SQL from dbe_perf.statement ranked by average elapsed time per call. Args: threshold_ms (min avg ms, default 1000), limit (default 20, max 100). Adds max_ms (latency variance) and per-SQL cache_hit_pct over opendb. Read-only.",
 		InputSchema: jsonObjSchema(map[string]any{
 			"threshold_ms": intProp("minimum average ms per call to include (default 1000)"),
@@ -72,7 +72,7 @@ LIMIT %d`, a.ThresholdMS, limit)
 		}
 		report := tableReport(
 			"慢 SQL (按平均单次耗时排序)", conn.Label(),
-			"avg_ms 超过阈值的语句;max_ms 反映抖动,cache_hit_pct 偏低说明走磁盘/缺索引。用 unique_sql_id 调 db_sqlfetch/db_sqltune 下钻。",
+			"avg_ms 超过阈值的语句;max_ms 反映抖动,cache_hit_pct 偏低说明走磁盘/缺索引。用 unique_sql_id 调 sqlfetch/sqltune 下钻。",
 			map[string]string{"threshold_ms": strconv.Itoa(a.ThresholdMS), "limit": strconv.Itoa(limit)},
 			res,
 		)
@@ -99,7 +99,7 @@ type topSQLArgs struct {
 
 func registerTopSQL(s *mcp.Server, conn *db.Conn) {
 	tool := mcp.Tool{
-		Name:        "db_topsql",
+		Name:        "topsql",
 		Description: "Top SQL from dbe_perf.statement by a chosen dimension. Args: sort one of el(total elapsed,default) | ae(avg elapsed) | ex(executions) | lr(logical reads) | rw(rows), limit (default 20, max 100). Read-only.",
 		InputSchema: jsonObjSchema(map[string]any{
 			"sort":  strProp("sort dimension: el|ae|ex|lr|rw (default el)"),
@@ -142,7 +142,7 @@ LIMIT %d`, orderBy, limit)
 		}
 		report := tableReport(
 			"Top SQL ("+topSQLLabel(sortKey)+")", conn.Label(),
-			"按所选维度排名的资源消耗大户;聚焦排名靠前者用 db_sqltune 优化。",
+			"按所选维度排名的资源消耗大户;聚焦排名靠前者用 sqltune 优化。",
 			map[string]string{"sort": sortKey, "limit": strconv.Itoa(limit)},
 			res,
 		)
@@ -187,7 +187,7 @@ type SQLFetchResult struct {
 
 func registerSQLFetch(s *mcp.Server, conn *db.Conn) {
 	tool := mcp.Tool{
-		Name:        "db_sqlfetch",
+		Name:        "sqlfetch",
 		Description: "Resolve a unique SQL id to its SQL text. Prefers dbe_perf.statement_history (carries literals), falls back to dbe_perf.statement (normalized with ? placeholders). Arg: sql_id (required). Read-only.",
 		InputSchema: jsonObjSchema(map[string]any{
 			"sql_id": strProp("unique SQL id (unique_sql_id / unique_query_id)"),
@@ -279,7 +279,7 @@ type planHistoryArgs struct {
 
 func registerPlanHistory(s *mcp.Server, conn *db.Conn) {
 	tool := mcp.Tool{
-		Name:        "db_planhistory",
+		Name:        "planhistory",
 		Description: "Show recent executions of one SQL id from dbe_perf.statement_history with timing and execution plan, to spot plan regressions over time. Args: sql_id (required), limit (default 10, max 50). Read-only.",
 		InputSchema: jsonObjSchema(map[string]any{
 			"sql_id": strProp("unique SQL id (unique_query_id)"),

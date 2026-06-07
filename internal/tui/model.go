@@ -171,8 +171,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case mcpToolsLoadedMsg:
+		// Index for the deterministic dispatch intercept, and forward to the bottom
+		// pane so the composer's slash popup lists the MCP commands.
 		m.mcpTools = indexMcpTools(msg.tools)
-		return m, nil
+		var cmd tea.Cmd
+		m.bottom, cmd = m.bottom.Update(msg)
+		return m, cmd
 
 	case AppEvent:
 		model, cmd := m.handleAppEvent(msg)

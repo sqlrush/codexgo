@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -63,6 +64,17 @@ func indexMcpTools(list []appserverproto.McpToolDescriptor) map[string]appserver
 	for _, d := range list {
 		out[strings.ToLower(d.Tool)] = d
 	}
+	return out
+}
+
+// mcpPopupCommands converts the connected MCP tool descriptors into sorted
+// composer slash-popup commands (name + description).
+func mcpPopupCommands(toolList []appserverproto.McpToolDescriptor) []mcpPopupCmd {
+	out := make([]mcpPopupCmd, 0, len(toolList))
+	for _, d := range toolList {
+		out = append(out, mcpPopupCmd{name: d.Tool, desc: d.Description})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].name < out[j].name })
 	return out
 }
 

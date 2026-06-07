@@ -51,6 +51,26 @@ type Composer struct {
 
 	// width is the last laid-out content width, used for rendering.
 	width int
+
+	// mcpCommands are the slash commands sourced from connected MCP servers
+	// (plugin tools). They are merged into the slash popup below the built-ins and
+	// rendered in a distinct color. Empty when no MCP servers connect.
+	mcpCommands []mcpPopupCmd
+}
+
+// mcpPopupCmd is one MCP-sourced slash command shown in the composer popup.
+type mcpPopupCmd struct {
+	// name is the command name without the leading '/' (the MCP tool's raw name).
+	name string
+	// desc is the tool description shown as the popup detail.
+	desc string
+}
+
+// WithMcpCommands returns a copy of the composer carrying the given MCP-sourced
+// slash commands (sorted by name) for the slash popup.
+func (c Composer) WithMcpCommands(cmds []mcpPopupCmd) Composer {
+	c.mcpCommands = cmds
+	return c
 }
 
 // FileSearchFunc resolves an @mention query to candidate paths. It is injected
@@ -112,8 +132,11 @@ type popupItem struct {
 	detail string
 	// insert is the text inserted when the item is accepted (without the sigil).
 	insert string
-	// cmd is the slash command, valid for slash popups.
+	// cmd is the slash command, valid for built-in slash popups.
 	cmd SlashCommand
+	// isMcp marks a command sourced from a connected MCP server (plugin tool)
+	// rather than a codexgo built-in, so the popup can color it distinctly.
+	isMcp bool
 }
 
 // reverseSearch holds Ctrl+R incremental search state.
@@ -363,6 +386,19 @@ func (c Composer) slashPopup(prefix string, start int) composerPopup {
 			cmd:    cmd,
 		})
 	}
+	// MCP-sourced commands (plugin tools) follow the built-ins, filtered by the
+	// same prefix and flagged for distinct coloring.
+	for _, mc := range c.mcpCommands {
+		if prefix != "" && !strings.HasPrefix(strings.ToLower(mc.name), strings.ToLower(prefix)) {
+			continue
+		}
+		items = append(items, popupItem{
+			label:  "/" + mc.name,
+			detail: mc.desc,
+			insert: mc.name,
+			isMcp:  true,
+		})
+	}
 	if len(items) == 0 {
 		return composerPopup{}
 	}
@@ -543,6 +579,9 @@ type PopupRow struct {
 	Label string
 	// Detail is secondary text (description); may be empty.
 	Detail string
+	// IsMcp marks a row sourced from a connected MCP server so the view can color
+	// it distinctly from codexgo built-in commands.
+	IsMcp bool
 }
 
 // PopupRows returns the active popup's rows, the selected index, and whether a
@@ -565,7 +604,7 @@ func (c Composer) PopupRows() ([]PopupRow, int, bool) {
 	}
 	rows := make([]PopupRow, 0, visible)
 	for _, it := range c.popup.items[top : top+visible] {
-		rows = append(rows, PopupRow{Label: it.label, Detail: it.detail})
+		rows = append(rows, PopupRow{Label: it.label, Detail: it.detail, IsMcp: it.isMcp})
 	}
 	return rows, c.popup.selected - top, true
 }

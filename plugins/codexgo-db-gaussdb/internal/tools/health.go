@@ -31,7 +31,7 @@ type HealthItem struct {
 	Suggestion string `json:"suggestion,omitempty"`
 }
 
-// HealthReport is the structured db_health result codexgo renders.
+// HealthReport is the structured health result codexgo renders.
 type HealthReport struct {
 	Target  string       `json:"target"`
 	Score   int          `json:"score"` // 0-100 weighted health score
@@ -49,13 +49,13 @@ type healthCounts struct {
 
 func registerHealth(s *mcp.Server, conn *db.Conn) {
 	tool := mcp.Tool{
-		Name:        "db_health",
+		Name:        "health",
 		Description: "Comprehensive GaussDB health check: instance uptime, connection usage, active/idle-in-tx sessions, cache hit ratio, dead tuples, transaction-ID wraparound risk, replication. Returns a structured report with per-item current value, threshold, OK/WARN/FAIL status and suggestion, plus a weighted 0-100 health score. Read-only.",
 		InputSchema: jsonObjSchema(map[string]any{}),
 	}
 	s.Register(tool, func(ctx context.Context, _ json.RawMessage) (mcp.CallToolResult, error) {
 		if !conn.IsConnected() {
-			return mcp.CallToolResult{}, fmt.Errorf("no active database connection — run db_connect first")
+			return mcp.CallToolResult{}, fmt.Errorf("no active database connection — run connect first")
 		}
 		report := runHealth(ctx, conn)
 		out, err := json.Marshal(report)
@@ -170,7 +170,7 @@ func checkConnections(ctx context.Context, conn *db.Conn) []HealthItem {
 	act.Value = fmt.Sprintf("%.0f", active)
 	act.Status = level(active, 50, 200)
 	if act.Status != statusOK {
-		act.Suggestion = "活动会话偏高,结合 db_slowsql / db_ash 定位热点"
+		act.Suggestion = "活动会话偏高,结合 slowsql / ash 定位热点"
 	}
 	items = append(items, act)
 

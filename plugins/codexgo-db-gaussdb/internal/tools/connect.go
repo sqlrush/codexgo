@@ -9,7 +9,7 @@ import (
 	"github.com/sqlrush/codexgo-db-gaussdb/internal/mcp"
 )
 
-// connectArgs are the db_connect arguments. The plugin holds the connection;
+// connectArgs are the connect arguments. The plugin holds the connection;
 // codexgo passes the target (and, for prompt auth, the password it collected
 // via request_user_input) — codexgo never holds a DB driver itself.
 type connectArgs struct {
@@ -24,7 +24,7 @@ type connectArgs struct {
 
 func registerConnect(s *mcp.Server, conn *db.Conn) {
 	tool := mcp.Tool{
-		Name:        "db_connect",
+		Name:        "connect",
 		Description: "Connect to a GaussDB instance (sets the active connection for subsequent tools). Args: host, port, user, password, database, optional sslmode (default disable) and label.",
 		InputSchema: jsonObjSchema(map[string]any{
 			"host":     strProp("GaussDB host"),
@@ -41,7 +41,7 @@ func registerConnect(s *mcp.Server, conn *db.Conn) {
 		var a connectArgs
 		if len(raw) > 0 {
 			if err := json.Unmarshal(raw, &a); err != nil {
-				return mcp.CallToolResult{}, fmt.Errorf("invalid db_connect arguments: %w", err)
+				return mcp.CallToolResult{}, fmt.Errorf("invalid connect arguments: %w", err)
 			}
 		}
 		label := a.Label

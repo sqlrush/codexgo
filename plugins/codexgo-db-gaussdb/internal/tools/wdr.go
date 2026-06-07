@@ -11,20 +11,20 @@ import (
 	"github.com/sqlrush/codexgo-db-gaussdb/internal/mcp"
 )
 
-// registerWDR wires the WDR (Workload Diagnosis Report) tools: db_wdr lists
-// snapshots, db_wdranalyze generates a report between two snapshots and returns
+// registerWDR wires the WDR (Workload Diagnosis Report) tools: wdr lists
+// snapshots, wdranalyze generates a report between two snapshots and returns
 // it as structured material for codexgo's LLM to analyze.
 func registerWDR(s *mcp.Server, conn *db.Conn) {
 	registerWDRList(s, conn)
 	registerWDRAnalyze(s, conn)
 }
 
-// --- db_wdr (list snapshots) ----------------------------------------------
+// --- wdr (list snapshots) ----------------------------------------------
 
 func registerWDRList(s *mcp.Server, conn *db.Conn) {
 	tool := mcp.Tool{
-		Name:        "db_wdr",
-		Description: "List available WDR snapshots from snapshot.snapshot (id, window start/end, window seconds), newest first. Use the snapshot ids with db_wdranalyze to generate and analyze a report. Args: limit (default 20, max 100). Read-only.",
+		Name:        "wdr",
+		Description: "List available WDR snapshots from snapshot.snapshot (id, window start/end, window seconds), newest first. Use the snapshot ids with wdranalyze to generate and analyze a report. Args: limit (default 20, max 100). Read-only.",
 		InputSchema: jsonObjSchema(map[string]any{
 			"limit": intProp("max snapshots (default 20, max 100)"),
 		}),
@@ -53,7 +53,7 @@ LIMIT %d`, limit))
 		}
 		report := tableReport(
 			"WDR 快照列表", conn.Label(),
-			"挑选相邻或跨峰值的两个 snapshot_id,交给 db_wdranalyze 生成并分析报告。快照默认每小时一个、保留 8 天。",
+			"挑选相邻或跨峰值的两个 snapshot_id,交给 wdranalyze 生成并分析报告。快照默认每小时一个、保留 8 天。",
 			map[string]string{"limit": strconv.Itoa(limit)},
 			res,
 		)
@@ -61,11 +61,11 @@ LIMIT %d`, limit))
 	})
 }
 
-// --- db_wdranalyze (generate + return report) -----------------------------
+// --- wdranalyze (generate + return report) -----------------------------
 
 // WDRAnalyzeReport carries the generated WDR report text plus the window it
 // covers. codexgo's LLM analyzes the report_text (findings, top SQL, advice) and
-// can chain db_sqltune on the top SQL — the analysis is NOT done in the plugin
+// can chain sqltune on the top SQL — the analysis is NOT done in the plugin
 // (model-agnostic, vs opendb's embedded synthesis pipeline).
 type WDRAnalyzeReport struct {
 	Target     string   `json:"target"`
@@ -79,8 +79,8 @@ type WDRAnalyzeReport struct {
 
 func registerWDRAnalyze(s *mcp.Server, conn *db.Conn) {
 	tool := mcp.Tool{
-		Name:        "db_wdranalyze",
-		Description: "Generate a WDR report between two snapshots and return its full text for you (the model) to analyze: characterize the workload, extract risk findings, and list top SQL (then drill with db_sqltune). Args: begin (snapshot id), end (snapshot id) — omit both to use the two latest snapshots; detail one of summary(default)|all. It generates the report deterministically and does NOT itself call an LLM. Read-only.",
+		Name:        "wdranalyze",
+		Description: "Generate a WDR report between two snapshots and return its full text for you (the model) to analyze: characterize the workload, extract risk findings, and list top SQL (then drill with sqltune). Args: begin (snapshot id), end (snapshot id) — omit both to use the two latest snapshots; detail one of summary(default)|all. It generates the report deterministically and does NOT itself call an LLM. Read-only.",
 		InputSchema: jsonObjSchema(map[string]any{
 			"begin":  intProp("begin snapshot id (omit to auto-pick second-latest)"),
 			"end":    intProp("end snapshot id (omit to auto-pick latest)"),
@@ -125,7 +125,7 @@ func registerWDRAnalyze(s *mcp.Server, conn *db.Conn) {
 			return mcp.CallToolResult{}, err
 		}
 		report.ReportText = text
-		report.Note = "report_text 为引擎生成的 WDR 原文;请据此输出:工作负载画像、风险发现(分级)、Top SQL 列表,并对 Top SQL 调 db_sqltune 下钻。提醒结论需人工复核。"
+		report.Note = "report_text 为引擎生成的 WDR 原文;请据此输出:工作负载画像、风险发现(分级)、Top SQL 列表,并对 Top SQL 调 sqltune 下钻。提醒结论需人工复核。"
 		return jsonResult(report)
 	})
 }

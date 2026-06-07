@@ -68,6 +68,13 @@ func (t Theme) WithTerminalBackground(bg RGB, ok bool) Theme {
 	return t
 }
 
+// McpCommandStyle styles slash-popup rows sourced from connected MCP servers
+// (plugin tools), so they read as distinct from the dim built-in rows. It uses
+// the theme's primary accent color.
+func (t Theme) McpCommandStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(t.Primary)
+}
+
 // builtinTheme is a named set of base colors a Theme is assembled from.
 type builtinTheme struct {
 	name       string

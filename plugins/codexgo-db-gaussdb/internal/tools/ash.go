@@ -20,7 +20,7 @@ type AshReport struct {
 
 func registerASH(s *mcp.Server, conn *db.Conn) {
 	tool := mcp.Tool{
-		Name:        "db_ash",
+		Name:        "ash",
 		Description: "Point-in-time active session sampling from pg_stat_activity: wait-type/event distribution (CPU vs Lock vs wait events) plus the list of currently active sessions with run time and SQL head. Read-only.",
 		InputSchema: jsonObjSchema(map[string]any{}),
 	}
@@ -66,7 +66,7 @@ LIMIT 20`)
 		} else {
 			report.ActiveSessions = tableReport(
 				"活动会话明细", conn.Label(),
-				"run_sec 越大越可疑;同一 query 反复出现即热点。结合 unique 化后的 db_topsql 定位。",
+				"run_sec 越大越可疑;同一 query 反复出现即热点。结合 unique 化后的 topsql 定位。",
 				nil, detail,
 			)
 		}

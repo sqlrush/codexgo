@@ -98,6 +98,10 @@ func (p ChatBottomPane) Update(msg tea.Msg) (BottomPane, tea.Cmd) {
 	case StatusMsg:
 		p.status = string(m)
 		return p, nil
+	case mcpToolsLoadedMsg:
+		// Connected MCP tools become slash-popup commands (distinct color).
+		p.composer = p.composer.WithMcpCommands(mcpPopupCommands(m.tools))
+		return p, nil
 	case CoreEventMsg:
 		return p.handleCoreEvent(m)
 	case SpinnerTickMsg:
@@ -511,10 +515,16 @@ func (p ChatBottomPane) renderPopup(width int) []string {
 	var rows []string
 	for i, it := range items {
 		marker := "  "
+		// Built-ins render dim; the selected row uses the system accent; MCP-sourced
+		// commands use the theme's primary accent so they are visually distinct.
 		style := lipglossDim(p.theme)
-		if i == selected {
-			marker = "▸ "
-			style = p.theme.SystemMessage
+		switch {
+		case i == selected && it.IsMcp:
+			marker, style = "▸ ", p.theme.McpCommandStyle().Bold(true)
+		case i == selected:
+			marker, style = "▸ ", p.theme.SystemMessage
+		case it.IsMcp:
+			style = p.theme.McpCommandStyle()
 		}
 		label := it.Label
 		if it.Detail != "" {

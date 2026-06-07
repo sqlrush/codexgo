@@ -15,18 +15,18 @@ architecture.
 
 | Tool | Purpose |
 |------|---------|
-| `db_connect` | Open the active connection (host/port/user required) |
-| `db_health` | Weighted 0–100 health report (uptime, connections, cache hit, dead tuples, xid wraparound, replication) |
-| `db_slowsql` | Slow SQL by avg elapsed (+ max_ms variance, per-SQL cache hit) |
-| `db_topsql` | Top SQL by el/ae/ex/lr/rw |
-| `db_explain` | Execution plan + Seq-Scan/Sort/Nested-Loop issue flags |
-| `db_ash` | Active session wait distribution + session detail |
-| `db_indexhealth` | Unused / invalid / duplicate / bloat-candidate indexes |
-| `db_sqlfetch` | Resolve a unique SQL id to its text (history → statement) |
-| `db_sqltune` | Tuning material: plan + plan_issues + gs_index_advise + 5-axis checklist |
-| `db_planhistory` | Recent executions of one SQL id (spot plan regressions) |
-| `db_wdr` | List WDR snapshots |
-| `db_wdranalyze` | Generate a WDR report between two snapshots for analysis |
+| `connect` | Open the active connection (host/port/user required) |
+| `health` | Weighted 0–100 health report (uptime, connections, cache hit, dead tuples, xid wraparound, replication) |
+| `slowsql` | Slow SQL by avg elapsed (+ max_ms variance, per-SQL cache hit) |
+| `topsql` | Top SQL by el/ae/ex/lr/rw |
+| `explain` | Execution plan + Seq-Scan/Sort/Nested-Loop issue flags |
+| `ash` | Active session wait distribution + session detail |
+| `indexhealth` | Unused / invalid / duplicate / bloat-candidate indexes |
+| `sqlfetch` | Resolve a unique SQL id to its text (history → statement) |
+| `sqltune` | Tuning material: plan + plan_issues + gs_index_advise + 5-axis checklist |
+| `planhistory` | Recent executions of one SQL id (spot plan regressions) |
+| `wdr` | List WDR snapshots |
+| `wdranalyze` | Generate a WDR report between two snapshots for analysis |
 
 ## Build
 

@@ -39,7 +39,7 @@ var writePrefixes = []string{
 
 func registerExplain(s *mcp.Server, conn *db.Conn) {
 	tool := mcp.Tool{
-		Name:        "db_explain",
+		Name:        "explain",
 		Description: "Return the execution plan for a SELECT/WITH query. Args: sql (required), analyze (bool, default false — true actually runs the query for real row counts/timings, refused for write statements). Flags Seq Scan / Sort / Nested-Loop issues. Read-only for non-analyze.",
 		InputSchema: jsonObjSchema(map[string]any{
 			"sql":     strProp("the SQL to explain (SELECT/WITH only)"),
@@ -82,7 +82,7 @@ func registerExplain(s *mcp.Server, conn *db.Conn) {
 		}
 		report.Issues = detectPlanIssues(report.Plan)
 		if len(report.Issues) == 0 {
-			report.Note = "未发现常见低效算子;若仍慢,结合 db_planhistory 看是否计划回退或统计信息陈旧。"
+			report.Note = "未发现常见低效算子;若仍慢,结合 planhistory 看是否计划回退或统计信息陈旧。"
 		}
 		return jsonResult(report)
 	})

@@ -16,7 +16,7 @@ func boolProp(desc string) map[string]any {
 // guards with this so the model gets a clear "connect first" message.
 func requireConn(conn *db.Conn) error {
 	if !conn.IsConnected() {
-		return fmt.Errorf("no active database connection — run db_connect first")
+		return fmt.Errorf("no active database connection — run connect first")
 	}
 	return nil
 }

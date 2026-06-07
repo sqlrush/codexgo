@@ -31,15 +31,15 @@ func TestHandleMcpListTools(t *testing.T) {
 	gw := &fakeMcpGateway{infos: []tools.McpToolInfo{
 		{
 			ServerName:        "gaussdb",
-			CallableName:      "db_health",
+			CallableName:      "health",
 			CallableNamespace: "mcp__gaussdb__",
-			Tool:              protocol.Tool{Name: "db_health", Description: &desc, InputSchema: json.RawMessage(`{"type":"object"}`)},
+			Tool:              protocol.Tool{Name: "health", Description: &desc, InputSchema: json.RawMessage(`{"type":"object"}`)},
 		},
 		{
 			ServerName:        "gaussdb",
-			CallableName:      "db_connect",
+			CallableName:      "connect",
 			CallableNamespace: "mcp__gaussdb__",
-			Tool:              protocol.Tool{Name: "db_connect"},
+			Tool:              protocol.Tool{Name: "connect"},
 		},
 	}}
 	p := &Processor{assembly: &Assembly{McpGateway: gw}}
@@ -52,14 +52,14 @@ func TestHandleMcpListTools(t *testing.T) {
 	if len(resp.Tools) != 2 {
 		t.Fatalf("expected 2 tools, got %d", len(resp.Tools))
 	}
-	// Sorted by qualified name: db_connect before db_health.
-	if resp.Tools[0].QualifiedName != "mcp__gaussdb__db_connect" {
-		t.Errorf("tool[0] = %q, want mcp__gaussdb__db_connect", resp.Tools[0].QualifiedName)
+	// Sorted by qualified name: connect before health.
+	if resp.Tools[0].QualifiedName != "mcp__gaussdb__connect" {
+		t.Errorf("tool[0] = %q, want mcp__gaussdb__connect", resp.Tools[0].QualifiedName)
 	}
-	if resp.Tools[1].QualifiedName != "mcp__gaussdb__db_health" {
-		t.Errorf("tool[1] = %q, want mcp__gaussdb__db_health", resp.Tools[1].QualifiedName)
+	if resp.Tools[1].QualifiedName != "mcp__gaussdb__health" {
+		t.Errorf("tool[1] = %q, want mcp__gaussdb__health", resp.Tools[1].QualifiedName)
 	}
-	if resp.Tools[1].Server != "gaussdb" || resp.Tools[1].Tool != "db_health" || resp.Tools[1].Description != "Health check" {
+	if resp.Tools[1].Server != "gaussdb" || resp.Tools[1].Tool != "health" || resp.Tools[1].Description != "Health check" {
 		t.Errorf("tool[1] metadata wrong: %+v", resp.Tools[1])
 	}
 }
@@ -87,7 +87,7 @@ func TestHandleMcpCallTool(t *testing.T) {
 	p := &Processor{assembly: &Assembly{McpGateway: gw}}
 
 	out, rpcErr := p.handleMcpCallTool(context.Background(), &appserverproto.McpCallToolParams{
-		QualifiedName: "mcp__gaussdb__db_health",
+		QualifiedName: "mcp__gaussdb__health",
 	})
 	if rpcErr != nil {
 		t.Fatalf("rpc error: %v", rpcErr)
@@ -99,7 +99,7 @@ func TestHandleMcpCallTool(t *testing.T) {
 	if resp.Text != `{"score":88}` {
 		t.Errorf("text = %q, want the JSON text block (image block ignored)", resp.Text)
 	}
-	if gw.gotQN != "mcp__gaussdb__db_health" {
+	if gw.gotQN != "mcp__gaussdb__health" {
 		t.Errorf("gateway invoked %q", gw.gotQN)
 	}
 }

@@ -30,10 +30,10 @@ const instructions = `GaussDB 数据库专家插件 (codexgo-db-gaussdb)。
 请基于其中的 score/grade/items 用自然语言给出诊断结论与优先级建议。
 
 典型流程:
-1. 先调用 db_connect 建立连接(host/port/user 必填;password 可由 codexgo 通过
+1. 先调用 connect 建立连接(host/port/user 必填;password 可由 codexgo 通过
    交互式输入安全收集;database 默认 postgres;sslmode 默认 disable)。
-2. 再调用 db_health 做整体体检,得到加权健康分(0-100)与分项评级。
-3. 针对体检暴露的问题,使用 SQL 调优类工具(db_slowsql / db_topsql / db_explain
+2. 再调用 health 做整体体检,得到加权健康分(0-100)与分项评级。
+3. 针对体检暴露的问题,使用 SQL 调优类工具(slowsql / topsql / explain
    等)逐项下钻定位。
 
 GaussDB 使用专有驱动与 SCRAM-SHA256 认证,系统视图复用 openGauss(pg_stat_*、

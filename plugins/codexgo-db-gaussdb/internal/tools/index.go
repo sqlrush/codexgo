@@ -29,7 +29,7 @@ type IndexHealthReport struct {
 
 func registerIndexHealth(s *mcp.Server, conn *db.Conn) {
 	tool := mcp.Tool{
-		Name:        "db_indexhealth",
+		Name:        "indexhealth",
 		Description: "Index health audit: unused indexes (idx_scan=0), invalid/not-ready indexes, duplicate indexes (same column list), and large/bloat-candidate indexes (>10MB). Returns four sections plus a summary count. Args: limit (default 20, max 100). Read-only.",
 		InputSchema: jsonObjSchema(map[string]any{
 			"limit": intProp("max rows per section (default 20, max 100)"),

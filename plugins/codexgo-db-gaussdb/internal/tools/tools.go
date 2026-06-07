@@ -1,4 +1,4 @@
-// Package tools registers the GaussDB MCP tools (db_connect, db_health, …) on
+// Package tools registers the GaussDB MCP tools (connect, health, …) on
 // the MCP server. Each tool returns STRUCTURED JSON (not pre-rendered text) so
 // codexgo renders the UI — the core optimization over opendb's server-side
 // pre-rendered strings (see OPTIMIZATIONS-OVER-OPENDB).
@@ -23,6 +23,8 @@ func Register(s *mcp.Server, conn *db.Conn) {
 	// tuning + WDR
 	registerSQLTune(s, conn)
 	registerWDR(s, conn)
+	// command catalog (no connection required)
+	registerHelp(s)
 }
 
 // jsonObjSchema is a small helper to build a JSON-Schema object for inputSchema.

@@ -16,18 +16,21 @@
 
 | 工具 | 对应 /命令 | 批次 | 数据来源 |
 |------|-----------|------|----------|
-| `db_connect` | （连接) | — | gaussdb-go 驱动 |
-| `db_health` | /health | 1 | pg_stat_* / pg_settings |
-| `db_slowsql` | /slowsql | 1 | dbe_perf.statement |
-| `db_topsql` | /topsql | 1 | dbe_perf.statement |
-| `db_explain` | /explain | 1 | EXPLAIN |
-| `db_ash` | /ash | 1 | pg_stat_activity |
-| `db_indexhealth` | /indexhealth | 1 | pg_stat_user_indexes / pg_index |
-| `db_sqlfetch` | /sqlfetch | 1 | dbe_perf.statement_history / statement |
-| `db_sqltune` | /sqltune | 2 | EXPLAIN + gs_index_advise |
-| `db_planhistory` | /planhistory | 2 | dbe_perf.statement_history |
-| `db_wdr` | /wdr | 2 | snapshot.snapshot |
-| `db_wdranalyze` | /wdranalyze | 2 | generate_wdr_report |
+| `connect` | （连接) | — | gaussdb-go 驱动 |
+| `health` | /health | 1 | pg_stat_* / pg_settings |
+| `slowsql` | /slowsql | 1 | dbe_perf.statement |
+| `topsql` | /topsql | 1 | dbe_perf.statement |
+| `explain` | /explain | 1 | EXPLAIN |
+| `ash` | /ash | 1 | pg_stat_activity |
+| `indexhealth` | /indexhealth | 1 | pg_stat_user_indexes / pg_index |
+| `sqlfetch` | /sqlfetch | 1 | dbe_perf.statement_history / statement |
+| `sqltune` | /sqltune | 2 | EXPLAIN + gs_index_advise |
+| `planhistory` | /planhistory | 2 | dbe_perf.statement_history |
+| `wdr` | /wdr | 2 | snapshot.snapshot |
+| `wdranalyze` | /wdranalyze | 2 | generate_wdr_report |
+| `help` | /help | — | 静态命令目录(与 opendb 一致,无需连接) |
+
+> 命令名与 opendb 保持一致(`/health` 而非 `/db_health`)。
 
 ---
 
@@ -79,11 +82,11 @@
 
 **codexgo 做法**:把每个探针/分区做成**独立、互不影响**的单元:
 
-- `db_health`:任一探针失败仅记为该项 `UNKNOWN`,其余照常产出,并在结论里说明
+- `health`:任一探针失败仅记为该项 `UNKNOWN`,其余照常产出,并在结论里说明
   哪些项未采集。
-- `db_indexhealth`:未使用 / 失效 / 重复 / 大索引四个分区各自独立查询,某分区失败
+- `indexhealth`:未使用 / 失效 / 重复 / 大索引四个分区各自独立查询,某分区失败
   只在 `notes` 里记一笔,不影响其它三个分区。
-- `db_ash`:核心"等待分布"必出;"活动会话明细"作为增强项,失败时降级(可能因
+- `ash`:核心"等待分布"必出;"活动会话明细"作为增强项,失败时降级(可能因
   老版本缺 `wait_status` 列),不让整次调用失败。
 
 ---
@@ -94,10 +97,10 @@
 
 | 工具 | opendb | codexgo 增强 |
 |------|--------|--------------|
-| `db_slowsql` | avg/total/calls/rows | **+ max_ms(抖动)+ 每条 SQL 的 cache_hit_pct(是否走磁盘)** |
-| `db_ash` | 仅等待分布 | **+ 活动会话明细(pid/user/run_sec/SQL头),可直接点名问题会话** |
-| `db_health` | 基础项 | **+ xid 回卷风险 + idle-in-tx + 备库连接** |
-| `db_planhistory` | 计划+耗时 | 同时给 db_ms/exec_ms/cpu_ms/hard_parse,**便于判定是否计划回退** |
+| `slowsql` | avg/total/calls/rows | **+ max_ms(抖动)+ 每条 SQL 的 cache_hit_pct(是否走磁盘)** |
+| `ash` | 仅等待分布 | **+ 活动会话明细(pid/user/run_sec/SQL头),可直接点名问题会话** |
+| `health` | 基础项 | **+ xid 回卷风险 + idle-in-tx + 备库连接** |
+| `planhistory` | 计划+耗时 | 同时给 db_ms/exec_ms/cpu_ms/hard_parse,**便于判定是否计划回退** |
 
 ---
 
@@ -108,14 +111,14 @@
 
 **codexgo 做法**:把一项能力拆成**两个入口**:
 
-- **数据层(本插件,确定性)**:`db_sqltune` 只做确定性采集——解析 SQL、跑 EXPLAIN、
+- **数据层(本插件,确定性)**:`sqltune` 只做确定性采集——解析 SQL、跑 EXPLAIN、
   标注计划问题(`plan_issues`)、调用引擎自带的 `gs_index_advise`,并附上一份
   **五维调优清单**(改写/索引/hint/表结构与统计/计划稳定性)。它**不调用任何 LLM**。
 - **推理层(codexgo 主体,模型无关)**:由 codexgo 当前所用模型(GLM / DeepSeek /
   任意后端)基于这些素材产出最终优化建议。
 
-`db_wdranalyze` 同理:插件确定性地生成 WDR 报告原文并结构化返回,codexgo 的模型
-负责"工作负载画像 + 风险分级 + Top SQL",并可链式对 Top SQL 调 `db_sqltune` 下钻。
+`wdranalyze` 同理:插件确定性地生成 WDR 报告原文并结构化返回,codexgo 的模型
+负责"工作负载画像 + 风险分级 + Top SQL",并可链式对 Top SQL 调 `sqltune` 下钻。
 
 收益:**任意后端可用**(契合 codexgo 多模型路由)、提示词与编排可在 codexgo 侧统一
 演进、单 DB 插件保持轻量纯净。
@@ -135,14 +138,14 @@
 
 ## 优化点七:安全与只读保证
 
-- **只读强约束**:`db_explain` / `db_sqltune` 通过 `isReadOnlySQL` 拒绝
+- **只读强约束**:`explain` / `sqltune` 通过 `isReadOnlySQL` 拒绝
   INSERT/UPDATE/DELETE/DDL/CALL/VACUUM 等(`EXPLAIN ANALYZE` 会真正执行语句,
   写语句会改数据,故必须拦)。
-- **防注入**:`db_topsql` 的排序维度走**白名单**映射到 ORDER BY(ORDER BY 无法参数化);
+- **防注入**:`topsql` 的排序维度走**白名单**映射到 ORDER BY(ORDER BY 无法参数化);
   `gs_index_advise` 的 SQL 字面量做了单引号转义;数值型参数(threshold/limit)强类型化。
 - **EXPLAIN 就绪检测**:`countPlaceholders` 检测归一化 SQL 中的 `?`/`$N`/`:N` 占位符
   (忽略字符串字面量内的),避免对带占位符的语句盲目 EXPLAIN。
-- **连接校验**:`db_connect` 校验 host/port(1–65535)/user;DSN 使用 keyword/value
+- **连接校验**:`connect` 校验 host/port(1–65535)/user;DSN 使用 keyword/value
   形式(密码含 `@`/`/` 也安全),`default_query_exec_mode=simple_protocol` 规避
   GaussDB 在系统视图 xid 类型上的 codec 不匹配。
 
@@ -153,8 +156,8 @@
 同一份能力,两种触发方式(见设计文档):
 
 - **人类用 /命令**:`/slowsql 500` → 经 slash → `tools/call` 确定性直达,参数稳定。
-- **LLM 用工具描述**:模型读 `description` 自主编排(先 `db_health`,再对暴露的热点
-  `db_slowsql` → `db_sqltune`)。
+- **LLM 用工具描述**:模型读 `description` 自主编排(先 `health`,再对暴露的热点
+  `slowsql` → `sqltune`)。
 
 ---
 

@@ -35,12 +35,12 @@ var tuneDimensions = []string{
 	"索引建议(结合 plan_issues 与 index_advice)",
 	"查询 hint(连接方式/扫描方式/并行)",
 	"表结构与统计信息(分区、数据类型、ANALYZE 时效)",
-	"执行计划稳定性(对照 db_planhistory 是否回退)",
+	"执行计划稳定性(对照 planhistory 是否回退)",
 }
 
 func registerSQLTune(s *mcp.Server, conn *db.Conn) {
 	tool := mcp.Tool{
-		Name:        "db_sqltune",
+		Name:        "sqltune",
 		Description: "Gather SQL tuning material for a query or a unique SQL id: resolves the SQL, collects its execution plan, flags plan issues, and runs the engine index advisor (gs_index_advise). Returns structured material plus a 5-dimension checklist for you (the model) to synthesize concrete tuning advice — it does NOT itself call an LLM. Args: sql_or_id (required), analyze (bool, default false). Read-only.",
 		InputSchema: jsonObjSchema(map[string]any{
 			"sql_or_id": strProp("full SQL text, or a unique SQL id to resolve"),
