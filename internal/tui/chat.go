@@ -269,7 +269,15 @@ func (t ChatTranscript) applyEvent(ev protocol.Event) ChatTranscript {
 
 	case protocol.EventMsgKindMcpToolCallEnd:
 		if ev.Msg.McpToolCallEnd != nil {
-			t = t.completeTool(ev.Msg.McpToolCallEnd.CallID, ev.Msg.McpToolCallEnd.Result)
+			end := ev.Msg.McpToolCallEnd
+			t = t.completeTool(end.CallID, end.Result)
+			// Content addressed to the user (annotations.audience contains "user")
+			// is rendered directly here as markdown, bypassing the model. Generic
+			// across MCP tools; "" (no such content) renders nothing.
+			if md := userAudienceMarkdown(end.Result); md != "" {
+				t = t.commitStream()
+				t.cells = t.appendCell(NewMcpDirectCell(t.markdown, md))
+			}
 		}
 
 	case protocol.EventMsgKindTurnDiff:

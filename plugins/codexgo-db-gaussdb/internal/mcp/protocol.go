@@ -82,9 +82,24 @@ type CallToolResult struct {
 
 // ContentItem is one MCP content block (text variant).
 type ContentItem struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type        string       `json:"type"`
+	Text        string       `json:"text"`
+	Annotations *Annotations `json:"annotations,omitempty"`
 }
 
-// TextContent builds a text content item.
+// Annotations carries standard MCP content annotations. Audience routes a block
+// to the user (direct render in the host UI) and/or the assistant (model
+// context), letting a tool split its result: a part shown to the user and a
+// terse part fed to the model.
+type Annotations struct {
+	Audience []string `json:"audience,omitempty"`
+}
+
+// TextContent builds a text content item (no audience: goes to everyone).
 func TextContent(s string) ContentItem { return ContentItem{Type: "text", Text: s} }
+
+// TextContentFor builds a text content item addressed to specific audiences
+// ("user" and/or "assistant").
+func TextContentFor(s string, audience ...string) ContentItem {
+	return ContentItem{Type: "text", Text: s, Annotations: &Annotations{Audience: audience}}
+}

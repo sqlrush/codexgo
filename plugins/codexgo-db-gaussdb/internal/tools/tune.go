@@ -190,9 +190,14 @@ func registerSQLTune(s *mcp.Server, conn *db.Conn) {
 		}
 		report.Candidates = cands
 
-		// Render the deterministic report (markdown). Every fact in it is real;
-		// the model presents it and may append clearly-marked 【AI推断】 additions.
-		return markdownResult(renderTuneReport(&report))
+		// Split the result by audience (standard MCP annotations): the full
+		// deterministic report goes to the USER (rendered directly by the host,
+		// bypassing model rewording); a terse digest + instruction goes to the
+		// ASSISTANT so the model adds only a short root-cause note, not a repeat.
+		return mcp.CallToolResult{Content: []mcp.ContentItem{
+			mcp.TextContentFor(renderTuneReport(&report), "user"),
+			mcp.TextContentFor(renderModelSummary(&report), "assistant"),
+		}}, nil
 	})
 }
 

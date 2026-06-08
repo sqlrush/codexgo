@@ -46,10 +46,3 @@ func jsonResult(v any) (mcp.CallToolResult, error) {
 	}
 	return mcp.CallToolResult{Content: []mcp.ContentItem{mcp.TextContent(string(out))}}, nil
 }
-
-// markdownResult returns a single text content item carrying a pre-rendered
-// markdown report (the deterministic SQL tuning report). Used when the plugin
-// renders the final report itself rather than handing structured JSON to codexgo.
-func markdownResult(md string) (mcp.CallToolResult, error) {
-	return mcp.CallToolResult{Content: []mcp.ContentItem{mcp.TextContent(md)}}, nil
-}

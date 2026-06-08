@@ -32,6 +32,42 @@ type reportMarker struct {
 	score  float64
 }
 
+// renderModelSummary is the assistant-audience companion to the full report: a
+// terse factual digest plus an instruction that the full report is ALREADY shown
+// to the user, so the model must not repeat it — only add a short root-cause
+// note. This is what gets fed to the model (audience=assistant), while the full
+// report (audience=user) is rendered directly to the user.
+func renderModelSummary(r *TuneReport) string {
+	var b strings.Builder
+	b.WriteString("【完整 SQL 调优报告已直接展示给用户,请勿重复其内容】\n")
+	b.WriteString("目标: " + r.Target)
+	if r.Resolved.Schema != "" {
+		b.WriteString(" · schema: " + r.Resolved.Schema)
+	}
+	b.WriteByte('\n')
+	if r.PlanCost != nil {
+		b.WriteString(fmt.Sprintf("总成本: %.2f\n", *r.PlanCost))
+	}
+	if r.PlanTree != nil {
+		var parts []string
+		for _, n := range topRelationNodes(r.PlanTree.Root, 3) {
+			name := n.Operator
+			if n.Relation != "" {
+				name += " on " + n.Relation
+			}
+			parts = append(parts, fmt.Sprintf("%s(cost=%.0f)", name, n.TotalCost))
+		}
+		if len(parts) > 0 {
+			b.WriteString("主要瓶颈: " + strings.Join(parts, ", ") + "\n")
+		}
+	}
+	if kinds := distinctIssueKinds(r); kinds != "" {
+		b.WriteString("反模式: " + kinds + "\n")
+	}
+	b.WriteString("你的任务: 仅补充 1-2 句根因分析(标【AI推断】),或确认报告无误。不要重新输出报告里的计划/表/方案。如需提改写,调用 sqltune 的 candidate+verify_equiv 验证后再说。")
+	return b.String()
+}
+
 // renderTuneReport renders the full deterministic report as markdown.
 func renderTuneReport(r *TuneReport) string {
 	var b strings.Builder

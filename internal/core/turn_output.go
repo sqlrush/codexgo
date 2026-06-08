@@ -13,14 +13,27 @@ import (
 // mcpResultText flattens an MCP CallToolResult's content blocks to text (the
 // text variant), so the result can be carried as a function_call_output on both
 // the Responses and chat-completions wires.
+//
+// Content blocks annotated for the user only (standard MCP annotations.audience
+// = ["user"], no "assistant") are SKIPPED here: they are meant for direct
+// rendering in the host UI, not for the model. A tool can thus return a rich
+// user-facing block plus a terse assistant-facing block, and the model receives
+// only the latter (avoiding it re-wording/duplicating the user-facing content).
+// Blocks with no audience annotation go to the model as before (back-compat).
 func mcpResultText(result protocol.CallToolResult) string {
 	var b strings.Builder
 	for _, raw := range result.Content {
 		var item struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
+			Type        string `json:"type"`
+			Text        string `json:"text"`
+			Annotations *struct {
+				Audience []string `json:"audience"`
+			} `json:"annotations"`
 		}
 		if err := json.Unmarshal(raw, &item); err != nil || item.Type != "text" {
+			continue
+		}
+		if item.Annotations != nil && audienceExcludesModel(item.Annotations.Audience) {
 			continue
 		}
 		if b.Len() > 0 {
@@ -29,6 +42,20 @@ func mcpResultText(result protocol.CallToolResult) string {
 		b.WriteString(item.Text)
 	}
 	return b.String()
+}
+
+// audienceExcludesModel reports whether an MCP audience list is present but does
+// not include "assistant" — i.e. the content is addressed away from the model.
+func audienceExcludesModel(audience []string) bool {
+	if len(audience) == 0 {
+		return false
+	}
+	for _, a := range audience {
+		if a == "assistant" {
+			return false
+		}
+	}
+	return true
 }
 
 // dispatchToolInvocation routes a tool invocation through the session's

@@ -126,6 +126,29 @@ func (c AgentCell) WithSource(source string) AgentCell {
 // Source returns the cell's committed markdown source.
 func (c AgentCell) Source() string { return c.source }
 
+// McpDirectCell renders MCP tool output addressed to the user (content
+// annotations.audience contains "user") as markdown, directly in the transcript
+// — bypassing the model. Generic: any MCP tool that annotates a content block
+// for the user is rendered here. No bullet prefix (it is not an agent message).
+type McpDirectCell struct {
+	renderer MarkdownRenderer
+	source   string
+}
+
+// NewMcpDirectCell builds a direct-render cell from user-addressed markdown.
+func NewMcpDirectCell(renderer MarkdownRenderer, source string) McpDirectCell {
+	return McpDirectCell{renderer: renderer, source: source}
+}
+
+// Lines implements HistoryCell.
+func (c McpDirectCell) Lines(width int) []Line {
+	lines := c.renderer.Render(c.source)
+	if width > 0 {
+		lines = WordWrapLines(lines, width)
+	}
+	return lines
+}
+
 // agentBullet is codex's assistant-message bullet glyph followed by a gutter
 // space ("• "), styled dim; agentIndent is the two-space continuation prefix.
 const (
