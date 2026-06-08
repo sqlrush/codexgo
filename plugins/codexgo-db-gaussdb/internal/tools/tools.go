@@ -14,6 +14,7 @@ func Register(s *mcp.Server, conn *db.Conn) {
 	// connection + health check
 	registerConnect(s, conn)
 	registerHealth(s, conn)
+	registerHealthReport(s, conn)
 	// statement-view tools: slowsql, topsql, sqlfetch, planhistory
 	registerQuery(s, conn)
 	// plan + sessions + indexes
