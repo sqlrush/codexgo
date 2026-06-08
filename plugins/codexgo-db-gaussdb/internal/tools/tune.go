@@ -10,41 +10,53 @@ import (
 	"github.com/sqlrush/codexgo-db-gaussdb/internal/mcp"
 )
 
-// TuneReport is the structured tuning *material* — NOT a finished verdict. The
-// plugin deterministically gathers the resolved SQL, plan, plan-issues and the
-// engine's own index advice; codexgo's LLM then produces the 5-dimension tuning
-// analysis. This decouples data-gathering (deterministic, model-agnostic) from
-// reasoning (any backend), unlike opendb which bakes a single LLM into the skill
-// (see OPTIMIZATIONS-OVER-OPENDB).
+// TuneReport is the structured, largely *verified* tuning material the plugin
+// gathers deterministically; codexgo's model then synthesizes the final advice.
+// Beyond the basic plan, it now carries (sqltune parity, A-region):
+//   - bind-variable backfill so normalized SQL is EXPLAIN-able (#2)
+//   - view definitions (#3), plan cost + EXPLAIN PERFORMANCE (#4/#5)
+//   - plan + SQL anti-pattern annotations (#6)
+//   - schema + runtime context (#7/#8)
+//   - engine index advice (gs_index_advise)
+//   - mechanical rewrite candidates verified by cost diff + equivalence (#10/#11/#12)
 type TuneReport struct {
-	Target      string         `json:"target"`
-	Resolved    SQLFetchResult `json:"resolved"`
-	Plan        []string       `json:"plan,omitempty"`
-	PlanIssues  []PlanIssue    `json:"plan_issues,omitempty"`
-	IndexAdvice TableReport    `json:"index_advice"`
-	Analyzed    bool           `json:"analyzed"`
-	Dimensions  []string       `json:"dimensions"` // checklist for the LLM
-	Note        string         `json:"note"`
-	Warnings    []string       `json:"warnings,omitempty"`
+	Target       string             `json:"target"`
+	Resolved     SQLFetchResult     `json:"resolved"`
+	BindFills    []BindFill         `json:"bind_fills,omitempty"`
+	EffectiveSQL string             `json:"effective_sql,omitempty"`
+	PlanCost     *float64           `json:"plan_cost,omitempty"`
+	Plan         []string           `json:"plan,omitempty"`
+	Performance  string             `json:"explain_performance,omitempty"`
+	PlanIssues   []PlanIssue        `json:"plan_issues,omitempty"`
+	SQLIssues    []PlanIssue        `json:"sql_issues,omitempty"`
+	Views        TableReport        `json:"views,omitempty"`
+	Schema       SchemaContext      `json:"schema"`
+	Runtime      RuntimeContext     `json:"runtime"`
+	IndexAdvice  TableReport        `json:"index_advice"`
+	Candidates   []RewriteCandidate `json:"candidates,omitempty"`
+	Analyzed     bool               `json:"analyzed"`
+	Dimensions   []string           `json:"dimensions"`
+	Note         string             `json:"note"`
+	Warnings     []string           `json:"warnings,omitempty"`
 }
 
-// tuneDimensions is the deterministic 5-axis checklist the LLM must cover, so the
-// analysis is consistent regardless of which model codexgo is running.
 var tuneDimensions = []string{
 	"SQL 改写(等价逻辑、消除子查询/隐式转换)",
-	"索引建议(结合 plan_issues 与 index_advice)",
+	"索引建议(结合 plan_issues / sql_issues / index_advice)",
 	"查询 hint(连接方式/扫描方式/并行)",
-	"表结构与统计信息(分区、数据类型、ANALYZE 时效)",
+	"表结构与统计信息(看 schema.stats 是否陈旧、缺索引)",
 	"执行计划稳定性(对照 planhistory 是否回退)",
 }
 
 func registerSQLTune(s *mcp.Server, conn *db.Conn) {
 	tool := mcp.Tool{
 		Name:        "sqltune",
-		Description: "Gather SQL tuning material for a query or a unique SQL id: resolves the SQL, collects its execution plan, flags plan issues, and runs the engine index advisor (gs_index_advise). Returns structured material plus a 5-dimension checklist for you (the model) to synthesize concrete tuning advice — it does NOT itself call an LLM. Args: sql_or_id (required), analyze (bool, default false). Read-only.",
+		Description: "Deep SQL tuning material for a query or unique SQL id: resolves the SQL and backfills bind placeholders so it can be EXPLAINed; collects plan + plan cost, plan/SQL anti-patterns, schema (tables/indexes/stats/FK), runtime waits/locks, view defs, and the engine index advisor; generates mechanical rewrite candidates and verifies them by plan-cost diff (and result equivalence when verify_equiv=true). Returns structured, mostly-verified material plus a 5-dimension checklist for you (the model) to synthesize the final plan — it does NOT call an LLM. Args: sql_or_id (required); candidate (optional rewrite to verify); analyze (bool: EXPLAIN PERFORMANCE, executes the query); verify_equiv (bool: hash-compare candidate results, executes queries). Read-only.",
 		InputSchema: jsonObjSchema(map[string]any{
-			"sql_or_id": strProp("full SQL text, or a unique SQL id to resolve"),
-			"analyze":   boolProp("run EXPLAIN ANALYZE for real timings (default false)"),
+			"sql_or_id":    strProp("full SQL text, or a unique SQL id to resolve"),
+			"candidate":    strProp("optional: a rewritten SQL to verify (cost + equivalence) against the original"),
+			"analyze":      boolProp("run EXPLAIN PERFORMANCE for real per-operator timings (executes the query; default false)"),
+			"verify_equiv": boolProp("hash-compare candidate vs original results to confirm equivalence (executes both, bounded; default false)"),
 		}, "sql_or_id"),
 	}
 	s.Register(tool, func(ctx context.Context, raw json.RawMessage) (mcp.CallToolResult, error) {
@@ -52,8 +64,10 @@ func registerSQLTune(s *mcp.Server, conn *db.Conn) {
 			return mcp.CallToolResult{}, err
 		}
 		var a struct {
-			SQLOrID string `json:"sql_or_id"`
-			Analyze bool   `json:"analyze"`
+			SQLOrID     string `json:"sql_or_id"`
+			Candidate   string `json:"candidate"`
+			Analyze     bool   `json:"analyze"`
+			VerifyEquiv bool   `json:"verify_equiv"`
 		}
 		if err := decodeArgs(raw, &a); err != nil {
 			return mcp.CallToolResult{}, err
@@ -67,50 +81,84 @@ func registerSQLTune(s *mcp.Server, conn *db.Conn) {
 			Target:     conn.Label(),
 			Analyzed:   a.Analyze,
 			Dimensions: tuneDimensions,
-			Note:       "以下为确定性采集的调优素材;请基于 plan_issues、index_advice 与五维清单给出可执行的优化建议(含改写后 SQL 与 DDL),并提醒人工在测试环境验证。",
+			Note:       "确定性采集 + 校验后的调优素材;请据 plan_issues/sql_issues/schema/index_advice 与已验证的 candidates 给出可执行方案(改写 SQL + DDL),并提醒人工在测试环境复核。candidates.cost_ratio>1 且 equivalent=yes 才是可直接采纳的改写。",
 		}
 
-		// Resolve: a bare numeric token is treated as a SQL id, else literal SQL.
-		sql := input
+		// 1) Resolve SQL (by id -> sqlfetch, else literal).
+		rawSQL := input
 		if isLikelySQLID(input) {
 			report.Resolved = resolveSQL(ctx, conn, input)
 			if report.Resolved.Query == "" {
-				return mcp.CallToolResult{}, fmt.Errorf("sql id %s not found; pass full SQL text instead", input)
+				return mcp.CallToolResult{}, fmt.Errorf("sql id %s not found in statement_history/statement; pass full SQL text instead", input)
 			}
-			sql = report.Resolved.Query
+			rawSQL = report.Resolved.Query
 		} else {
-			report.Resolved = SQLFetchResult{Query: sql, Source: "inline", HasLiterals: countPlaceholders(sql) == 0}
+			report.Resolved = SQLFetchResult{Query: rawSQL, Source: "inline", Placeholders: countPlaceholders(rawSQL), HasLiterals: countPlaceholders(rawSQL) == 0}
 		}
 
-		if !isReadOnlySQL(stripLeadingExplain(sql)) {
+		if !isReadOnlySQL(stripLeadingExplain(rawSQL)) {
 			return mcp.CallToolResult{}, fmt.Errorf("refusing to tune a non-read statement (only SELECT/WITH supported)")
 		}
-		if report.Resolved.Placeholders > 0 {
-			report.Warnings = append(report.Warnings, "SQL 含占位符,无法直接 EXPLAIN;请用真实字面量替换后重试。")
+
+		// 2) Bind backfill so the SQL is EXPLAIN-able.
+		effSQL, fills := substituteBinds(rawSQL)
+		report.BindFills = fills
+		if len(fills) > 0 {
+			report.EffectiveSQL = effSQL
+			report.Warnings = append(report.Warnings, fmt.Sprintf("已回填 %d 个占位符(仅用于让 EXPLAIN 成功,值为样例,不代表真实业务取值)。", len(fills)))
 		}
 
-		// Plan (best-effort — placeholders or perms may block it).
-		if report.Resolved.Placeholders == 0 {
-			mode := "ANALYZE false, BUFFERS false"
-			if a.Analyze {
-				mode = "ANALYZE true, BUFFERS true"
-			}
-			plan, err := conn.Query(ctx, fmt.Sprintf("EXPLAIN (%s, FORMAT TEXT) %s", mode, stripLeadingExplain(sql)))
-			if err != nil {
-				report.Warnings = append(report.Warnings, "EXPLAIN 失败: "+firstLine(err.Error()))
-			} else {
-				for _, row := range plan.Rows {
-					if len(row) > 0 {
-						report.Plan = append(report.Plan, row[0])
-					}
+		// 3) SQL-text anti-patterns (no DB needed).
+		report.SQLIssues = detectSQLIssues(rawSQL)
+
+		// 4) Plan cost + plan text + plan-level annotations.
+		if c, err := planTotalCost(ctx, conn, effSQL); err != nil {
+			report.Warnings = append(report.Warnings, "计划成本采集失败: "+firstLine(err.Error()))
+		} else {
+			report.PlanCost = c
+		}
+		mode := "ANALYZE false, BUFFERS false"
+		if plan, err := conn.Query(ctx, fmt.Sprintf("EXPLAIN (%s, FORMAT TEXT) %s", mode, stripLeadingExplain(effSQL))); err != nil {
+			report.Warnings = append(report.Warnings, "EXPLAIN 失败: "+firstLine(err.Error()))
+		} else {
+			for _, row := range plan.Rows {
+				if len(row) > 0 {
+					report.Plan = append(report.Plan, row[0])
 				}
-				report.PlanIssues = detectPlanIssues(report.Plan)
+			}
+			report.PlanIssues = detectPlanIssues(report.Plan)
+		}
+
+		// 5) EXPLAIN PERFORMANCE (executes; opt-in).
+		if a.Analyze {
+			if perf, err := explainPerformance(ctx, conn, effSQL); err != nil {
+				report.Warnings = append(report.Warnings, "EXPLAIN PERFORMANCE 失败: "+firstLine(err.Error()))
+			} else {
+				report.Performance = perf
 			}
 		}
 
-		// Engine index advisor (openGauss gs_index_advise). Optional — may be
-		// absent or need privileges.
-		report.IndexAdvice = indexAdvice(ctx, conn, sql, &report)
+		// 6/7/8) Context: tables, views, schema, runtime.
+		tables := extractTableNames(rawSQL)
+		if vr, ok := collectViewDefs(ctx, conn, tables); ok {
+			report.Views = vr
+		}
+		report.Schema = collectSchema(ctx, conn, tables)
+		report.Runtime = collectRuntime(ctx, conn)
+
+		// 9) Engine index advisor.
+		report.IndexAdvice = indexAdvice(ctx, conn, effSQL, &report)
+
+		// 10/11/12) Candidates (mechanical + caller-supplied) verified by cost + equivalence.
+		cands := generateCandidates(effSQL)
+		if strings.TrimSpace(a.Candidate) != "" {
+			candSQL, _ := substituteBinds(strings.TrimSpace(a.Candidate))
+			cands = append(cands, RewriteCandidate{Rule: "caller_supplied", SQL: candSQL, Note: "调用方/模型提供的改写"})
+		}
+		for i := range cands {
+			verifyCandidate(ctx, conn, effSQL, &cands[i], a.VerifyEquiv)
+		}
+		report.Candidates = cands
 
 		return jsonResult(report)
 	})
@@ -135,13 +183,12 @@ func isLikelySQLID(s string) bool {
 
 // indexAdvice runs gs_index_advise and returns its recommendations as a table.
 func indexAdvice(ctx context.Context, conn *db.Conn, sql string, report *TuneReport) TableReport {
-	// gs_index_advise takes a single-quoted SQL literal; escape quotes.
 	escaped := strings.ReplaceAll(stripLeadingExplain(sql), "'", "''")
 	res, err := conn.Query(ctx, fmt.Sprintf("SELECT * FROM gs_index_advise('%s')", escaped))
 	if err != nil {
 		report.Warnings = append(report.Warnings, "gs_index_advise 不可用或失败: "+firstLine(err.Error()))
 		return TableReport{Title: "索引建议(gs_index_advise)", Target: conn.Label(),
-			Note: "引擎索引顾问未返回结果,请基于 plan_issues 自行判断索引方案。"}
+			Note: "引擎索引顾问未返回结果,请基于 plan_issues/sql_issues 自行判断索引方案。"}
 	}
 	return tableReport("索引建议(gs_index_advise)", conn.Label(),
 		"openGauss 内置索引顾问的推荐;需结合业务读写比与现有索引去重后再落地。", nil, res)
