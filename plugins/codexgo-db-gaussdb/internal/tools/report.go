@@ -67,6 +67,9 @@ func renderInputSQL(b *strings.Builder, r *TuneReport) {
 	}
 	if r.Resolved.Source != "" {
 		b.WriteString(fmt.Sprintf("来源: %s", r.Resolved.Source))
+		if r.Resolved.Schema != "" {
+			b.WriteString(" · schema: " + r.Resolved.Schema)
+		}
 		if len(r.BindFills) > 0 {
 			b.WriteString(fmt.Sprintf(" · 已回填 %d 个占位符(样例值,仅供 EXPLAIN)", len(r.BindFills)))
 		}

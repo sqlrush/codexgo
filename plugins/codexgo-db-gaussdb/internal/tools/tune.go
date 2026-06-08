@@ -108,6 +108,14 @@ func registerSQLTune(s *mcp.Server, conn *db.Conn) {
 		// tolerates it, but the equivalence-hash sample's `FROM (<sql>) sub` does not).
 		rawSQL = stripTrailingSemicolon(rawSQL)
 
+		// Pin search_path to the schema owning the query's tables, so EXPLAIN and
+		// the schema/index evidence all agree (resolves cross-schema same-name
+		// ambiguity, e.g. public.orders vs sqltune_demo.orders).
+		if sch := bestSchema(ctx, conn, extractTableNames(rawSQL)); sch != "" {
+			_ = conn.SetSearchPath(ctx, sch)
+			report.Resolved.Schema = sch
+		}
+
 		// 2) Bind backfill so the SQL is EXPLAIN-able.
 		effSQL, fills := substituteBinds(rawSQL)
 		report.BindFills = fills

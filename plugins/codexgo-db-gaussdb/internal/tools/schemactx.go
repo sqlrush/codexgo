@@ -23,28 +23,49 @@ type SchemaContext struct {
 	Names   []string    `json:"table_names"`
 }
 
-var reTableRef = regexp.MustCompile(`(?i)\b(?:FROM|JOIN|UPDATE|INTO|DELETE\s+FROM)\s+([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)?)`)
+var (
+	// reFromList captures the FROM-list text up to the next major clause / JOIN,
+	// so comma-separated implicit joins (FROM a, b, c) are ALL picked up — not
+	// just the first table.
+	reFromList = regexp.MustCompile(`(?is)\bFROM\s+(.*?)(?:\bWHERE\b|\bGROUP\b|\bORDER\b|\bHAVING\b|\bLIMIT\b|\bUNION\b|\bJOIN\b|\bLEFT\b|\bRIGHT\b|\bINNER\b|\bFULL\b|\bCROSS\b|\)|$)`)
+	// reJoinRef captures the table after each explicit JOIN.
+	reJoinRef = regexp.MustCompile(`(?i)\bJOIN\s+([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)?)`)
+)
 
 var sqlKeywordsAfterFrom = map[string]bool{
 	"select": true, "lateral": true, "where": true, "group": true, "order": true,
 }
 
-// extractTableNames pulls candidate table names from FROM/JOIN/etc. clauses. It
-// returns the unqualified names (schema.tbl -> tbl), deduped, lowercased.
+// extractTableNames pulls candidate table names from FROM (including
+// comma-separated implicit joins) and JOIN clauses, across subqueries. Returns
+// the unqualified names (schema.tbl -> tbl), deduped, lowercased, sorted.
 func extractTableNames(sql string) []string {
 	seen := map[string]bool{}
 	var out []string
-	for _, m := range reTableRef.FindAllStringSubmatch(sql, -1) {
-		name := m[1]
+	add := func(name string) {
 		if dot := strings.LastIndexByte(name, '.'); dot >= 0 {
 			name = name[dot+1:]
 		}
-		name = strings.ToLower(name)
+		name = strings.ToLower(strings.TrimSpace(name))
 		if name == "" || sqlKeywordsAfterFrom[name] || seen[name] {
-			continue
+			return
 		}
 		seen[name] = true
 		out = append(out, name)
+	}
+	for _, m := range reJoinRef.FindAllStringSubmatch(sql, -1) {
+		add(m[1])
+	}
+	for _, m := range reFromList.FindAllStringSubmatch(sql, -1) {
+		for _, part := range strings.Split(m[1], ",") {
+			f := strings.Fields(strings.TrimSpace(part))
+			if len(f) == 0 {
+				continue
+			}
+			if tok := f[0]; !strings.ContainsAny(tok, "()") { // skip subquery/function
+				add(tok)
+			}
+		}
 	}
 	sort.Strings(out)
 	return out
@@ -58,6 +79,28 @@ func sqlInList(names []string) string {
 		parts[i] = "'" + strings.ReplaceAll(n, "'", "''") + "'"
 	}
 	return strings.Join(parts, ",")
+}
+
+// bestSchema picks the schema that owns the most of the query's tables, so the
+// tuner can pin search_path to it and avoid cross-schema same-name ambiguity
+// (e.g. public.orders vs sqltune_demo.orders). System schemas are excluded.
+// Returns "" when undetermined.
+func bestSchema(ctx context.Context, conn *db.Conn, names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	in := sqlInList(names)
+	s, err := conn.QueryScalar(ctx, fmt.Sprintf(`SELECT n.nspname
+FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE c.relname IN (%s) AND c.relkind IN ('r','p','v','m')
+  AND n.nspname NOT IN ('pg_catalog','information_schema','pg_toast')
+GROUP BY n.nspname
+ORDER BY count(DISTINCT c.relname) DESC, n.nspname
+LIMIT 1`, in))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(s)
 }
 
 // collectSchema gathers the schema sections for the given tables. Each section is
@@ -82,7 +125,7 @@ ORDER BY pg_total_relation_size(c.oid) DESC`, in)); err == nil {
 	}
 
 	if res, err := conn.Query(ctx, fmt.Sprintf(`SELECT
-  schemaname || '.' || relname AS table_name,
+  relname AS table_name,
   indexrelname AS index_name,
   idx_scan AS scans,
   pg_size_pretty(pg_relation_size(indexrelid)) AS size

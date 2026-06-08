@@ -67,7 +67,9 @@ func (c *Conn) Connect(ctx context.Context, t Target, label string) error {
 		return fmt.Errorf("open gaussdb: %w", err)
 	}
 	handle.SetConnMaxLifetime(30 * time.Minute)
-	handle.SetMaxOpenConns(4)
+	// Single connection so a session-level SET (search_path) persists across the
+	// serial tool queries — codexgo issues DB tool calls one at a time.
+	handle.SetMaxOpenConns(1)
 	pingCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	if err := handle.PingContext(pingCtx); err != nil {
@@ -143,6 +145,24 @@ func (c *Conn) Query(ctx context.Context, query string, args ...any) (*QueryResu
 		out.Rows = append(out.Rows, strCells)
 	}
 	return out, rows.Err()
+}
+
+// SetSearchPath pins the session search_path so unqualified table names in a SQL
+// resolve to the intended schema — making EXPLAIN agree with the catalog
+// evidence the tuner collects (resolves cross-schema same-name ambiguity, e.g.
+// public.orders vs sqltune_demo.orders). schema must be a bare identifier.
+func (c *Conn) SetSearchPath(ctx context.Context, schema string) error {
+	c.mu.RLock()
+	handle := c.db
+	c.mu.RUnlock()
+	if handle == nil {
+		return fmt.Errorf("no active database connection")
+	}
+	q := `"` + strings.ReplaceAll(schema, `"`, `""`) + `"`
+	if _, err := handle.ExecContext(ctx, "SET search_path TO "+q+", public"); err != nil {
+		return fmt.Errorf("set search_path: %w", err)
+	}
+	return nil
 }
 
 // QueryScalar runs a query expected to return a single value.
