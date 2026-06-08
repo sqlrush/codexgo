@@ -32,21 +32,21 @@ type reportMarker struct {
 	score  float64
 }
 
-// renderModelSummary is the assistant-audience companion to the full report: a
-// terse factual digest plus an instruction that the full report is ALREADY shown
-// to the user, so the model must not repeat it — only add a short root-cause
-// note. This is what gets fed to the model (audience=assistant), while the full
-// report (audience=user) is rendered directly to the user.
-func renderModelSummary(r *TuneReport) string {
+// firstPassInstruction is the assistant-audience companion to the pass-1 evidence
+// report: a material digest plus instructions to produce a STRUCTURED analysis
+// and call sqltune_verify (pass 2). The model does not write the report itself —
+// it hands a structured analysis to the plugin, which verifies and renders it.
+func firstPassInstruction(r *TuneReport) string {
 	var b strings.Builder
-	b.WriteString("【完整 SQL 调优报告已直接展示给用户,请勿重复其内容】\n")
-	b.WriteString("目标: " + r.Target)
+	b.WriteString("【证据报告已直接展示给用户,勿重复其内容。现在做分析,但不要直接写给用户 —— 产出结构化分析后调用 sqltune_verify 校验并渲染】\n\n")
+	b.WriteString("素材摘要:\n")
+	b.WriteString("- 目标: " + r.Target)
 	if r.Resolved.Schema != "" {
 		b.WriteString(" · schema: " + r.Resolved.Schema)
 	}
 	b.WriteByte('\n')
 	if r.PlanCost != nil {
-		b.WriteString(fmt.Sprintf("总成本: %.2f\n", *r.PlanCost))
+		b.WriteString(fmt.Sprintf("- 总成本: %.2f\n", *r.PlanCost))
 	}
 	if r.PlanTree != nil {
 		var parts []string
@@ -55,17 +55,106 @@ func renderModelSummary(r *TuneReport) string {
 			if n.Relation != "" {
 				name += " on " + n.Relation
 			}
-			parts = append(parts, fmt.Sprintf("%s(cost=%.0f)", name, n.TotalCost))
+			parts = append(parts, fmt.Sprintf("%s(cost=%.0f,rows=%d)", name, n.TotalCost, n.PlanRows))
 		}
 		if len(parts) > 0 {
-			b.WriteString("主要瓶颈: " + strings.Join(parts, ", ") + "\n")
+			b.WriteString("- 主要瓶颈: " + strings.Join(parts, "; ") + "\n")
 		}
 	}
 	if kinds := distinctIssueKinds(r); kinds != "" {
-		b.WriteString("反模式: " + kinds + "\n")
+		b.WriteString("- 反模式: " + kinds + "\n")
 	}
-	b.WriteString("你的任务: 仅补充 1-2 句根因分析(标【AI推断】),或确认报告无误。不要重新输出报告里的计划/表/方案。如需提改写,调用 sqltune 的 candidate+verify_equiv 验证后再说。")
+	b.WriteString("\n下一步: 调用 sqltune_verify(sql_or_id 同上),analysis 结构:\n")
+	b.WriteString(`{"root_cause":"为何慢的根因","rewrites":[{"title":"...","sql":"完整改写SQL","reasons":["..."]}],"indexes":[{"ddl":"CREATE INDEX...","rationale":"..."}],"expected":"预期效果"}`)
+	b.WriteString("\nsqltune_verify 会对每个 rewrite 自动跑 cost+等价校验,并渲染成最终固定格式报告(直接给用户)。改写 SQL 必须完整可执行,不要用占位符或省略号。")
 	return b.String()
+}
+
+// renderAnalysisReport renders the pass-2 final optimization plan: the model's
+// root cause / rewrites / indexes / expected, with deterministic verification
+// verdicts on each rewrite. Verified facts are 【实测】; model prose is 【AI推断】.
+func renderAnalysisReport(r *TuneReport, a *AnalysisInput, verified []VerifiedRewrite) string {
+	var b strings.Builder
+	b.WriteString("# 优化方案(模型分析 · 插件校验)\n\n")
+	b.WriteString("> 改写经 plan-cost + 等价性校验,标【实测】;根因/预期等定性叙述标【AI推断】,需人工复核。\n\n")
+
+	if rc := strings.TrimSpace(a.RootCause); rc != "" {
+		b.WriteString("## 根因分析\n\n【AI推断】" + rc + "\n\n")
+	}
+	renderVerifiedRewrites(&b, verified)
+	renderModelIndexes(&b, a.Indexes, r)
+	if exp := strings.TrimSpace(a.Expected); exp != "" {
+		b.WriteString("## 预期效果\n\n【AI推断】" + exp + "\n\n")
+		b.WriteString("> 预期为模型推断,未经真实执行验证;请在测试环境实测确认。\n")
+	}
+	return b.String()
+}
+
+func renderVerifiedRewrites(b *strings.Builder, vs []VerifiedRewrite) {
+	b.WriteString("## 改写方案(逐条校验)\n\n")
+	if len(vs) == 0 {
+		b.WriteString("(模型未提供改写)\n\n")
+		return
+	}
+	for i, v := range vs {
+		b.WriteString(fmt.Sprintf("### 改写 %d: %s\n\n", i+1, nz(v.In.Title)))
+		b.WriteString("```sql\n" + strings.TrimSpace(v.In.SQL) + "\n```\n\n")
+		if len(v.In.Reasons) > 0 {
+			b.WriteString("理由:\n")
+			for _, r := range v.In.Reasons {
+				b.WriteString("- " + strings.TrimSpace(r) + "\n")
+			}
+			b.WriteString("\n")
+		}
+		b.WriteString(verdictBadge(v.Cand) + "\n\n")
+	}
+}
+
+// verdictBadge renders the verification verdict + an adoption recommendation.
+func verdictBadge(c RewriteCandidate) string {
+	line := verdictLine(c)
+	switch {
+	case c.Equivalent == "yes" && c.CostRatio != nil && *c.CostRatio > 1:
+		return "✅【可直接采纳】" + line
+	case c.Equivalent == "no":
+		return "⚠️【需人工确认】" + line + " — 语义已改变,必须人工复核结果是否一致"
+	default:
+		return "⚠️【需人工确认】" + line
+	}
+}
+
+func renderModelIndexes(b *strings.Builder, idxs []AnalysisIndex, r *TuneReport) {
+	if len(idxs) == 0 {
+		return
+	}
+	b.WriteString("## 索引建议\n\n")
+	for _, ix := range idxs {
+		ddl := strings.TrimSpace(ix.DDL)
+		b.WriteString("```sql\n" + ddl + "\n```\n")
+		if ix.Rationale != "" {
+			b.WriteString("依据: " + strings.TrimSpace(ix.Rationale) + "\n")
+		}
+		if indexAdviceMentionsTable(r.IndexAdvice, ddl) {
+			b.WriteString("【对照引擎】gs_index_advise 也关注此表,方向一致 ✓\n")
+		} else {
+			b.WriteString("【对照引擎】不在 gs_index_advise 输出中 — 需在测试环境建索引后 EXPLAIN 验证收益\n")
+		}
+		b.WriteString("\n")
+	}
+}
+
+// indexAdviceMentionsTable does a rough check: does the engine advisor mention
+// the table the DDL targets?
+func indexAdviceMentionsTable(advice TableReport, ddl string) bool {
+	low := strings.ToLower(ddl)
+	for _, row := range advice.Rows {
+		if len(row) >= 2 {
+			if tbl := strings.ToLower(strings.TrimSpace(row[1])); tbl != "" && strings.Contains(low, tbl) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // renderTuneReport renders the full deterministic report as markdown.
@@ -359,7 +448,7 @@ func deterministicCBO(r *TuneReport) string {
 // ---- §5 优化方案 ----
 
 func renderPlansSection(b *strings.Builder, r *TuneReport) {
-	b.WriteString("## 5. 优化方案\n\n")
+	b.WriteString("## 5. 确定性线索(引擎索引建议 / 反模式 · 供分析参考)\n\n")
 
 	n := 0
 	for _, c := range r.Candidates {

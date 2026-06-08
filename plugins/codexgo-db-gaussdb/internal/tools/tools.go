@@ -20,8 +20,9 @@ func Register(s *mcp.Server, conn *db.Conn) {
 	registerExplain(s, conn)
 	registerASH(s, conn)
 	registerIndexHealth(s, conn)
-	// tuning + WDR
+	// tuning (pass 1 evidence + pass 2 verify) + WDR
 	registerSQLTune(s, conn)
+	registerSQLTuneVerify(s, conn)
 	registerWDR(s, conn)
 	// command catalog (no connection required)
 	registerHelp(s)

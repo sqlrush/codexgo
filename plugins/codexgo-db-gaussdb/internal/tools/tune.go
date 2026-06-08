@@ -11,14 +11,8 @@ import (
 )
 
 // TuneReport is the structured, largely *verified* tuning material the plugin
-// gathers deterministically; codexgo's model then synthesizes the final advice.
-// Beyond the basic plan, it now carries (sqltune parity, A-region):
-//   - bind-variable backfill so normalized SQL is EXPLAIN-able (#2)
-//   - view definitions (#3), plan cost + EXPLAIN PERFORMANCE (#4/#5)
-//   - plan + SQL anti-pattern annotations (#6)
-//   - schema + runtime context (#7/#8)
-//   - engine index advice (gs_index_advise)
-//   - mechanical rewrite candidates verified by cost diff + equivalence (#10/#11/#12)
+// gathers deterministically (the "evidence"). Pass 1 (sqltune) renders it for the
+// user; pass 2 (sqltune_verify) reuses it to verify the model's rewrites.
 type TuneReport struct {
 	Target       string             `json:"target"`
 	Resolved     SQLFetchResult     `json:"resolved"`
@@ -49,15 +43,150 @@ var tuneDimensions = []string{
 	"执行计划稳定性(对照 planhistory 是否回退)",
 }
 
+// AnalysisInput is the model's structured tuning analysis (pass 2). The plugin
+// verifies the rewrites and renders it into the final fixed-format report, so
+// the model's free-form prose never reaches the user unchecked.
+type AnalysisInput struct {
+	RootCause string            `json:"root_cause"`
+	Rewrites  []AnalysisRewrite `json:"rewrites"`
+	Indexes   []AnalysisIndex   `json:"indexes"`
+	Expected  string            `json:"expected"`
+}
+
+// AnalysisRewrite is one model-proposed rewrite to be verified.
+type AnalysisRewrite struct {
+	Title   string   `json:"title"`
+	SQL     string   `json:"sql"`
+	Reasons []string `json:"reasons"`
+}
+
+// AnalysisIndex is one model-proposed index.
+type AnalysisIndex struct {
+	DDL       string `json:"ddl"`
+	Rationale string `json:"rationale"`
+}
+
+// VerifiedRewrite pairs a model rewrite with its deterministic verdict.
+type VerifiedRewrite struct {
+	In   AnalysisRewrite
+	Cand RewriteCandidate
+}
+
+// buildTuneReport does all deterministic collection for a SQL id/text: resolve,
+// search_path pin, bind backfill, structured plan, schema/runtime, index advisor,
+// mechanical candidates. Shared by both tuning passes.
+func buildTuneReport(ctx context.Context, conn *db.Conn, sqlOrID string, analyze, verifyEquiv bool, candidate string) (*TuneReport, error) {
+	input := strings.TrimSpace(sqlOrID)
+	if input == "" {
+		return nil, fmt.Errorf("sql_or_id is required")
+	}
+	report := &TuneReport{Target: conn.Label(), Dimensions: tuneDimensions}
+
+	// 1) Resolve SQL (by id -> sqlfetch, else literal).
+	rawSQL := input
+	if isLikelySQLID(input) {
+		report.Resolved = resolveSQL(ctx, conn, input)
+		if report.Resolved.Query == "" {
+			return nil, fmt.Errorf("sql id %s not found in statement_history/statement; pass full SQL text instead", input)
+		}
+		rawSQL = report.Resolved.Query
+	} else {
+		report.Resolved = SQLFetchResult{Query: rawSQL, Source: "inline", Placeholders: countPlaceholders(rawSQL), HasLiterals: countPlaceholders(rawSQL) == 0}
+	}
+	if !isReadOnlySQL(stripLeadingExplain(rawSQL)) {
+		return nil, fmt.Errorf("refusing to tune a non-read statement (only SELECT/WITH supported)")
+	}
+	rawSQL = stripTrailingSemicolon(rawSQL)
+
+	// Pin search_path to the schema owning the query's tables so EXPLAIN + the
+	// schema/index evidence all agree (cross-schema same-name resolution).
+	if sch := bestSchema(ctx, conn, extractTableNames(rawSQL)); sch != "" {
+		_ = conn.SetSearchPath(ctx, sch)
+		report.Resolved.Schema = sch
+	}
+
+	// 2) Bind backfill so the SQL is EXPLAIN-able. EffectiveSQL is always set (==
+	// rawSQL when there are no placeholders) so pass 2 can verify rewrites against it.
+	effSQL, fills := substituteBinds(rawSQL)
+	report.EffectiveSQL = effSQL
+	report.BindFills = fills
+	if len(fills) > 0 {
+		report.Warnings = append(report.Warnings, fmt.Sprintf("已回填 %d 个占位符(仅用于让 EXPLAIN 成功,值为样例,不代表真实业务取值)。", len(fills)))
+	}
+
+	// 3) SQL-text anti-patterns.
+	report.SQLIssues = detectSQLIssues(rawSQL)
+
+	// 4) Structured plan tree + plan cost + text plan + plan-level anti-patterns.
+	if info, err := collectPlan(ctx, conn, effSQL, analyze); err != nil {
+		report.Warnings = append(report.Warnings, "计划树采集失败: "+firstLine(err.Error()))
+	} else {
+		report.PlanTree = info
+		report.Analyzed = info.HasAnalyze
+		if info.Root != nil {
+			cost := info.Root.TotalCost
+			report.PlanCost = &cost
+		}
+	}
+	if plan, err := conn.Query(ctx, fmt.Sprintf("EXPLAIN (ANALYZE false, BUFFERS false, FORMAT TEXT) %s", stripLeadingExplain(effSQL))); err != nil {
+		report.Warnings = append(report.Warnings, "EXPLAIN TEXT 失败: "+firstLine(err.Error()))
+	} else {
+		for _, row := range plan.Rows {
+			if len(row) > 0 {
+				report.Plan = append(report.Plan, row[0])
+			}
+		}
+		report.PlanIssues = detectPlanIssues(report.Plan)
+	}
+	if report.PlanTree != nil {
+		treeIssues := detectPlanTreeIssues(report.PlanTree.Root, report.PlanTree.HasAnalyze)
+		merged := append(append([]PlanIssue(nil), report.PlanIssues...), treeIssues...)
+		report.PlanIssues = dedupPlanIssues(merged)
+	}
+
+	// 5) EXPLAIN PERFORMANCE (executes; opt-in).
+	if analyze {
+		if perf, err := explainPerformance(ctx, conn, effSQL); err != nil {
+			report.Warnings = append(report.Warnings, "EXPLAIN PERFORMANCE 失败: "+firstLine(err.Error()))
+		} else {
+			report.Performance = perf
+		}
+	}
+
+	// 6/7/8) Context: views, schema, runtime.
+	tables := extractTableNames(rawSQL)
+	if vr, ok := collectViewDefs(ctx, conn, tables); ok {
+		report.Views = vr
+	}
+	report.Schema = collectSchema(ctx, conn, tables)
+	report.Runtime = collectRuntime(ctx, conn)
+
+	// 9) Engine index advisor.
+	report.IndexAdvice = indexAdvice(ctx, conn, effSQL, report)
+
+	// 10/11/12) Mechanical candidates (+ optional caller-supplied) verified.
+	cands := generateCandidates(effSQL)
+	if strings.TrimSpace(candidate) != "" {
+		candSQL, _ := substituteBinds(stripTrailingSemicolon(strings.TrimSpace(candidate)))
+		cands = append(cands, RewriteCandidate{Rule: "caller_supplied", SQL: candSQL, Note: "调用方/模型提供的改写"})
+	}
+	for i := range cands {
+		verifyCandidate(ctx, conn, effSQL, &cands[i], verifyEquiv)
+	}
+	report.Candidates = cands
+
+	return report, nil
+}
+
+// registerSQLTune is pass 1: render the deterministic evidence report to the user
+// and instruct the model to produce a structured analysis for pass 2.
 func registerSQLTune(s *mcp.Server, conn *db.Conn) {
 	tool := mcp.Tool{
 		Name:        "sqltune",
-		Description: "Produce a COMPLETE, deterministically-rendered SQL Tuning Report (markdown) for a query or unique SQL id. The plugin resolves the SQL, backfills bind placeholders, collects the structured plan tree, scores cost hotspots and tags plan nodes [P1..Pn], gathers schema (tables/indexes/stats), runs the engine index advisor, generates mechanical rewrite candidates and verifies them by plan-cost diff (and result equivalence when verify_equiv=true) — then RENDERS the whole report itself. Every fact in the report (plan, costs, hotspots, schema, candidate verification verdicts) is real, not LLM-generated. HOW TO USE THE RESULT: present the returned report to the user mostly AS-IS (it is already formatted). You MAY append a short CBO root-cause narrative or extra rewrite ideas, but (1) mark anything you infer as 【AI推断】, (2) any cost/rows you cite must match the report, (3) for every rewrite YOU propose, call this tool AGAIN with candidate=<your rewrite> and verify_equiv=true, and only present it as ready-to-apply when the report shows cost improved AND equivalent=yes; otherwise label it 【需人工确认】. Args: sql_or_id (required); candidate (optional rewrite to verify); analyze (bool: EXECUTE the query for real actual rows/timings); verify_equiv (bool: hash-compare candidate vs original). Read-only.",
+		Description: "Pass 1 of SQL tuning. Produces a deterministically-rendered EVIDENCE report (input SQL, structured plan with [P1..Pn] hotspot tags, cost hotspots, schema/index/stats, anti-patterns, engine index advice) for a query or unique SQL id — it is shown DIRECTLY to the user, so do NOT repeat it. It does NOT write the analysis. AFTER reading the evidence, produce a structured analysis and call sqltune_verify (pass 2) with the SAME sql_or_id; that pass verifies your rewrites (cost + equivalence) and renders the final fixed-format report. Args: sql_or_id (required); analyze (bool: EXECUTE for real actual rows/timings, default false). Read-only.",
 		InputSchema: jsonObjSchema(map[string]any{
-			"sql_or_id":    strProp("full SQL text, or a unique SQL id to resolve"),
-			"candidate":    strProp("optional: a rewritten SQL to verify (cost + equivalence) against the original"),
-			"analyze":      boolProp("EXECUTE the query to get real plan-tree actual rows/timings (graded EXPLAIN ANALYZE, with timeout + fallback) and EXPLAIN PERFORMANCE; default false = estimated plan only, query not run"),
-			"verify_equiv": boolProp("hash-compare candidate vs original results to confirm equivalence (executes both, bounded; default false)"),
+			"sql_or_id": strProp("full SQL text, or a unique SQL id to resolve"),
+			"analyze":   boolProp("EXECUTE the query for real plan-tree actual rows/timings (graded EXPLAIN ANALYZE); default false = estimated plan only"),
 		}, "sql_or_id"),
 	}
 	s.Register(tool, func(ctx context.Context, raw json.RawMessage) (mcp.CallToolResult, error) {
@@ -65,140 +194,103 @@ func registerSQLTune(s *mcp.Server, conn *db.Conn) {
 			return mcp.CallToolResult{}, err
 		}
 		var a struct {
-			SQLOrID     string `json:"sql_or_id"`
-			Candidate   string `json:"candidate"`
-			Analyze     bool   `json:"analyze"`
-			VerifyEquiv bool   `json:"verify_equiv"`
+			SQLOrID string `json:"sql_or_id"`
+			Analyze bool   `json:"analyze"`
 		}
 		if err := decodeArgs(raw, &a); err != nil {
 			return mcp.CallToolResult{}, err
 		}
-		input := strings.TrimSpace(a.SQLOrID)
-		if input == "" {
-			return mcp.CallToolResult{}, fmt.Errorf("sql_or_id is required")
+		report, err := buildTuneReport(ctx, conn, a.SQLOrID, a.Analyze, false, "")
+		if err != nil {
+			return mcp.CallToolResult{}, err
 		}
-
-		report := TuneReport{
-			Target:     conn.Label(),
-			Dimensions: tuneDimensions,
-			Note: `确定性采集 + 已校验素材。请据此给出有据的方案,不要泛泛而谈:
-1) 瓶颈定位:基于 plan_tree 点出 total_cost 最高的 1-2 个算子(节点类型 + 关系名 + cost),并关联对应的 plan_issues(sort_spill/expensive_hash/seq_scan/nested_loop_seq_scan/row_estimate_skew);不要只说"某表全表扫描"。
-2) 改写回验:你提出的每条改写 SQL,都再调一次本工具,用 candidate 入参 + verify_equiv=true 回验,并报告 cost_ratio(>1 才更便宜)与 equivalent。
-3) 分级呈现:【可直接采纳】= cost_ratio>1 且 equivalent=yes;【需人工确认】= equivalent=no(语义已变,例如 NOT IN↔NOT EXISTS 在含 NULL 时结果不同)或 inconclusive(样本为空/无法判定),必须显式标注"未通过等价校验,需人工复核语义"。
-4) 索引建议结合 schema.indexes 去重已有索引,并提醒人工在测试环境复核。
-注意:bind_fills 是为让 EXPLAIN 成功而回填的样例值,不代表真实业务取值;若改写依赖具体过滤值,等价校验结果仅对样例值成立。`,
-		}
-
-		// 1) Resolve SQL (by id -> sqlfetch, else literal).
-		rawSQL := input
-		if isLikelySQLID(input) {
-			report.Resolved = resolveSQL(ctx, conn, input)
-			if report.Resolved.Query == "" {
-				return mcp.CallToolResult{}, fmt.Errorf("sql id %s not found in statement_history/statement; pass full SQL text instead", input)
-			}
-			rawSQL = report.Resolved.Query
-		} else {
-			report.Resolved = SQLFetchResult{Query: rawSQL, Source: "inline", Placeholders: countPlaceholders(rawSQL), HasLiterals: countPlaceholders(rawSQL) == 0}
-		}
-
-		if !isReadOnlySQL(stripLeadingExplain(rawSQL)) {
-			return mcp.CallToolResult{}, fmt.Errorf("refusing to tune a non-read statement (only SELECT/WITH supported)")
-		}
-		// Drop any trailing ';' so the SQL can be wrapped in a subquery (EXPLAIN
-		// tolerates it, but the equivalence-hash sample's `FROM (<sql>) sub` does not).
-		rawSQL = stripTrailingSemicolon(rawSQL)
-
-		// Pin search_path to the schema owning the query's tables, so EXPLAIN and
-		// the schema/index evidence all agree (resolves cross-schema same-name
-		// ambiguity, e.g. public.orders vs sqltune_demo.orders).
-		if sch := bestSchema(ctx, conn, extractTableNames(rawSQL)); sch != "" {
-			_ = conn.SetSearchPath(ctx, sch)
-			report.Resolved.Schema = sch
-		}
-
-		// 2) Bind backfill so the SQL is EXPLAIN-able.
-		effSQL, fills := substituteBinds(rawSQL)
-		report.BindFills = fills
-		if len(fills) > 0 {
-			report.EffectiveSQL = effSQL
-			report.Warnings = append(report.Warnings, fmt.Sprintf("已回填 %d 个占位符(仅用于让 EXPLAIN 成功,值为样例,不代表真实业务取值)。", len(fills)))
-		}
-
-		// 3) SQL-text anti-patterns (no DB needed).
-		report.SQLIssues = detectSQLIssues(rawSQL)
-
-		// 4) Structured plan tree (graded ANALYZE only when analyze=true; else
-		//    plan-only estimates) + plan cost (from tree root) + text plan +
-		//    plan-level anti-patterns (text-based and tree-based).
-		if info, err := collectPlan(ctx, conn, effSQL, a.Analyze); err != nil {
-			report.Warnings = append(report.Warnings, "计划树采集失败: "+firstLine(err.Error()))
-		} else {
-			report.PlanTree = info
-			report.Analyzed = info.HasAnalyze // actual, not requested
-			if info.Root != nil {
-				cost := info.Root.TotalCost
-				report.PlanCost = &cost
-			}
-		}
-		// Text plan for human readability + text-based anti-pattern detection.
-		if plan, err := conn.Query(ctx, fmt.Sprintf("EXPLAIN (ANALYZE false, BUFFERS false, FORMAT TEXT) %s", stripLeadingExplain(effSQL))); err != nil {
-			report.Warnings = append(report.Warnings, "EXPLAIN TEXT 失败: "+firstLine(err.Error()))
-		} else {
-			for _, row := range plan.Rows {
-				if len(row) > 0 {
-					report.Plan = append(report.Plan, row[0])
-				}
-			}
-			report.PlanIssues = detectPlanIssues(report.Plan)
-		}
-		// Merge structured-tree issues (sort spill / expensive hash / row skew).
-		// Build a fresh slice (don't alias report.PlanIssues' backing array).
-		if report.PlanTree != nil {
-			treeIssues := detectPlanTreeIssues(report.PlanTree.Root, report.PlanTree.HasAnalyze)
-			merged := append(append([]PlanIssue(nil), report.PlanIssues...), treeIssues...)
-			report.PlanIssues = dedupPlanIssues(merged)
-		}
-
-		// 5) EXPLAIN PERFORMANCE (executes; opt-in).
-		if a.Analyze {
-			if perf, err := explainPerformance(ctx, conn, effSQL); err != nil {
-				report.Warnings = append(report.Warnings, "EXPLAIN PERFORMANCE 失败: "+firstLine(err.Error()))
-			} else {
-				report.Performance = perf
-			}
-		}
-
-		// 6/7/8) Context: tables, views, schema, runtime.
-		tables := extractTableNames(rawSQL)
-		if vr, ok := collectViewDefs(ctx, conn, tables); ok {
-			report.Views = vr
-		}
-		report.Schema = collectSchema(ctx, conn, tables)
-		report.Runtime = collectRuntime(ctx, conn)
-
-		// 9) Engine index advisor.
-		report.IndexAdvice = indexAdvice(ctx, conn, effSQL, &report)
-
-		// 10/11/12) Candidates (mechanical + caller-supplied) verified by cost + equivalence.
-		cands := generateCandidates(effSQL)
-		if strings.TrimSpace(a.Candidate) != "" {
-			candSQL, _ := substituteBinds(stripTrailingSemicolon(strings.TrimSpace(a.Candidate)))
-			cands = append(cands, RewriteCandidate{Rule: "caller_supplied", SQL: candSQL, Note: "调用方/模型提供的改写"})
-		}
-		for i := range cands {
-			verifyCandidate(ctx, conn, effSQL, &cands[i], a.VerifyEquiv)
-		}
-		report.Candidates = cands
-
-		// Split the result by audience (standard MCP annotations): the full
-		// deterministic report goes to the USER (rendered directly by the host,
-		// bypassing model rewording); a terse digest + instruction goes to the
-		// ASSISTANT so the model adds only a short root-cause note, not a repeat.
+		// Evidence -> user (rendered directly). Material digest + instruction ->
+		// assistant (model produces structured analysis, then calls sqltune_verify).
 		return mcp.CallToolResult{Content: []mcp.ContentItem{
-			mcp.TextContentFor(renderTuneReport(&report), "user"),
-			mcp.TextContentFor(renderModelSummary(&report), "assistant"),
+			mcp.TextContentFor(renderTuneReport(report), "user"),
+			mcp.TextContentFor(firstPassInstruction(report), "assistant"),
 		}}, nil
 	})
+}
+
+// registerSQLTuneVerify is pass 2: verify the model's analysis and render the
+// final fixed-format report.
+func registerSQLTuneVerify(s *mcp.Server, conn *db.Conn) {
+	tool := mcp.Tool{
+		Name:        "sqltune_verify",
+		Description: "Pass 2 of SQL tuning: submit your structured analysis ({root_cause, rewrites[], indexes[], expected}) for a SQL id/text. The plugin VERIFIES each rewrite (plan-cost diff + result equivalence) and renders the FINAL fixed-format optimization report (with verified verdicts) directly to the user. Call this AFTER sqltune with the SAME sql_or_id. Every rewrite SQL must be complete and executable — no placeholders or ellipsis. Read-only.",
+		InputSchema: jsonObjSchema(map[string]any{
+			"sql_or_id": strProp("same SQL id/text passed to sqltune"),
+			"analysis":  analysisSchema(),
+		}, "sql_or_id", "analysis"),
+	}
+	s.Register(tool, func(ctx context.Context, raw json.RawMessage) (mcp.CallToolResult, error) {
+		if err := ensureConn(ctx, conn); err != nil {
+			return mcp.CallToolResult{}, err
+		}
+		var a struct {
+			SQLOrID  string        `json:"sql_or_id"`
+			Analysis AnalysisInput `json:"analysis"`
+		}
+		if err := decodeArgs(raw, &a); err != nil {
+			return mcp.CallToolResult{}, err
+		}
+		report, err := buildTuneReport(ctx, conn, a.SQLOrID, false, false, "")
+		if err != nil {
+			return mcp.CallToolResult{}, err
+		}
+		// Verify each model rewrite (cost diff + equivalence) against the original.
+		var verified []VerifiedRewrite
+		for _, rw := range a.Analysis.Rewrites {
+			sql := strings.TrimSpace(rw.SQL)
+			if sql == "" {
+				continue
+			}
+			candSQL, _ := substituteBinds(stripTrailingSemicolon(sql))
+			cand := RewriteCandidate{Rule: "model_rewrite", SQL: candSQL, Note: rw.Title}
+			if isReadOnlySQL(stripLeadingExplain(candSQL)) {
+				verifyCandidate(ctx, conn, report.EffectiveSQL, &cand, true)
+			} else {
+				cand.Equivalent = "skipped:非只读改写不做校验"
+			}
+			verified = append(verified, VerifiedRewrite{In: rw, Cand: cand})
+		}
+		return mcp.CallToolResult{Content: []mcp.ContentItem{
+			mcp.TextContentFor(renderAnalysisReport(report, &a.Analysis, verified), "user"),
+			mcp.TextContentFor("最终优化方案(含确定性校验)已直接展示给用户。无需重复内容,可用一句话收尾。", "assistant"),
+		}}, nil
+	})
+}
+
+// analysisSchema is the JSON schema for the pass-2 `analysis` argument.
+func analysisSchema() map[string]any {
+	rewriteItem := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"title":   strProp("short title of the rewrite"),
+			"sql":     strProp("the COMPLETE rewritten SQL (executable, no placeholders/ellipsis)"),
+			"reasons": map[string]any{"type": "array", "items": strProp("one reason this rewrite helps"), "description": "why this rewrite helps"},
+		},
+		"required": []string{"sql"},
+	}
+	indexItem := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"ddl":       strProp("a complete CREATE INDEX statement"),
+			"rationale": strProp("why this index helps"),
+		},
+		"required": []string{"ddl"},
+	}
+	return map[string]any{
+		"type":        "object",
+		"description": "your structured tuning analysis; rewrites are cost+equivalence verified by the plugin",
+		"properties": map[string]any{
+			"root_cause": strProp("root-cause analysis: why the query is slow (cite the evidence)"),
+			"rewrites":   map[string]any{"type": "array", "items": rewriteItem, "description": "rewritten SQL candidates"},
+			"indexes":    map[string]any{"type": "array", "items": indexItem, "description": "index recommendations"},
+			"expected":   strProp("expected effect after applying the plan"),
+		},
+	}
 }
 
 // isLikelySQLID reports whether input looks like a unique SQL id rather than a
