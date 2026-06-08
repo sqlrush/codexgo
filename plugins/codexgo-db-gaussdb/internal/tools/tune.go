@@ -99,6 +99,9 @@ func registerSQLTune(s *mcp.Server, conn *db.Conn) {
 		if !isReadOnlySQL(stripLeadingExplain(rawSQL)) {
 			return mcp.CallToolResult{}, fmt.Errorf("refusing to tune a non-read statement (only SELECT/WITH supported)")
 		}
+		// Drop any trailing ';' so the SQL can be wrapped in a subquery (EXPLAIN
+		// tolerates it, but the equivalence-hash sample's `FROM (<sql>) sub` does not).
+		rawSQL = stripTrailingSemicolon(rawSQL)
 
 		// 2) Bind backfill so the SQL is EXPLAIN-able.
 		effSQL, fills := substituteBinds(rawSQL)
@@ -166,7 +169,7 @@ func registerSQLTune(s *mcp.Server, conn *db.Conn) {
 		// 10/11/12) Candidates (mechanical + caller-supplied) verified by cost + equivalence.
 		cands := generateCandidates(effSQL)
 		if strings.TrimSpace(a.Candidate) != "" {
-			candSQL, _ := substituteBinds(strings.TrimSpace(a.Candidate))
+			candSQL, _ := substituteBinds(stripTrailingSemicolon(strings.TrimSpace(a.Candidate)))
 			cands = append(cands, RewriteCandidate{Rule: "caller_supplied", SQL: candSQL, Note: "调用方/模型提供的改写"})
 		}
 		for i := range cands {

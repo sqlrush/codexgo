@@ -104,3 +104,20 @@ func TestExtractTableNames(t *testing.T) {
 		}
 	}
 }
+
+func TestStripTrailingSemicolon(t *testing.T) {
+	cases := map[string]string{
+		"SELECT 1":                               "SELECT 1",
+		"SELECT 1;":                              "SELECT 1",
+		"SELECT 1;  ":                            "SELECT 1",
+		"SELECT 1 ;\n\t":                         "SELECT 1",
+		"SELECT 1;;":                             "SELECT 1",
+		"SELECT ';' AS x ;":                      "SELECT ';' AS x", // literal ';' kept, terminator stripped
+		"WITH t AS (SELECT 1)\nSELECT * FROM t;": "WITH t AS (SELECT 1)\nSELECT * FROM t",
+	}
+	for in, want := range cases {
+		if got := stripTrailingSemicolon(in); got != want {
+			t.Errorf("stripTrailingSemicolon(%q)=%q want %q", in, got, want)
+		}
+	}
+}

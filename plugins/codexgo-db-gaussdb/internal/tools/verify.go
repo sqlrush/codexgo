@@ -66,7 +66,12 @@ func verifyCandidate(ctx context.Context, conn *db.Conn, origSQL string, c *Rewr
 		c.Equivalent = "unverified:原查询采样失败(" + firstLine(err1.Error()) + ")"
 	case err2 != nil:
 		c.Equivalent = "unverified:候选采样失败(" + firstLine(err2.Error()) + ")"
-	case oh == ch && oh != "":
+	case oh == "" && ch == "":
+		// Both samples empty (no rows in the bounded window). Equal-but-empty
+		// can't prove full-result equivalence, so report it honestly rather
+		// than mislabeling a possibly-fine rewrite as "no".
+		c.Equivalent = fmt.Sprintf("inconclusive:两侧采样均为空(前 %d 行内无可对比行)", equivLimit)
+	case oh == ch:
 		c.Equivalent = "yes"
 	default:
 		c.Equivalent = "no"
@@ -79,6 +84,6 @@ func verifyCandidate(ctx context.Context, conn *db.Conn, origSQL string, c *Rewr
 func rowHash(ctx context.Context, conn *db.Conn, query string) (string, error) {
 	hashSQL := fmt.Sprintf(`SELECT md5(string_agg(row_text, '|' ORDER BY row_text))
 FROM (SELECT (sub.*)::text AS row_text FROM (%s) AS sub LIMIT %d) t`,
-		stripLeadingExplain(query), equivLimit)
+		stripTrailingSemicolon(stripLeadingExplain(query)), equivLimit)
 	return conn.QueryScalar(ctx, hashSQL)
 }

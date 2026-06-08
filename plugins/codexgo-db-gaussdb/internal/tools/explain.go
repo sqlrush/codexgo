@@ -104,6 +104,19 @@ func stripLeadingExplain(sql string) string {
 	return rest
 }
 
+// stripTrailingSemicolon removes trailing whitespace and statement-terminating
+// semicolons. SQL resolved from statement_history often ends in ';', which is
+// fine as a top-level statement but breaks when the SQL is wrapped in a
+// subquery — e.g. the equivalence-hash sample does `FROM (<sql>) sub`, and a
+// ';' inside the parentheses is a syntax error.
+func stripTrailingSemicolon(sql string) string {
+	s := strings.TrimRight(sql, " \t\r\n")
+	for strings.HasSuffix(s, ";") {
+		s = strings.TrimRight(s[:len(s)-1], " \t\r\n")
+	}
+	return s
+}
+
 // isReadOnlySQL reports whether the statement is a SELECT/WITH read query.
 func isReadOnlySQL(sql string) bool {
 	low := strings.ToLower(strings.TrimSpace(sql))
