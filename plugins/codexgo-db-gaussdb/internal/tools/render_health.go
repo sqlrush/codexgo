@@ -6,79 +6,13 @@ import (
 	"strings"
 )
 
-// Deterministic health-diagnosis report renderer (pass-1). Turns the structured
-// HealthReport into a fixed-format markdown report using the runewidth-aligned
-// ASCII primitives (asciiTable / barLine). Every figure is real【实测】.
-//
-// Visual elements (all verified to render aligned in codexgo): score bar,
-// overview table, dimension bar chart, problem table, suggestion list.
+// Health rendering helpers, shared by the multi-dimension diagnosis renderer
+// (render_diagnose.go): the score bar, the category overview table, the
+// per-dimension bar chart, and the category/status helpers. All output uses the
+// runewidth-aligned ASCII primitives so it renders aligned in codexgo.
 
 // healthCategoryOrder is the display order of health modules.
 var healthCategoryOrder = []string{"实例", "连接", "内存", "维护", "高可用"}
-
-// healthAssistantSummary is the terse assistant-audience digest: the user
-// already sees the rendered report, so the model just confirms it and can go
-// deeper on follow-ups — it must not rebuild the report.
-func healthAssistantSummary(r *HealthReport) string {
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf("健康诊断报告已直接展示给用户(确定性渲染),评分 %d/100 %s。", r.Score, r.Grade))
-	if probs := healthProblems(r); len(probs) > 0 {
-		var names []string
-		for _, p := range probs {
-			names = append(names, p.Name)
-		}
-		b.WriteString("需关注:" + strings.Join(names, "、") + "。")
-	} else {
-		b.WriteString("无 WARN/FAIL 级问题。")
-	}
-	b.WriteString("勿重复报告内容;可一句话收尾或按用户后续问题深入。")
-	return b.String()
-}
-
-func renderHealthReport(r *HealthReport) string {
-	var b strings.Builder
-	b.WriteString("# 🩺 数据库健康诊断 · " + r.Target + "\n\n")
-	b.WriteString("> 指标均为插件实测【实测】;评级由阈值确定性判定。\n\n")
-
-	// ── 评分 + 总览表 ──
-	b.WriteString("## 健康总览\n\n```\n")
-	b.WriteString(scoreBar(r.Score, r.Grade) + "\n")
-	if r.Version != "" {
-		ver := strings.TrimLeft(r.Version, "( ")
-		if i := strings.Index(ver, ") "); i > 0 {
-			ver = ver[:i]
-		}
-		b.WriteString("版本  " + truncDisp(ver, 44) + "\n")
-	}
-	b.WriteString("\n")
-	b.WriteString(renderOverviewTable(r))
-	b.WriteString("```\n\n")
-
-	// ── 维度健康度对比 ──
-	b.WriteString("## 维度健康度\n\n```\n")
-	b.WriteString(renderDimBars(r))
-	b.WriteString("```\n\n")
-
-	// ── 核心问题 ──
-	probs := healthProblems(r)
-	b.WriteString("## 核心问题\n\n")
-	if len(probs) == 0 {
-		b.WriteString("✅ 未发现 WARN / FAIL 级问题。\n\n")
-	} else {
-		b.WriteString("```\n")
-		b.WriteString(renderProblemTable(probs))
-		b.WriteString("```\n\n")
-	}
-
-	// ── 修复建议 ──
-	if len(probs) > 0 {
-		b.WriteString("## 修复建议\n\n```\n")
-		b.WriteString(renderSuggestions(probs))
-		b.WriteString("```\n")
-	}
-
-	return b.String()
-}
 
 // scoreBar renders "评分  ███████░░░  94/100  良".
 func scoreBar(score int, grade string) string {
@@ -134,36 +68,6 @@ func renderDimBars(r *HealthReport) string {
 	return b.String()
 }
 
-// renderProblemTable lists WARN/FAIL items.
-func renderProblemTable(probs []HealthItem) string {
-	cols := []tableColumn{
-		{Header: "级别"},
-		{Header: "检查项", Max: 22},
-		{Header: "实测", Max: 20},
-		{Header: "阈值", Max: 18},
-	}
-	var rows [][]string
-	for _, p := range probs {
-		// Plain text in the cell (NO emoji — its width varies by terminal and
-		// would break box alignment); emoji is used in the suggestion list below.
-		rows = append(rows, []string{ratingText(p.Status), p.Name, p.Value, p.Threshold})
-	}
-	return asciiTable(cols, rows)
-}
-
-// renderSuggestions renders a numbered suggestion list (worst first).
-func renderSuggestions(probs []HealthItem) string {
-	var b strings.Builder
-	for i, p := range probs {
-		s := p.Suggestion
-		if strings.TrimSpace(s) == "" {
-			s = "结合相关工具进一步排查"
-		}
-		b.WriteString(fmt.Sprintf("%d. [%s] %s\n   → %s\n", i+1, severityText(p.Status), p.Name, s))
-	}
-	return b.String()
-}
-
 // --- helpers ---------------------------------------------------------------
 
 func categoriesInOrder(byCat map[string][]HealthItem) []string {
@@ -208,17 +112,6 @@ func ratingText(status string) string {
 		return "未知"
 	default:
 		return "正常"
-	}
-}
-
-func severityText(status string) string {
-	switch status {
-	case statusFail:
-		return "🔴严重"
-	case statusWarn:
-		return "🟡警告"
-	default:
-		return status
 	}
 }
 

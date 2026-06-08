@@ -50,19 +50,19 @@ type healthCounts struct {
 func registerHealth(s *mcp.Server, conn *db.Conn) {
 	tool := mcp.Tool{
 		Name:        "health",
-		Description: "Database health diagnosis for the connected GaussDB/openGauss instance — use this for ANY \"what's wrong / 有什么问题 / health / 体检 / diagnose the database\" question. The plugin renders the full report itself (health score + overview table + per-dimension bar chart + problems + fix suggestions) and shows it DIRECTLY to the user; present it as-is — do NOT rebuild it as a markdown table or restate the numbers. Read-only.",
+		Description: "Open-ended database DIAGNOSIS for the connected GaussDB/openGauss instance — use this for ANY \"当前数据库有什么问题 / what's wrong / health / 体检 / 性能 / 慢 / 锁 / diagnose\" question. The plugin collects ALL dimensions itself (health metrics + wait events + top slow SQL + lock-blocking chains + dead-tuple distribution + index summary) and renders a full multi-dimension report DIRECTLY to the user. Present it as-is — do NOT rebuild tables or restate the numbers; you may add one short line or drill into the slowest SQL via sqltune. Read-only.",
 		InputSchema: jsonObjSchema(map[string]any{}),
 	}
 	s.Register(tool, func(ctx context.Context, _ json.RawMessage) (mcp.CallToolResult, error) {
 		if err := ensureConn(ctx, conn); err != nil {
 			return mcp.CallToolResult{}, err
 		}
-		r := runHealth(ctx, conn)
-		// Rendered report -> user (direct render); terse digest -> model so it
-		// presents the report instead of rebuilding a (mis-rendering) table.
+		// Multi-dimension collection (health + waits + slow SQL + locks + dead
+		// tuples + indexes) — coverage is deterministic, not model-chosen.
+		d := collectDiagnosis(ctx, conn)
 		return mcp.CallToolResult{Content: []mcp.ContentItem{
-			mcp.TextContentFor(renderHealthReport(&r), "user"),
-			mcp.TextContentFor(healthAssistantSummary(&r), "assistant"),
+			mcp.TextContentFor(renderDiagnosisReport(d), "user"),
+			mcp.TextContentFor(diagAssistantSummary(d), "assistant"),
 		}}, nil
 	})
 }
