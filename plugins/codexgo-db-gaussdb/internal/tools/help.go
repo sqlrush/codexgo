@@ -11,9 +11,11 @@ import (
 // (codexgo renders it as-is) and needs no database connection.
 const helpText = `GaussDB 插件命令 (codexgo-db-gaussdb) —— 与 opendb 命令名一致
 
-连接
-  /connect {"host":"…","port":8000,"user":"…","password":"…","database":"postgres","sslmode":"disable"}
-                                建立连接(后续命令作用于该连接)
+连接(默认读取 ~/.dbaa/config.yaml,健康检查等命令会自动连接默认库)
+  /connect                      连接 ~/.dbaa 里的默认 GaussDB/openGauss 连接
+  /connect {"name":"gauss_local"}   连接 ~/.dbaa 里指定名字的连接
+  /connect {"host":"…","port":8000,"user":"…","password":"…","database":"postgres"}
+                                显式连接(覆盖配置)
 
 健康检查
   /health                       实例整体体检(加权健康分 0-100 + 分项评级)

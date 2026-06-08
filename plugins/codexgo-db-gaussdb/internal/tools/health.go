@@ -54,8 +54,8 @@ func registerHealth(s *mcp.Server, conn *db.Conn) {
 		InputSchema: jsonObjSchema(map[string]any{}),
 	}
 	s.Register(tool, func(ctx context.Context, _ json.RawMessage) (mcp.CallToolResult, error) {
-		if !conn.IsConnected() {
-			return mcp.CallToolResult{}, fmt.Errorf("no active database connection — run connect first")
+		if err := ensureConn(ctx, conn); err != nil {
+			return mcp.CallToolResult{}, err
 		}
 		report := runHealth(ctx, conn)
 		out, err := json.Marshal(report)

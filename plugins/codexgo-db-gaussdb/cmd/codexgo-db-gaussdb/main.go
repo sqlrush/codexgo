@@ -17,7 +17,7 @@ import (
 	"github.com/sqlrush/codexgo-db-gaussdb/internal/tools"
 )
 
-const version = "0.1.0"
+const version = "0.2.0"
 
 // instructions is the server-level domain knowledge codexgo surfaces to the LLM
 // at initialize. It tells the model what this server is for and how to drive the

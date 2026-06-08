@@ -25,7 +25,7 @@ func registerASH(s *mcp.Server, conn *db.Conn) {
 		InputSchema: jsonObjSchema(map[string]any{}),
 	}
 	s.Register(tool, func(ctx context.Context, _ json.RawMessage) (mcp.CallToolResult, error) {
-		if err := requireConn(conn); err != nil {
+		if err := ensureConn(ctx, conn); err != nil {
 			return mcp.CallToolResult{}, err
 		}
 		report := AshReport{Target: conn.Label()}

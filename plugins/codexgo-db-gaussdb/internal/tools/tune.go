@@ -48,7 +48,7 @@ func registerSQLTune(s *mcp.Server, conn *db.Conn) {
 		}, "sql_or_id"),
 	}
 	s.Register(tool, func(ctx context.Context, raw json.RawMessage) (mcp.CallToolResult, error) {
-		if err := requireConn(conn); err != nil {
+		if err := ensureConn(ctx, conn); err != nil {
 			return mcp.CallToolResult{}, err
 		}
 		var a struct {

@@ -1,10 +1,12 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
 	"github.com/sqlrush/codexgo-db-gaussdb/internal/db"
+	"github.com/sqlrush/codexgo-db-gaussdb/internal/dbaa"
 )
 
 // boolProp builds a JSON-Schema boolean property.
@@ -12,11 +14,21 @@ func boolProp(desc string) map[string]any {
 	return map[string]any{"type": "boolean", "description": desc}
 }
 
-// requireConn returns an error if no connection is active. Every query tool
-// guards with this so the model gets a clear "connect first" message.
-func requireConn(conn *db.Conn) error {
-	if !conn.IsConnected() {
-		return fmt.Errorf("no active database connection — run connect first")
+// ensureConn guarantees an active connection: if none is open, it auto-connects
+// to the default GaussDB/openGauss target defined in the opendb config
+// (~/.dbaa/config.yaml), so commands like /health work out of the box. When no
+// config target is available it returns a clear, actionable error. Use the
+// connect tool to target a specific named connection.
+func ensureConn(ctx context.Context, conn *db.Conn) error {
+	if conn.IsConnected() {
+		return nil
+	}
+	target, label, err := dbaa.Resolve("")
+	if err != nil {
+		return fmt.Errorf("no active database connection — run connect, or define one in %s (%v)", dbaa.ConfigPath(), err)
+	}
+	if cerr := conn.Connect(ctx, target, "dbaa:"+label); cerr != nil {
+		return fmt.Errorf("auto-connect to %s failed: %w", label, cerr)
 	}
 	return nil
 }

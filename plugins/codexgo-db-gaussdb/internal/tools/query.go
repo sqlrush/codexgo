@@ -38,7 +38,7 @@ func registerSlowSQL(s *mcp.Server, conn *db.Conn) {
 		}),
 	}
 	s.Register(tool, func(ctx context.Context, raw json.RawMessage) (mcp.CallToolResult, error) {
-		if err := requireConn(conn); err != nil {
+		if err := ensureConn(ctx, conn); err != nil {
 			return mcp.CallToolResult{}, err
 		}
 		var a slowSQLArgs
@@ -107,7 +107,7 @@ func registerTopSQL(s *mcp.Server, conn *db.Conn) {
 		}),
 	}
 	s.Register(tool, func(ctx context.Context, raw json.RawMessage) (mcp.CallToolResult, error) {
-		if err := requireConn(conn); err != nil {
+		if err := ensureConn(ctx, conn); err != nil {
 			return mcp.CallToolResult{}, err
 		}
 		var a topSQLArgs
@@ -194,7 +194,7 @@ func registerSQLFetch(s *mcp.Server, conn *db.Conn) {
 		}, "sql_id"),
 	}
 	s.Register(tool, func(ctx context.Context, raw json.RawMessage) (mcp.CallToolResult, error) {
-		if err := requireConn(conn); err != nil {
+		if err := ensureConn(ctx, conn); err != nil {
 			return mcp.CallToolResult{}, err
 		}
 		var a sqlFetchArgs
@@ -287,7 +287,7 @@ func registerPlanHistory(s *mcp.Server, conn *db.Conn) {
 		}, "sql_id"),
 	}
 	s.Register(tool, func(ctx context.Context, raw json.RawMessage) (mcp.CallToolResult, error) {
-		if err := requireConn(conn); err != nil {
+		if err := ensureConn(ctx, conn); err != nil {
 			return mcp.CallToolResult{}, err
 		}
 		var a planHistoryArgs
