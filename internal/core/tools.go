@@ -83,6 +83,12 @@ func toolOutputText(out tools.ToolOutput, callID string, payload tools.ToolPaylo
 	case tools.ResponseInputItemKindFunctionCallOutput,
 		tools.ResponseInputItemKindCustomToolCallOutput:
 		return functionOutputText(item.Output)
+	case tools.ResponseInputItemKindMcpToolCallOutput:
+		// MCP results carry their content in McpOutput (a CallToolResult), not
+		// Output. Function-call dispatch (the path MCP tools take) lowers the
+		// output to a ToolResult via this helper, so without this case the result
+		// is dropped and the model sees an empty tool result.
+		return mcpResultText(item.McpOutput)
 	default:
 		return ""
 	}
