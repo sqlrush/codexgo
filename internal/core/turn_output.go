@@ -2,12 +2,34 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/tools"
 )
+
+// mcpResultText flattens an MCP CallToolResult's content blocks to text (the
+// text variant), so the result can be carried as a function_call_output on both
+// the Responses and chat-completions wires.
+func mcpResultText(result protocol.CallToolResult) string {
+	var b strings.Builder
+	for _, raw := range result.Content {
+		var item struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		}
+		if err := json.Unmarshal(raw, &item); err != nil || item.Type != "text" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(item.Text)
+	}
+	return b.String()
+}
 
 // dispatchToolInvocation routes a tool invocation through the session's
 // [ToolRouter], preferring the session-aware path ([sessionAwareRouter]) so
@@ -206,6 +228,20 @@ func responseItemFromInput(in tools.ResponseInputItem) protocol.ResponseItem {
 			CallID:     in.CallID,
 			OutputName: in.Name,
 			Output:     &in.Output,
+		}
+	case tools.ResponseInputItemKindMcpToolCallOutput:
+		// The MCP result lives in McpOutput (a CallToolResult), not Output. Flatten
+		// its content to text and emit a function_call_output so BOTH wires carry
+		// it: the Responses API and the chat-completions wire both render
+		// function_call_output. Without this the result is dropped and the model
+		// sees an empty tool result.
+		text := mcpResultText(in.McpOutput)
+		isErr := in.McpOutput.IsError != nil && *in.McpOutput.IsError
+		success := !isErr
+		return protocol.ResponseItem{
+			Type:   protocol.ResponseItemKindFunctionCallOutput,
+			CallID: in.CallID,
+			Output: &protocol.FunctionCallOutputPayload{Text: &text, Success: &success},
 		}
 	default:
 		return protocol.ResponseItem{
