@@ -26,6 +26,7 @@ type TuneReport struct {
 	EffectiveSQL string             `json:"effective_sql,omitempty"`
 	PlanCost     *float64           `json:"plan_cost,omitempty"`
 	Plan         []string           `json:"plan,omitempty"`
+	PlanTree     *PlanInfo          `json:"plan_tree,omitempty"`
 	Performance  string             `json:"explain_performance,omitempty"`
 	PlanIssues   []PlanIssue        `json:"plan_issues,omitempty"`
 	SQLIssues    []PlanIssue        `json:"sql_issues,omitempty"`
@@ -51,11 +52,11 @@ var tuneDimensions = []string{
 func registerSQLTune(s *mcp.Server, conn *db.Conn) {
 	tool := mcp.Tool{
 		Name:        "sqltune",
-		Description: "Deep SQL tuning material for a query or unique SQL id: resolves the SQL and backfills bind placeholders so it can be EXPLAINed; collects plan + plan cost, plan/SQL anti-patterns, schema (tables/indexes/stats/FK), runtime waits/locks, view defs, and the engine index advisor; generates mechanical rewrite candidates and verifies them by plan-cost diff (and result equivalence when verify_equiv=true). Returns structured, mostly-verified material plus a 5-dimension checklist for you (the model) to synthesize the final plan — it does NOT call an LLM. Args: sql_or_id (required); candidate (optional rewrite to verify); analyze (bool: EXPLAIN PERFORMANCE, executes the query); verify_equiv (bool: hash-compare candidate results, executes queries). Read-only.",
+		Description: "Deep SQL tuning material for a query or unique SQL id: resolves the SQL and backfills bind placeholders so it can be EXPLAINed; collects the structured plan tree + plan cost, plan/SQL anti-patterns, schema (tables/indexes/stats/FK), runtime waits/locks, view defs, and the engine index advisor; generates mechanical rewrite candidates and verifies them by plan-cost diff (and result equivalence when verify_equiv=true). Returns structured, mostly-verified material plus a 5-dimension checklist for you (the model) to synthesize the final plan — it does NOT call an LLM. By default it does NOT execute the query (estimated plan only). Args: sql_or_id (required); candidate (optional rewrite to verify); analyze (bool: EXECUTE the query for real plan-tree timings/rows via graded EXPLAIN ANALYZE + EXPLAIN PERFORMANCE); verify_equiv (bool: hash-compare candidate results, executes queries). Read-only.",
 		InputSchema: jsonObjSchema(map[string]any{
 			"sql_or_id":    strProp("full SQL text, or a unique SQL id to resolve"),
 			"candidate":    strProp("optional: a rewritten SQL to verify (cost + equivalence) against the original"),
-			"analyze":      boolProp("run EXPLAIN PERFORMANCE for real per-operator timings (executes the query; default false)"),
+			"analyze":      boolProp("EXECUTE the query to get real plan-tree actual rows/timings (graded EXPLAIN ANALYZE, with timeout + fallback) and EXPLAIN PERFORMANCE; default false = estimated plan only, query not run"),
 			"verify_equiv": boolProp("hash-compare candidate vs original results to confirm equivalence (executes both, bounded; default false)"),
 		}, "sql_or_id"),
 	}
@@ -79,7 +80,6 @@ func registerSQLTune(s *mcp.Server, conn *db.Conn) {
 
 		report := TuneReport{
 			Target:     conn.Label(),
-			Analyzed:   a.Analyze,
 			Dimensions: tuneDimensions,
 			Note:       "确定性采集 + 校验后的调优素材;请据 plan_issues/sql_issues/schema/index_advice 与已验证的 candidates 给出可执行方案(改写 SQL + DDL),并提醒人工在测试环境复核。candidates.cost_ratio>1 且 equivalent=yes 才是可直接采纳的改写。",
 		}
@@ -111,15 +111,22 @@ func registerSQLTune(s *mcp.Server, conn *db.Conn) {
 		// 3) SQL-text anti-patterns (no DB needed).
 		report.SQLIssues = detectSQLIssues(rawSQL)
 
-		// 4) Plan cost + plan text + plan-level annotations.
-		if c, err := planTotalCost(ctx, conn, effSQL); err != nil {
-			report.Warnings = append(report.Warnings, "计划成本采集失败: "+firstLine(err.Error()))
+		// 4) Structured plan tree (graded ANALYZE only when analyze=true; else
+		//    plan-only estimates) + plan cost (from tree root) + text plan +
+		//    plan-level anti-patterns (text-based and tree-based).
+		if info, err := collectPlan(ctx, conn, effSQL, a.Analyze); err != nil {
+			report.Warnings = append(report.Warnings, "计划树采集失败: "+firstLine(err.Error()))
 		} else {
-			report.PlanCost = c
+			report.PlanTree = info
+			report.Analyzed = info.HasAnalyze // actual, not requested
+			if info.Root != nil {
+				cost := info.Root.TotalCost
+				report.PlanCost = &cost
+			}
 		}
-		mode := "ANALYZE false, BUFFERS false"
-		if plan, err := conn.Query(ctx, fmt.Sprintf("EXPLAIN (%s, FORMAT TEXT) %s", mode, stripLeadingExplain(effSQL))); err != nil {
-			report.Warnings = append(report.Warnings, "EXPLAIN 失败: "+firstLine(err.Error()))
+		// Text plan for human readability + text-based anti-pattern detection.
+		if plan, err := conn.Query(ctx, fmt.Sprintf("EXPLAIN (ANALYZE false, BUFFERS false, FORMAT TEXT) %s", stripLeadingExplain(effSQL))); err != nil {
+			report.Warnings = append(report.Warnings, "EXPLAIN TEXT 失败: "+firstLine(err.Error()))
 		} else {
 			for _, row := range plan.Rows {
 				if len(row) > 0 {
@@ -127,6 +134,13 @@ func registerSQLTune(s *mcp.Server, conn *db.Conn) {
 				}
 			}
 			report.PlanIssues = detectPlanIssues(report.Plan)
+		}
+		// Merge structured-tree issues (sort spill / expensive hash / row skew).
+		// Build a fresh slice (don't alias report.PlanIssues' backing array).
+		if report.PlanTree != nil {
+			treeIssues := detectPlanTreeIssues(report.PlanTree.Root, report.PlanTree.HasAnalyze)
+			merged := append(append([]PlanIssue(nil), report.PlanIssues...), treeIssues...)
+			report.PlanIssues = dedupPlanIssues(merged)
 		}
 
 		// 5) EXPLAIN PERFORMANCE (executes; opt-in).
