@@ -19,8 +19,6 @@ var (
 	reInSelect     = regexp.MustCompile(`(?i)[^t]\bin\s*\(\s*select`)
 	reDistinct     = regexp.MustCompile(`(?i)select\s+distinct`)
 	reGroupBy      = regexp.MustCompile(`(?i)\bgroup\s+by\b`)
-	reCommaJoin    = regexp.MustCompile(`(?i)\bfrom\b[^;]*?,[^;]*?\bwhere\b`)
-	reOrLike       = regexp.MustCompile(`(?i)\bor\b`)
 )
 
 // detectSQLIssues scans the SQL text for common anti-patterns.
@@ -63,12 +61,9 @@ func detectSQLIssues(sql string) []PlanIssue {
 			Suggestion: "GROUP BY 已保证分组唯一,DISTINCT 多半冗余,徒增一次排序去重,可去掉",
 		})
 	}
-	if reCommaJoin.MatchString(low) {
-		out = append(out, PlanIssue{
-			Kind:       "implicit_join",
-			Detail:     "逗号隐式连接(FROM a, b WHERE ...)",
-			Suggestion: "改显式 JOIN ... ON 提升可读性(对内连接而言性能与隐式等价,优化器一视同仁,非性能问题)",
-		})
-	}
+	// NOTE: comma/implicit joins are intentionally NOT flagged — for inner joins
+	// they are semantically and performance-wise identical to explicit JOIN
+	// (the planner treats them the same). Flagging them as an anti-pattern only
+	// dilutes the real findings; it is a style preference, not a tuning issue.
 	return dedupPlanIssues(out)
 }

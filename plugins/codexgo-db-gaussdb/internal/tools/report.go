@@ -24,12 +24,18 @@ import (
 
 const hotspotLimit = 12
 
+// hotspotSelfCostShare: a plan node is a cost hotspot only if its SELF cost is at
+// least this share of the query's total cost, so trivial nodes don't crowd the
+// list. Self cost (not cumulative TotalCost) is the right metric — see selfCost.
+const hotspotSelfCostShare = 0.01
+
 // reportMarker is a [Pn] tag bound to a plan node.
 type reportMarker struct {
-	ref    string // "[P1]"
-	node   *PlanNode
-	reason string
-	score  float64
+	ref      string // "[P1]"
+	node     *PlanNode
+	reason   string
+	score    float64
+	selfCost float64
 }
 
 // firstPassInstruction is the assistant-audience companion to the pass-1 evidence
@@ -313,7 +319,9 @@ func renderEvidenceSection(b *strings.Builder, r *TuneReport, markers []reportMa
 
 	// 代价热点
 	if len(markers) > 0 {
-		b.WriteString("### 代价热点\n\n```\n")
+		b.WriteString("### 代价热点\n\n")
+		b.WriteString("> 按**自身成本**排序(= 累积成本 − 子节点成本,剔除从子树继承的部分),只列占总成本显著比例的真瓶颈。\n\n")
+		b.WriteString("```\n")
 		for i, m := range markers {
 			rel := "-"
 			if m.node.Relation != "" {
@@ -322,7 +330,7 @@ func renderEvidenceSection(b *strings.Builder, r *TuneReport, markers []reportMa
 			b.WriteString(fmt.Sprintf("%d/%d %s\n", i+1, len(markers), m.ref))
 			b.WriteString(fmt.Sprintf("  算子 : %s\n", m.node.Operator))
 			b.WriteString(fmt.Sprintf("  对象 : %s\n", rel))
-			b.WriteString(fmt.Sprintf("  cost : %.0f\n", m.node.TotalCost))
+			b.WriteString(fmt.Sprintf("  自身成本 : %.0f(累积 %.0f)\n", m.selfCost, m.node.TotalCost))
 			b.WriteString(fmt.Sprintf("  说明 : %s\n", m.reason))
 			if i < len(markers)-1 {
 				b.WriteString("\n")
@@ -567,18 +575,47 @@ func renderUncertaintySection(b *strings.Builder, r *TuneReport) {
 
 // ---- markers / hotspots ----
 
-// buildReportMarkers scores plan nodes and assigns [P1..Pn] to the top-N
-// hotspots (score desc). Ports opendb's buildPlanHotspots scoring.
+// selfCost is a plan node's OWN cost: its cumulative TotalCost minus the
+// cumulative cost of its children. PostgreSQL/openGauss plan cost is cumulative
+// (a parent includes all descendants), so ranking by TotalCost always surfaces
+// the tree's top nodes (Limit/Sort/Join) even when their own work is negligible.
+// Self cost isolates what THIS operator actually spends — the real hotspot. May
+// go negative under LIMIT/streaming cost models, so it is clamped to 0.
+func selfCost(n *PlanNode) float64 {
+	if n == nil {
+		return 0
+	}
+	self := n.TotalCost
+	for _, c := range n.Children {
+		self -= c.TotalCost
+	}
+	if self < 0 {
+		self = 0
+	}
+	return self
+}
+
+// buildReportMarkers ranks plan nodes by SELF cost (not cumulative), keeps those
+// whose self cost is a meaningful share of the total (the real bottlenecks), and
+// assigns [P1..Pn] in self-cost order. Falls back to the single biggest node so
+// the section is never empty when a plan exists.
 func buildReportMarkers(plan *PlanInfo) []reportMarker {
 	if plan == nil || plan.Root == nil {
 		return nil
 	}
-	var items []reportMarker
+	total := plan.TotalCost
+	if total <= 0 {
+		total = 1
+	}
+	threshold := total * hotspotSelfCostShare
+
+	var all []reportMarker
 	walkPlan(plan.Root, func(n *PlanNode) {
 		if !nodeWorthAnnotating(n) {
 			return
 		}
-		score := n.TotalCost
+		self := selfCost(n)
+		score := self
 		reason := planMarkerReason(n)
 		if strings.Contains(strings.ToLower(n.Operator), "seq scan") && n.PlanRows > 10000 {
 			score *= 1.3
@@ -595,14 +632,24 @@ func buildReportMarkers(plan *PlanInfo) []reportMarker {
 				reason = "估算行数与实际行数偏差明显,优先修复统计信息"
 			}
 		}
-		items = append(items, reportMarker{node: n, reason: reason, score: score})
+		all = append(all, reportMarker{node: n, reason: reason, score: score, selfCost: self})
 	})
-	sort.SliceStable(items, func(i, j int) bool {
-		if items[i].score != items[j].score {
-			return items[i].score > items[j].score
+	sort.SliceStable(all, func(i, j int) bool {
+		if all[i].score != all[j].score {
+			return all[i].score > all[j].score
 		}
-		return items[i].node.Operator < items[j].node.Operator
+		return all[i].node.Operator < all[j].node.Operator
 	})
+
+	var items []reportMarker
+	for _, m := range all {
+		if m.selfCost >= threshold {
+			items = append(items, m)
+		}
+	}
+	if len(items) == 0 && len(all) > 0 {
+		items = all[:1]
+	}
 	if len(items) > hotspotLimit {
 		items = items[:hotspotLimit]
 	}
@@ -645,7 +692,8 @@ func planMarkerReason(n *PlanNode) string {
 	}
 }
 
-// topRelationNodes returns the top-N relation nodes by cost (worth-tuning gated).
+// topRelationNodes returns the top-N relation nodes by SELF cost (worth-tuning
+// gated) — the relations actually driving the cost.
 func topRelationNodes(root *PlanNode, limit int) []*PlanNode {
 	var nodes []*PlanNode
 	walkPlan(root, func(n *PlanNode) {
@@ -653,7 +701,7 @@ func topRelationNodes(root *PlanNode, limit int) []*PlanNode {
 			nodes = append(nodes, n)
 		}
 	})
-	sort.SliceStable(nodes, func(i, j int) bool { return nodes[i].TotalCost > nodes[j].TotalCost })
+	sort.SliceStable(nodes, func(i, j int) bool { return selfCost(nodes[i]) > selfCost(nodes[j]) })
 	if len(nodes) > limit {
 		nodes = nodes[:limit]
 	}

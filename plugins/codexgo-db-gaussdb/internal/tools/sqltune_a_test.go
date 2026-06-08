@@ -46,10 +46,14 @@ GROUP BY c.id`
 	for _, i := range detectSQLIssues(sql) {
 		kinds[i.Kind] = true
 	}
-	for _, want := range []string{"function_on_column", "leading_wildcard_like", "not_in_subquery", "distinct_with_groupby", "implicit_join"} {
+	for _, want := range []string{"function_on_column", "leading_wildcard_like", "not_in_subquery", "distinct_with_groupby"} {
 		if !kinds[want] {
 			t.Errorf("missing sql issue %q (got %v)", want, kinds)
 		}
+	}
+	// Comma/implicit joins are intentionally NOT flagged anymore (style, not perf).
+	if kinds["implicit_join"] {
+		t.Errorf("implicit_join should no longer be flagged (got %v)", kinds)
 	}
 }
 
