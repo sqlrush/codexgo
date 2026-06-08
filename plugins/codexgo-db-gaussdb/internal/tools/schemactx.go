@@ -71,12 +71,12 @@ func collectSchema(ctx context.Context, conn *db.Conn, names []string) SchemaCon
 	target := conn.Label()
 
 	if res, err := conn.Query(ctx, fmt.Sprintf(`SELECT
-  n.nspname || '.' || c.relname AS table_name,
+  c.relname AS table_name,
   CASE c.relkind WHEN 'r' THEN 'table' WHEN 'p' THEN 'partitioned' WHEN 'v' THEN 'view' WHEN 'm' THEN 'matview' ELSE c.relkind::text END AS kind,
   c.reltuples::bigint AS est_rows,
   pg_size_pretty(pg_total_relation_size(c.oid)) AS total_size
 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-WHERE c.relname IN (%s) AND c.relkind IN ('r','p','v','m')
+WHERE c.relname IN (%s) AND c.relkind IN ('r','p','v','m') AND pg_table_is_visible(c.oid)
 ORDER BY pg_total_relation_size(c.oid) DESC`, in)); err == nil {
 		sc.Tables = tableReport("表", target, "est_rows 是优化器估算行数;若与实际差很多说明统计陈旧。", nil, res)
 	}
@@ -87,7 +87,7 @@ ORDER BY pg_total_relation_size(c.oid) DESC`, in)); err == nil {
   idx_scan AS scans,
   pg_size_pretty(pg_relation_size(indexrelid)) AS size
 FROM pg_stat_user_indexes
-WHERE relname IN (%s)
+WHERE relname IN (%s) AND pg_table_is_visible((quote_ident(schemaname) || '.' || quote_ident(relname))::regclass)
 ORDER BY relname, idx_scan DESC`, in)); err == nil {
 		sc.Indexes = tableReport("索引", target, "scans=0 的索引可能没用上;缺关键过滤/连接列的索引则要补。", nil, res)
 	}
@@ -98,7 +98,7 @@ ORDER BY relname, idx_scan DESC`, in)); err == nil {
   n_dead_tup AS dead_rows,
   COALESCE(to_char(last_analyze,'YYYY-MM-DD HH24:MI'), to_char(last_autoanalyze,'YYYY-MM-DD HH24:MI'), '从未') AS last_analyze
 FROM pg_stat_user_tables
-WHERE relname IN (%s)
+WHERE relname IN (%s) AND pg_table_is_visible((quote_ident(schemaname) || '.' || quote_ident(relname))::regclass)
 ORDER BY n_live_tup DESC`, in)); err == nil {
 		sc.Stats = tableReport("统计信息新鲜度", target, "last_analyze 很旧或'从未',且 dead_rows 多 → 先 ANALYZE 再看计划。", nil, res)
 	}
@@ -108,7 +108,7 @@ ORDER BY n_live_tup DESC`, in)); err == nil {
   con.conname AS fk_name,
   pg_get_constraintdef(con.oid) AS definition
 FROM pg_constraint con JOIN pg_class c ON c.oid = con.conrelid
-WHERE con.contype = 'f' AND c.relname IN (%s)`, in)); err == nil {
+WHERE con.contype = 'f' AND c.relname IN (%s) AND pg_table_is_visible(c.oid)`, in)); err == nil {
 		sc.FKs = tableReport("外键", target, "外键列通常是连接键,确认其有索引。", nil, res)
 	}
 

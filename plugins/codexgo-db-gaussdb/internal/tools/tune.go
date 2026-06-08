@@ -52,7 +52,7 @@ var tuneDimensions = []string{
 func registerSQLTune(s *mcp.Server, conn *db.Conn) {
 	tool := mcp.Tool{
 		Name:        "sqltune",
-		Description: "Deep SQL tuning material for a query or unique SQL id: resolves the SQL and backfills bind placeholders so it can be EXPLAINed; collects the structured plan tree + plan cost, plan/SQL anti-patterns, schema (tables/indexes/stats/FK), runtime waits/locks, view defs, and the engine index advisor; generates mechanical rewrite candidates and verifies them by plan-cost diff (and result equivalence when verify_equiv=true). Returns structured, mostly-verified material plus a 5-dimension checklist for you (the model) to synthesize the final plan — it does NOT call an LLM. By default it does NOT execute the query (estimated plan only). Args: sql_or_id (required); candidate (optional rewrite to verify); analyze (bool: EXECUTE the query for real plan-tree timings/rows via graded EXPLAIN ANALYZE + EXPLAIN PERFORMANCE); verify_equiv (bool: hash-compare candidate results, executes queries). When you propose a rewrite, call this tool AGAIN with candidate=<your rewrite> and verify_equiv=true; only present it as ready-to-apply when cost_ratio>1 AND equivalent=yes, otherwise flag it as needing human semantic review. Base your bottleneck analysis on the structured plan_tree (most expensive operators), not vague statements. Read-only.",
+		Description: "Produce a COMPLETE, deterministically-rendered SQL Tuning Report (markdown) for a query or unique SQL id. The plugin resolves the SQL, backfills bind placeholders, collects the structured plan tree, scores cost hotspots and tags plan nodes [P1..Pn], gathers schema (tables/indexes/stats), runs the engine index advisor, generates mechanical rewrite candidates and verifies them by plan-cost diff (and result equivalence when verify_equiv=true) — then RENDERS the whole report itself. Every fact in the report (plan, costs, hotspots, schema, candidate verification verdicts) is real, not LLM-generated. HOW TO USE THE RESULT: present the returned report to the user mostly AS-IS (it is already formatted). You MAY append a short CBO root-cause narrative or extra rewrite ideas, but (1) mark anything you infer as 【AI推断】, (2) any cost/rows you cite must match the report, (3) for every rewrite YOU propose, call this tool AGAIN with candidate=<your rewrite> and verify_equiv=true, and only present it as ready-to-apply when the report shows cost improved AND equivalent=yes; otherwise label it 【需人工确认】. Args: sql_or_id (required); candidate (optional rewrite to verify); analyze (bool: EXECUTE the query for real actual rows/timings); verify_equiv (bool: hash-compare candidate vs original). Read-only.",
 		InputSchema: jsonObjSchema(map[string]any{
 			"sql_or_id":    strProp("full SQL text, or a unique SQL id to resolve"),
 			"candidate":    strProp("optional: a rewritten SQL to verify (cost + equivalence) against the original"),
@@ -182,7 +182,9 @@ func registerSQLTune(s *mcp.Server, conn *db.Conn) {
 		}
 		report.Candidates = cands
 
-		return jsonResult(report)
+		// Render the deterministic report (markdown). Every fact in it is real;
+		// the model presents it and may append clearly-marked 【AI推断】 additions.
+		return markdownResult(renderTuneReport(&report))
 	})
 }
 
