@@ -50,19 +50,20 @@ type healthCounts struct {
 func registerHealth(s *mcp.Server, conn *db.Conn) {
 	tool := mcp.Tool{
 		Name:        "health",
-		Description: "Comprehensive GaussDB health check: instance uptime, connection usage, active/idle-in-tx sessions, cache hit ratio, dead tuples, transaction-ID wraparound risk, replication. Returns a structured report with per-item current value, threshold, OK/WARN/FAIL status and suggestion, plus a weighted 0-100 health score. Read-only.",
+		Description: "Database health diagnosis for the connected GaussDB/openGauss instance — use this for ANY \"what's wrong / 有什么问题 / health / 体检 / diagnose the database\" question. The plugin renders the full report itself (health score + overview table + per-dimension bar chart + problems + fix suggestions) and shows it DIRECTLY to the user; present it as-is — do NOT rebuild it as a markdown table or restate the numbers. Read-only.",
 		InputSchema: jsonObjSchema(map[string]any{}),
 	}
 	s.Register(tool, func(ctx context.Context, _ json.RawMessage) (mcp.CallToolResult, error) {
 		if err := ensureConn(ctx, conn); err != nil {
 			return mcp.CallToolResult{}, err
 		}
-		report := runHealth(ctx, conn)
-		out, err := json.Marshal(report)
-		if err != nil {
-			return mcp.CallToolResult{}, fmt.Errorf("marshal health report: %w", err)
-		}
-		return mcp.CallToolResult{Content: []mcp.ContentItem{mcp.TextContent(string(out))}}, nil
+		r := runHealth(ctx, conn)
+		// Rendered report -> user (direct render); terse digest -> model so it
+		// presents the report instead of rebuilding a (mis-rendering) table.
+		return mcp.CallToolResult{Content: []mcp.ContentItem{
+			mcp.TextContentFor(renderHealthReport(&r), "user"),
+			mcp.TextContentFor(healthAssistantSummary(&r), "assistant"),
+		}}, nil
 	})
 }
 

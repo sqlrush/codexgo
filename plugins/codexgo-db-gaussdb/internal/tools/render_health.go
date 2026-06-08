@@ -16,6 +16,25 @@ import (
 // healthCategoryOrder is the display order of health modules.
 var healthCategoryOrder = []string{"实例", "连接", "内存", "维护", "高可用"}
 
+// healthAssistantSummary is the terse assistant-audience digest: the user
+// already sees the rendered report, so the model just confirms it and can go
+// deeper on follow-ups — it must not rebuild the report.
+func healthAssistantSummary(r *HealthReport) string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("健康诊断报告已直接展示给用户(确定性渲染),评分 %d/100 %s。", r.Score, r.Grade))
+	if probs := healthProblems(r); len(probs) > 0 {
+		var names []string
+		for _, p := range probs {
+			names = append(names, p.Name)
+		}
+		b.WriteString("需关注:" + strings.Join(names, "、") + "。")
+	} else {
+		b.WriteString("无 WARN/FAIL 级问题。")
+	}
+	b.WriteString("勿重复报告内容;可一句话收尾或按用户后续问题深入。")
+	return b.String()
+}
+
 func renderHealthReport(r *HealthReport) string {
 	var b strings.Builder
 	b.WriteString("# 🩺 数据库健康诊断 · " + r.Target + "\n\n")
