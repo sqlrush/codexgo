@@ -14,9 +14,11 @@ import (
 // Two invariants keep plugin and host from diverging:
 //   - EastAsianWidth is pinned to false (codexgo's default), so ambiguous-width
 //     glyphs measure identically on both sides.
-//   - Only stable single-width drawing glyphs are used (box-drawing ┌─┐│├┼┤└┴┘,
-//     block █░, branch ├─└│). Emoji width varies by terminal and MUST NOT appear
-//     inside an aligned cell — only in free-form heading lines.
+//   - Frames use ASCII "+ - |" (a fixed 1 cell on every locale/terminal); the
+//     prettier box-drawing glyphs are East-Asian-Ambiguous (2 cells under a CJK
+//     locale) and would misalign frame vs content. Bars use block █░ (same width
+//     per row, not mixed with frames). Emoji width varies by terminal and MUST
+//     NOT appear inside an aligned cell — only in free-form heading lines.
 
 func init() {
 	// Match codexgo: treat ambiguous-width characters as narrow.
@@ -94,7 +96,7 @@ func asciiTable(cols []tableColumn, rows [][]string) string {
 	border := func(l, m, r string) {
 		b.WriteString(l)
 		for i := range cols {
-			b.WriteString(strings.Repeat("─", w[i]+2))
+			b.WriteString(strings.Repeat("-", w[i]+2))
 			if i < n-1 {
 				b.WriteString(m)
 			}
@@ -107,18 +109,18 @@ func asciiTable(cols []tableColumn, rows [][]string) string {
 		} else {
 			s = padRight(s, w[i])
 		}
-		b.WriteString(" " + s + " │")
+		b.WriteString(" " + s + " |")
 	}
 
-	border("┌", "┬", "┐")
-	b.WriteString("│")
+	border("+", "+", "+")
+	b.WriteString("|")
 	for i, c := range cols {
 		writeCell(c.Header, i)
 	}
 	b.WriteString("\n")
-	border("├", "┼", "┤")
+	border("+", "+", "+")
 	for _, row := range rows {
-		b.WriteString("│")
+		b.WriteString("|")
 		for i := range cols {
 			v := ""
 			if i < len(row) {
@@ -128,7 +130,7 @@ func asciiTable(cols []tableColumn, rows [][]string) string {
 		}
 		b.WriteString("\n")
 	}
-	border("└", "┴", "┘")
+	border("+", "+", "+")
 	return b.String()
 }
 

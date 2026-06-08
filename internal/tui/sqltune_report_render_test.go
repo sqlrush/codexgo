@@ -3,6 +3,8 @@ package tui
 import (
 	"strings"
 	"testing"
+
+	"github.com/mattn/go-runewidth"
 )
 
 // TestTuningReportFixedWidthBlocksSurvive verifies the gaussdb plugin's SQL
@@ -86,29 +88,37 @@ func TestTuningReportPlanTreeIndentSurvives(t *testing.T) {
 	}
 }
 
-// TestMarkdownTableGarblesWithoutExtension documents WHY the report avoids
-// markdown tables: goldmark (no GFM table extension) does not parse | a | b | as
-// a table. It renders the pipes as literal text and collapses the rows via soft
-// line breaks — exactly the garbled output seen in the earlier screenshot.
-func TestMarkdownTableGarblesWithoutExtension(t *testing.T) {
+// TestMarkdownTableRendersAligned verifies GFM markdown tables now render as a
+// runewidth-aligned ASCII box table. Previously goldmark had no table extension
+// and the pipes collapsed into one garbled line (the screenshot bug); now the
+// MarkdownRenderer draws a real aligned box, including CJK headers.
+func TestMarkdownTableRendersAligned(t *testing.T) {
 	r := NewMarkdownRenderer(testTheme())
-	got := plainLines(r.Render("| 原因 | 影响 |\n|---|---|\n| a | b |\n"))
-	joined := strings.Join(got, "\n")
-	if !strings.Contains(joined, "|") {
-		t.Skip("table extension appears enabled — report could use tables")
-	}
-	// The three written rows collapse into fewer rendered lines (soft breaks ->
-	// spaces): the hallmark of unsupported tables.
-	nonBlank := 0
+	src := "| 排名 | 平均耗时 | 调用 |\n|---|---|---:|\n| 1 | 1140s | 1 |\n| 2 | 2.27s | 1 |\n"
+	got := plainLines(r.Render(src))
+
+	var tbl []string
 	for _, l := range got {
-		if strings.TrimSpace(l) != "" {
-			nonBlank++
+		if strings.ContainsAny(l, "+|") { // ASCII frame: + corners/seps, | verticals
+			tbl = append(tbl, l)
 		}
 	}
-	if nonBlank >= 3 {
-		t.Logf("note: table rows did not collapse (rendered %d lines): %q", nonBlank, got)
+	// top + header + sep + 2 rows + bottom = 6 lines
+	if len(tbl) < 6 {
+		t.Fatalf("table not rendered as a multi-line ASCII box (got %d box lines):\n%q", len(tbl), got)
 	}
-	t.Logf("pipe-table rendered as: %q (confirms tables unsupported -> report uses fences)", got)
+	w := runewidth.StringWidth(tbl[0])
+	for i, l := range tbl {
+		if got := runewidth.StringWidth(l); got != w {
+			t.Errorf("table line %d display width %d != %d:\n  %q", i, got, w, l)
+		}
+	}
+	joined := strings.Join(got, "\n")
+	for _, want := range []string{"排名", "平均耗时", "1140s", "2.27s"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("table content missing %q\n%q", want, got)
+		}
+	}
 }
 
 func containsExact(lines []string, want string) bool {

@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/mattn/go-runewidth"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/extension"
+	east "github.com/yuin/goldmark/extension/ast"
 	gmtext "github.com/yuin/goldmark/text"
 )
 
@@ -35,7 +38,7 @@ func NewMarkdownRenderer(theme Theme) MarkdownRenderer {
 	return MarkdownRenderer{
 		theme: theme,
 		hl:    NewHighlighter(theme),
-		md:    goldmark.New(),
+		md:    goldmark.New(goldmark.WithExtensions(extension.Table)),
 		headStyle: [6]Style{
 			{Fg: theme.Foreground, Bold: true, Underline: true}, // h1
 			{Fg: theme.Foreground, Bold: true},                  // h2
@@ -122,6 +125,9 @@ func (r MarkdownRenderer) renderBlock(n ast.Node, src []byte, out *[]Line, prefi
 
 	case *ast.ThematicBreak:
 		*out = append(*out, prefixLine(Line{Spans: []Span{{Text: "────────", Style: Style{Fg: r.theme.Dim}}}}, prefix))
+
+	case *east.Table:
+		r.renderTable(node, src, out, prefix)
 
 	default:
 		// Unknown block: render its inline text as a paragraph fallback.
@@ -237,6 +243,144 @@ func (r MarkdownRenderer) renderInlineNode(n ast.Node, src []byte, base Style) [
 		}
 		return nil
 	}
+}
+
+// renderTable renders a GFM table as a runewidth-aligned ASCII box table so it
+// displays correctly in the terminal (goldmark's table extension is enabled in
+// NewMarkdownRenderer; without a dedicated renderer the pipes would otherwise
+// collapse into one garbled line). Cells render as plain text (inline styles
+// dropped) to keep column widths exact; column widths are capped so a wide table
+// does not overflow and get wrapped.
+func (r MarkdownRenderer) renderTable(node *east.Table, src []byte, out *[]Line, prefix string) {
+	var header []string
+	var rows [][]string
+	for c := node.FirstChild(); c != nil; c = c.NextSibling() {
+		switch row := c.(type) {
+		case *east.TableHeader:
+			header = r.tableCells(row, src)
+		case *east.TableRow:
+			rows = append(rows, r.tableCells(row, src))
+		}
+	}
+	ncol := len(header)
+	for _, rw := range rows {
+		if len(rw) > ncol {
+			ncol = len(rw)
+		}
+	}
+	if ncol == 0 {
+		return
+	}
+
+	const maxCol = 36
+	w := make([]int, ncol)
+	measure := func(cells []string) {
+		for i := 0; i < ncol; i++ {
+			t := ""
+			if i < len(cells) {
+				t = cells[i]
+			}
+			cw := runewidth.StringWidth(t)
+			if cw > maxCol {
+				cw = maxCol
+			}
+			if cw > w[i] {
+				w[i] = cw
+			}
+		}
+	}
+	measure(header)
+	for _, rw := range rows {
+		measure(rw)
+	}
+
+	dim := Style{Fg: r.theme.Dim}
+	border := func(l, m, rr string) {
+		var b strings.Builder
+		b.WriteString(l)
+		for i := 0; i < ncol; i++ {
+			b.WriteString(strings.Repeat("-", w[i]+2))
+			if i < ncol-1 {
+				b.WriteString(m)
+			}
+		}
+		b.WriteString(rr)
+		*out = append(*out, Line{Spans: []Span{{Text: prefix + b.String(), Style: dim}}})
+	}
+	rowLine := func(cells []string, bold bool) {
+		spans := []Span{{Text: prefix + "|", Style: dim}}
+		for i := 0; i < ncol; i++ {
+			t := ""
+			if i < len(cells) {
+				t = cells[i]
+			}
+			t = tableTruncate(t, w[i])
+			if i < len(node.Alignments) && node.Alignments[i] == east.AlignRight {
+				t = padCellLeft(t, w[i])
+			} else {
+				t = padCellRight(t, w[i])
+			}
+			st := Style{}
+			if bold {
+				st.Bold = true
+			}
+			spans = append(spans, Span{Text: " " + t + " ", Style: st})
+			spans = append(spans, Span{Text: "|", Style: dim})
+		}
+		*out = append(*out, Line{Spans: spans})
+	}
+
+	// ASCII-only frame (+ - |): box-drawing glyphs are East-Asian-Ambiguous width
+	// (2 cells under a CJK locale), which would misalign the frame vs the content.
+	// ASCII is a fixed 1 cell everywhere, matching spaces and CJK exactly.
+	border("+", "+", "+")
+	if len(header) > 0 {
+		rowLine(header, true)
+		border("+", "+", "+")
+	}
+	for _, rw := range rows {
+		rowLine(rw, false)
+	}
+	border("+", "+", "+")
+}
+
+// tableCells extracts each cell's plain text from a header/row node.
+func (r MarkdownRenderer) tableCells(row ast.Node, src []byte) []string {
+	var cells []string
+	for c := row.FirstChild(); c != nil; c = c.NextSibling() {
+		if cell, ok := c.(*east.TableCell); ok {
+			var b strings.Builder
+			for _, s := range r.renderInline(cell, src, Style{}) {
+				b.WriteString(s.Text)
+			}
+			cells = append(cells, strings.TrimSpace(b.String()))
+		}
+	}
+	return cells
+}
+
+func tableTruncate(s string, w int) string {
+	if runewidth.StringWidth(s) <= w {
+		return s
+	}
+	if w <= 1 {
+		return "…"
+	}
+	return runewidth.Truncate(s, w, "…")
+}
+
+func padCellRight(s string, w int) string {
+	if pad := w - runewidth.StringWidth(s); pad > 0 {
+		return s + strings.Repeat(" ", pad)
+	}
+	return s
+}
+
+func padCellLeft(s string, w int) string {
+	if pad := w - runewidth.StringWidth(s); pad > 0 {
+		return strings.Repeat(" ", pad) + s
+	}
+	return s
 }
 
 // --- helpers ---------------------------------------------------------------
