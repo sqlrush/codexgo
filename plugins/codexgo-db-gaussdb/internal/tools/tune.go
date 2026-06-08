@@ -52,7 +52,7 @@ var tuneDimensions = []string{
 func registerSQLTune(s *mcp.Server, conn *db.Conn) {
 	tool := mcp.Tool{
 		Name:        "sqltune",
-		Description: "Deep SQL tuning material for a query or unique SQL id: resolves the SQL and backfills bind placeholders so it can be EXPLAINed; collects the structured plan tree + plan cost, plan/SQL anti-patterns, schema (tables/indexes/stats/FK), runtime waits/locks, view defs, and the engine index advisor; generates mechanical rewrite candidates and verifies them by plan-cost diff (and result equivalence when verify_equiv=true). Returns structured, mostly-verified material plus a 5-dimension checklist for you (the model) to synthesize the final plan — it does NOT call an LLM. By default it does NOT execute the query (estimated plan only). Args: sql_or_id (required); candidate (optional rewrite to verify); analyze (bool: EXECUTE the query for real plan-tree timings/rows via graded EXPLAIN ANALYZE + EXPLAIN PERFORMANCE); verify_equiv (bool: hash-compare candidate results, executes queries). Read-only.",
+		Description: "Deep SQL tuning material for a query or unique SQL id: resolves the SQL and backfills bind placeholders so it can be EXPLAINed; collects the structured plan tree + plan cost, plan/SQL anti-patterns, schema (tables/indexes/stats/FK), runtime waits/locks, view defs, and the engine index advisor; generates mechanical rewrite candidates and verifies them by plan-cost diff (and result equivalence when verify_equiv=true). Returns structured, mostly-verified material plus a 5-dimension checklist for you (the model) to synthesize the final plan — it does NOT call an LLM. By default it does NOT execute the query (estimated plan only). Args: sql_or_id (required); candidate (optional rewrite to verify); analyze (bool: EXECUTE the query for real plan-tree timings/rows via graded EXPLAIN ANALYZE + EXPLAIN PERFORMANCE); verify_equiv (bool: hash-compare candidate results, executes queries). When you propose a rewrite, call this tool AGAIN with candidate=<your rewrite> and verify_equiv=true; only present it as ready-to-apply when cost_ratio>1 AND equivalent=yes, otherwise flag it as needing human semantic review. Base your bottleneck analysis on the structured plan_tree (most expensive operators), not vague statements. Read-only.",
 		InputSchema: jsonObjSchema(map[string]any{
 			"sql_or_id":    strProp("full SQL text, or a unique SQL id to resolve"),
 			"candidate":    strProp("optional: a rewritten SQL to verify (cost + equivalence) against the original"),
@@ -81,7 +81,12 @@ func registerSQLTune(s *mcp.Server, conn *db.Conn) {
 		report := TuneReport{
 			Target:     conn.Label(),
 			Dimensions: tuneDimensions,
-			Note:       "确定性采集 + 校验后的调优素材;请据 plan_issues/sql_issues/schema/index_advice 与已验证的 candidates 给出可执行方案(改写 SQL + DDL),并提醒人工在测试环境复核。candidates.cost_ratio>1 且 equivalent=yes 才是可直接采纳的改写。",
+			Note: `确定性采集 + 已校验素材。请据此给出有据的方案,不要泛泛而谈:
+1) 瓶颈定位:基于 plan_tree 点出 total_cost 最高的 1-2 个算子(节点类型 + 关系名 + cost),并关联对应的 plan_issues(sort_spill/expensive_hash/seq_scan/nested_loop_seq_scan/row_estimate_skew);不要只说"某表全表扫描"。
+2) 改写回验:你提出的每条改写 SQL,都再调一次本工具,用 candidate 入参 + verify_equiv=true 回验,并报告 cost_ratio(>1 才更便宜)与 equivalent。
+3) 分级呈现:【可直接采纳】= cost_ratio>1 且 equivalent=yes;【需人工确认】= equivalent=no(语义已变,例如 NOT IN↔NOT EXISTS 在含 NULL 时结果不同)或 inconclusive(样本为空/无法判定),必须显式标注"未通过等价校验,需人工复核语义"。
+4) 索引建议结合 schema.indexes 去重已有索引,并提醒人工在测试环境复核。
+注意:bind_fills 是为让 EXPLAIN 成功而回填的样例值,不代表真实业务取值;若改写依赖具体过滤值,等价校验结果仅对样例值成立。`,
 		}
 
 		// 1) Resolve SQL (by id -> sqlfetch, else literal).
