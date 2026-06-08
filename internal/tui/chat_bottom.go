@@ -504,6 +504,18 @@ func (p ChatBottomPane) renderSearchBar(query, preview string, width int) string
 	return lipglossDim(p.theme).Render(label) + truncateTo(preview, width-len([]rune(label)))
 }
 
+// popupHeight returns the rendered height of the popup area for itemCount
+// matches: the items plus one trailing blank "sacrificial" row (see renderPopup),
+// capped at maxPopupRows. Used by both rendering and DesiredHeight so the inline
+// Rect and the rendered rows stay in lockstep.
+func (p ChatBottomPane) popupHeight(itemCount int) int {
+	n := itemCount + 1
+	if n > p.maxPopupRows {
+		n = p.maxPopupRows
+	}
+	return n
+}
+
 // renderPopup renders the active composer popup (slash or file search).
 // PopupRows already windows the list to the visible rows with a
 // window-relative selection (scroll-follow), so no truncation happens here.
@@ -532,6 +544,15 @@ func (p ChatBottomPane) renderPopup(width int) []string {
 		}
 		rows = append(rows, style.Render(marker+truncateTo(label, width-2)))
 	}
+	// Always keep one trailing blank row below the popup (a "sacrificial" line).
+	// bubbletea's inline renderer wipes one row too many when the live region
+	// shrinks as the filter narrows (e.g. "/m" 4 rows → "/mo" 1 row), which would
+	// otherwise erase the last real match (the visible bug: /model vanished at
+	// /mo). The extra clear lands on this blank line instead, so the real rows
+	// survive. The blank is full-width spaces so the renderer paints/clears it.
+	for len(rows) < p.popupHeight(len(items)) {
+		rows = append(rows, strings.Repeat(" ", max(width, 0)))
+	}
 	return rows
 }
 
@@ -558,11 +579,7 @@ func (p ChatBottomPane) DesiredHeight(width int) int {
 	}
 
 	if items, _, ok := p.composer.PopupRows(); ok {
-		n := len(items)
-		if n > p.maxPopupRows {
-			n = p.maxPopupRows
-		}
-		h += n
+		h += p.popupHeight(len(items)) // includes the trailing sacrificial blank row
 	} else if p.footer.line(width) != "" {
 		h++ // footer status line (only when no popup replaces it)
 	}

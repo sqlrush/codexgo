@@ -27,3 +27,5 @@ go.work.sum
 
 # Captured codex outputs (contain OpenAI content) — local parity fixtures, not redistributed
 /testdata/golden/*.json
+# local debug/screenshot scratch
+prd/
