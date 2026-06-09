@@ -2,15 +2,20 @@
 # install-plugin-local.sh — build a local plugin and install it into the codexgo
 # plugin store cache so the runtime auto-discovers its MCP servers.
 #
+# The GaussDB MCP server now lives in its OWN repo (github.com/sqlrush/
+# opendbx-mcp-for-codex); this script builds from there by default. Override with
+# an explicit dir argument or the OPENDBX_MCP_DIR env var.
+#
 # Usage:
-#   scripts/install-plugin-local.sh plugins/codexgo-db-gaussdb
+#   scripts/install-plugin-local.sh                       # default: ~/opendbx-mcp-for-codex
+#   scripts/install-plugin-local.sh /path/to/plugin-dir   # explicit
 #
 # After running, enable the plugin in $CODEXGO_HOME/config.toml:
 #   [plugins."<name>@local"]
 #   enabled = true
 set -euo pipefail
 
-PLUGIN_DIR="${1:?usage: install-plugin-local.sh <plugin-dir>}"
+PLUGIN_DIR="${1:-${OPENDBX_MCP_DIR:-$HOME/opendbx-mcp-for-codex}}"
 PLUGIN_DIR="$(cd "$PLUGIN_DIR" && pwd)"
 
 # Resolve plugin name from .codex-plugin/plugin.json (fallback: dir basename).
