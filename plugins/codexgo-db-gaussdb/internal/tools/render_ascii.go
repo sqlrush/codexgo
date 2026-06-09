@@ -91,6 +91,12 @@ func asciiTable(cols []tableColumn, rows [][]string) string {
 			w[i] = c.Max
 		}
 	}
+	// Keep the whole table within a width budget so a wide table is not wrapped
+	// by the terminal (which destroys alignment). Only columns that declared a
+	// Max (cappable text columns) are shrunk; numeric/short columns are left
+	// intact. The plugin can't know the real terminal width, so this targets the
+	// common codexgo TUI width.
+	shrinkToBudget(cols, w)
 
 	var b strings.Builder
 	border := func(l, m, r string) {
@@ -132,6 +138,41 @@ func asciiTable(cols []tableColumn, rows [][]string) string {
 	}
 	border("+", "+", "+")
 	return b.String()
+}
+
+// maxTableWidth is the target maximum rendered table width (incl. borders).
+// Picked to fit the common codexgo TUI without the terminal wrapping the row.
+const maxTableWidth = 112
+
+// minCappableCol is the floor a cappable (Max>0) column is shrunk to.
+const minCappableCol = 12
+
+// tableTotalWidth is the rendered width of a table with the given column widths:
+// a leading "|" plus, per column, " <cell> |" = width+3.
+func tableTotalWidth(w []int) int {
+	t := 1
+	for _, x := range w {
+		t += x + 3
+	}
+	return t
+}
+
+// shrinkToBudget reduces the widest cappable (Max>0) column by one, repeatedly,
+// until the table fits maxTableWidth or no cappable column exceeds the floor.
+func shrinkToBudget(cols []tableColumn, w []int) {
+	for tableTotalWidth(w) > maxTableWidth {
+		wi, ww := -1, minCappableCol
+		for i := range cols {
+			if cols[i].Max > 0 && w[i] > ww {
+				ww = w[i]
+				wi = i
+			}
+		}
+		if wi < 0 {
+			return // nothing left to shrink
+		}
+		w[wi]--
+	}
 }
 
 // barLine renders "label  value  ██████░░░░  suffix" — a proportional bar.
