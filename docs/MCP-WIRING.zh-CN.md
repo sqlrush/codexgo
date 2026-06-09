@@ -43,7 +43,7 @@
 `[mcp_servers]`:
 
 ```sh
-scripts/install-plugin-local.sh plugins/codexgo-db-gaussdb
+scripts/install-plugin-local.sh
 ```
 
 然后在 `$CODEXGO_HOME/config.toml`(默认 `~/.codexgo`)加入:
@@ -61,12 +61,12 @@ enabled = true
 ### 方式 A:手工登记 [mcp_servers](无需安装到 store)
 
 ```sh
-make -C plugins/codexgo-db-gaussdb build
+make -C ~/opendbx-mcp-for-codex build
 ```
 
 ```toml
 [mcp_servers.gaussdb]
-command = "/绝对路径/codexgo/plugins/codexgo-db-gaussdb/bin/codexgo-db-gaussdb"
+command = "~/opendbx-mcp-for-codex/bin/codexgo-db-gaussdb"
 args = []
 startup_timeout_sec = 20
 tool_timeout_sec = 60
@@ -94,7 +94,7 @@ tool_timeout_sec = 60
 ### 快速冒烟(不连库也能验证)
 
 ```sh
-make -C plugins/codexgo-db-gaussdb smoke              # initialize + tools/list 握手
+make -C ~/opendbx-mcp-for-codex smoke              # initialize + tools/list 握手
 go test ./internal/cli/ -run 'TestBuildMcpManager|TestDiscoverPlugin|TestEffectiveMcp'
 ```
 

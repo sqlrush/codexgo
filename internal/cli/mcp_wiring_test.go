@@ -10,11 +10,19 @@ import (
 	"github.com/sqlrush/codexgo/internal/config"
 )
 
-// gaussdbPluginBin is the built gaussdb MCP server binary, relative to this
-// package. The test launches it as a real configured MCP server to verify the
-// end-to-end wiring: config -> NewManager -> stdio subprocess -> initialize ->
-// tools/list -> lowered model-visible specs.
-const gaussdbPluginBin = "../../plugins/codexgo-db-gaussdb/bin/codexgo-db-gaussdb"
+// gaussdbPluginPath resolves the built gaussdb MCP server binary. The server now
+// lives in its own repo (github.com/sqlrush/opendbx-mcp-for-codex); honor
+// OPENDBX_MCP_DIR, else default to ~/opendbx-mcp-for-codex. The test launches it
+// as a real configured MCP server to verify the end-to-end wiring: config ->
+// NewManager -> stdio subprocess -> initialize -> tools/list -> lowered specs.
+func gaussdbPluginPath() string {
+	dir := os.Getenv("OPENDBX_MCP_DIR")
+	if dir == "" {
+		home, _ := os.UserHomeDir()
+		dir = filepath.Join(home, "opendbx-mcp-for-codex")
+	}
+	return filepath.Join(dir, "bin", "codexgo-db-gaussdb")
+}
 
 func TestBuildMcpManagerNoServers(t *testing.T) {
 	if mgr := buildMcpManager(context.Background(), "", nil); mgr != nil {
@@ -26,12 +34,9 @@ func TestBuildMcpManagerNoServers(t *testing.T) {
 }
 
 func TestBuildMcpManagerLaunchesGaussdbPlugin(t *testing.T) {
-	abs, err := filepath.Abs(gaussdbPluginBin)
-	if err != nil {
-		t.Fatalf("abs path: %v", err)
-	}
+	abs := gaussdbPluginPath()
 	if _, err := os.Stat(abs); err != nil {
-		t.Skipf("gaussdb plugin binary not built (%s); run `make -C plugins/codexgo-db-gaussdb build`", abs)
+		t.Skipf("gaussdb plugin binary not built (%s); build it in the opendbx-mcp-for-codex repo", abs)
 	}
 
 	var cfg config.McpServerConfig
@@ -49,8 +54,10 @@ func TestBuildMcpManagerLaunchesGaussdbPlugin(t *testing.T) {
 	// info keeps the raw model-visible CallableName while carrying the server
 	// identity so the canonical "mcp__gaussdb__<tool>" routes the call back.
 	infos := mgr.ListAllToolInfos()
-	if len(infos) != 13 {
-		t.Fatalf("expected 13 gaussdb tools, got %d", len(infos))
+	// The plugin's tool set grows over time; assert a sane lower bound rather than
+	// an exact count, and verify key tools are present below.
+	if len(infos) < 13 {
+		t.Fatalf("expected at least 13 gaussdb tools, got %d", len(infos))
 	}
 	byName := map[string]string{} // raw callable name -> qualified dispatch name
 	for _, info := range infos {

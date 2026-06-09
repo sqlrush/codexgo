@@ -18,12 +18,12 @@
 一条命令构建并安装到 codexgo 的本地插件缓存:
 
 ```sh
-scripts/install-plugin-local.sh plugins/codexgo-db-gaussdb
+scripts/install-plugin-local.sh
 ```
 
 它做三件事:
 
-1. `make -C plugins/codexgo-db-gaussdb build` —— 构建出 `bin/codexgo-db-gaussdb`。
+1. `make -C ~/opendbx-mcp-for-codex build` —— 构建出 `bin/codexgo-db-gaussdb`。
 2. 把整个插件包(`.codex-plugin/plugin.json` + `.mcp.json` + `bin/`)拷贝到
    `$CODEXGO_HOME/plugins/cache/local/codexgo-db-gaussdb/local/`
    (默认 `~/.codexgo`;`local` 是 marketplace 名,第二个 `local` 是版本号)。
@@ -48,12 +48,12 @@ config.toml 里的 `[plugins."codexgo-db-gaussdb@local"]`。
 适合快速验证,免去 store:
 
 ```sh
-make -C plugins/codexgo-db-gaussdb build
+make -C ~/opendbx-mcp-for-codex build
 ```
 
 ```toml
 [mcp_servers.gaussdb]
-command = "/绝对路径/codexgo/plugins/codexgo-db-gaussdb/bin/codexgo-db-gaussdb"
+command = "~/opendbx-mcp-for-codex/bin/codexgo-db-gaussdb"
 args = []
 startup_timeout_sec = 20
 tool_timeout_sec = 60
@@ -65,7 +65,7 @@ tool_timeout_sec = 60
 ## 验证连通(不连库也行)
 
 ```sh
-make -C plugins/codexgo-db-gaussdb smoke    # initialize + tools/list 握手
+make -C ~/opendbx-mcp-for-codex smoke    # initialize + tools/list 握手
 ```
 
 连真实 GaussDB 后,可用 `/help` 查看全部命令,或对模型说"体检一下"。
