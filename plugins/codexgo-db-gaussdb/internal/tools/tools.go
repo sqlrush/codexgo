@@ -36,6 +36,12 @@ func Register(s *mcp.Server, conn *db.Conn) {
 	registerOS(s, conn)
 	registerUsers(s, conn)
 	registerAlert(s, conn)
+	// performance / schema / params (batch 5)
+	registerPerfSnap(s, conn)
+	registerSQLCount(s, conn)
+	registerTableInfo(s, conn)
+	registerIndexAdvise(s, conn)
+	registerParams(s, conn)
 	// statement-view tools: slowsql, topsql, sqlfetch, planhistory
 	registerQuery(s, conn)
 	// plan + sessions + indexes
