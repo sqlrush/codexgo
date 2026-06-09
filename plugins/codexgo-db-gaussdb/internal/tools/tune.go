@@ -48,7 +48,7 @@ var tuneDimensions = []string{
 // buildTuneReport does all deterministic collection for a SQL id/text: resolve,
 // search_path pin, bind backfill, structured plan, schema/runtime, index advisor,
 // mechanical candidates. Shared by both tuning passes.
-func buildTuneReport(ctx context.Context, conn *db.Conn, sqlOrID string, analyze, verifyEquiv bool, candidate string) (*TuneReport, error) {
+func buildTuneReport(ctx context.Context, conn *db.Conn, sqlOrID string, analyze, verifyEquiv bool, candidates []string) (*TuneReport, error) {
 	input := strings.TrimSpace(sqlOrID)
 	if input == "" {
 		return nil, fmt.Errorf("sql_or_id is required")
@@ -137,11 +137,16 @@ func buildTuneReport(ctx context.Context, conn *db.Conn, sqlOrID string, analyze
 	// 9) Engine index advisor.
 	report.IndexAdvice = indexAdvice(ctx, conn, effSQL, report)
 
-	// 10/11/12) Mechanical candidates (+ optional caller-supplied) verified.
+	// 10/11/12) Mechanical candidates + any model-supplied rewrites, all verified
+	// (plan-cost diff + result-equivalence sample) in this same call — so the
+	// model's rewrites get 【实测】 verdicts within one round, no second tool.
 	cands := generateCandidates(effSQL)
-	if strings.TrimSpace(candidate) != "" {
-		candSQL, _ := substituteBinds(stripTrailingSemicolon(strings.TrimSpace(candidate)))
-		cands = append(cands, RewriteCandidate{Rule: "caller_supplied", SQL: candSQL, Note: "调用方/模型提供的改写"})
+	for _, c := range candidates {
+		if strings.TrimSpace(c) == "" {
+			continue
+		}
+		candSQL, _ := substituteBinds(stripTrailingSemicolon(strings.TrimSpace(c)))
+		cands = append(cands, RewriteCandidate{Rule: "model_rewrite", SQL: candSQL, Note: "模型提供的改写"})
 	}
 	for i := range cands {
 		verifyCandidate(ctx, conn, effSQL, &cands[i], verifyEquiv)
@@ -151,20 +156,22 @@ func buildTuneReport(ctx context.Context, conn *db.Conn, sqlOrID string, analyze
 	return report, nil
 }
 
-// registerSQLTune is single-pass SQL tuning: the plugin gathers verified
+// registerSQLTune is single-pass SQL tuning. The plugin gathers verified
 // evidence (structured plan with [P1..Pn] cost-hotspot tags, schema/index/stats,
 // anti-patterns, engine index advice, cost+equivalence-VERIFIED mechanical
-// rewrite candidates) and hands it to the model with a format reference; the
-// model writes ONE optimization report tying each fix to a [Pn] hotspot. No
-// rigid schema, no second tool call — the model can deepen the analysis on top
-// of the format.
+// candidates). The model reasons over it, then re-calls sqltune with its rewrite
+// SQL in `candidates` — the plugin verifies THOSE too (cost + equivalence) in the
+// same single tool, so model rewrites get 【实测】 verdicts within one round (no
+// second sqltune_verify tool). Index/param suggestions that can't be verified
+// stay 【推测】.
 func registerSQLTune(s *mcp.Server, conn *db.Conn) {
 	tool := mcp.Tool{
 		Name:        "sqltune",
-		Description: "SQL tuning (single pass) for a query or unique SQL id. The plugin deterministically gathers EVIDENCE — structured execution plan with [P1..Pn] cost-hotspot tags, cost hotspots, table/index/stats, anti-patterns, engine index advice, and mechanically-generated rewrite candidates that are cost+equivalence VERIFIED — and returns it with a format reference. Based on this evidence, write ONE complete optimization report directly to the user: root-cause analysis tied to each [Pn] hotspot; rewrites/indexes (each stating WHICH [Pn] it addresses); expected effect. Verified candidates are 【实测】; your own new rewrites are 【AI推断】 (advise test-env EXPLAIN + equivalence check). Do NOT call other tools. Args: sql_or_id (required); analyze (bool: EXECUTE for real rows/timings, default false). Read-only.",
+		Description: "SQL tuning (single tool, one round) for a query or unique SQL id. The plugin deterministically gathers EVIDENCE — execution plan with [P1..Pn] cost-hotspot tags, cost hotspots, table/index/stats, anti-patterns, engine index advice, and cost+equivalence-VERIFIED rewrite candidates. WORKFLOW: (1) call sqltune {sql_or_id} to get the evidence; (2) form rewrite SQL for the [Pn] hotspots and call sqltune AGAIN with the same sql_or_id and your rewrites in `candidates` (array of complete SELECT/WITH SQL) — the plugin verifies each (plan-cost diff + result-equivalence sample); (3) write ONE report: rewrites that the plugin verified are 【实测】 (cite cost change + equivalence), and things that can't be verified (index DDL, params, expected effect) are 【推测】. Each fix must state WHICH [Pn] it addresses. Args: sql_or_id (required); candidates (string[], your rewrites to verify); analyze (bool). Read-only.",
 		InputSchema: jsonObjSchema(map[string]any{
-			"sql_or_id": strProp("full SQL text, or a unique SQL id to resolve"),
-			"analyze":   boolProp("EXECUTE the query for real plan-tree actual rows/timings (graded EXPLAIN ANALYZE); default false = estimated plan only"),
+			"sql_or_id":  strProp("full SQL text, or a unique SQL id to resolve"),
+			"candidates": map[string]any{"type": "array", "items": strProp("a COMPLETE rewritten SELECT/WITH SQL to verify (no placeholders/ellipsis)"), "description": "your rewrite SQL candidates — the plugin cost+equivalence verifies each"},
+			"analyze":    boolProp("EXECUTE the query for real plan-tree actual rows/timings (graded EXPLAIN ANALYZE); default false = estimated plan only"),
 		}, "sql_or_id"),
 	}
 	s.Register(tool, func(ctx context.Context, raw json.RawMessage) (mcp.CallToolResult, error) {
@@ -172,15 +179,16 @@ func registerSQLTune(s *mcp.Server, conn *db.Conn) {
 			return mcp.CallToolResult{}, err
 		}
 		var a struct {
-			SQLOrID string `json:"sql_or_id"`
-			Analyze bool   `json:"analyze"`
+			SQLOrID    string   `json:"sql_or_id"`
+			Candidates []string `json:"candidates"`
+			Analyze    bool     `json:"analyze"`
 		}
 		if err := decodeArgs(raw, &a); err != nil {
 			return mcp.CallToolResult{}, err
 		}
-		// verifyEquiv=true so the mechanical candidates carry cost + equivalence
-		// verdicts in the evidence the model reasons over.
-		report, err := buildTuneReport(ctx, conn, a.SQLOrID, a.Analyze, true, "")
+		// verifyEquiv=true so mechanical AND model-supplied candidates carry cost +
+		// equivalence verdicts in the evidence the model reasons over.
+		report, err := buildTuneReport(ctx, conn, a.SQLOrID, a.Analyze, true, a.Candidates)
 		if err != nil {
 			return mcp.CallToolResult{}, err
 		}

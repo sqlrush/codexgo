@@ -39,20 +39,31 @@ type reportMarker struct {
 }
 
 // tuneAnalysisInstruction is the assistant-only companion to the deterministic
-// evidence report (renderTuneReport, which is rendered to BOTH the user and the
-// model). It does NOT repeat the evidence — the structured plan with [P1..Pn]
-// hotspots is already shown deterministically — it only tells the model to add
-// its root-cause + optimization analysis ON TOP, tying each fix to a [Pn]
-// hotspot. This keeps the [Pn]-annotated execution plan always present (a model
-// authoring the whole report would otherwise drop it) while still getting an LLM
-// analysis layered on the evidence.
+// evidence report (rendered to BOTH user and model). It drives the one-round
+// "infer + verify" loop: on the first call (no model rewrites yet) it tells the
+// model to form rewrites and re-call sqltune with `candidates` so the plugin
+// verifies them; once verified candidates are present it tells the model to write
+// the report marking plugin-verified rewrites 【实测】 and unverifiable items
+// (index DDL / params / expected effect) 【推测】. Same tool, one report.
 func tuneAnalysisInstruction(r *TuneReport) string {
+	hasModelRewrites := false
+	for _, c := range r.Candidates {
+		if c.Rule == "model_rewrite" {
+			hasModelRewrites = true
+			break
+		}
+	}
 	var b strings.Builder
-	b.WriteString("【上面是插件确定性采集并渲染的 SQL 调优证据,已直接展示给用户:输入 SQL、带 [P1..Pn] 标注的执行计划、代价热点、表/索引/统计、反模式、引擎索引建议、已校验的机械改写候选。请勿重复这些证据表格或执行计划,只在其后产出你的深度分析:】\n\n")
-	b.WriteString("## 根因分析\n逐一针对执行计划上的 [P1..Pn] 热点解释为何慢(大表顺序扫描 / 排序落盘 / 估算与实际行数偏差 / 缺合适索引 等),给“现象 → 机制 → 根因”的因果链,并显式引用对应的 [Pn]。\n\n")
-	b.WriteString("## 优化方案\nSQL 改写(保持等价)、索引 DDL、查询 hint / 参数 —— 每条注明它针对哪个 [Pn] 热点;证据中带 cost 前后 / 等价结论的已校验候选可直接采纳并标【实测】,你新提的标【AI推断】并提示测试环境 EXPLAIN + 等价性抽样验证。\n\n")
-	b.WriteString("## 预期效果\n标【AI推断】,提示需测试环境实测确认;并指出不确定点(回填样例值只对该取值成立、统计信息是否陈旧等)。\n\n")
-	b.WriteString("可在此之上加深度分析(CBO 为何选此计划、谓词是否 sargable、连接方式/驱动表是否合理)。中文 markdown 输出,不要调用其它工具。")
+	b.WriteString("【上面是插件确定性采集的 SQL 调优证据(执行计划 + [P1..Pn] 热点、代价热点、表/索引/统计、反模式、引擎索引建议、已校验候选),已直接展示给用户。请勿重复这些证据表格。】\n\n")
+	if !hasModelRewrites {
+		b.WriteString("下一步(关键):针对 [P1..Pn] 热点构思**等价**的 SQL 改写,然后**再次调用 sqltune**(同一 sql_or_id,把改写 SQL 放进 `candidates` 数组),插件会对每个改写做 plan-cost 差异 + 结果等价性抽样校验。拿到校验结果后再写最终报告——这样改写就是【实测】而非空口推断。\n\n")
+	} else {
+		b.WriteString("你提交的改写已在上面“确定性线索 / 候选”区完成 cost + 等价校验。现在写最终报告:\n\n")
+	}
+	b.WriteString("## 根因分析\n逐一针对 [P1..Pn] 热点给 现象 → 机制 → 根因 的因果链,显式引用对应 [Pn]。\n\n")
+	b.WriteString("## 优化方案\n- 改写:引用上面校验结果——cost 改善且等价通过的标【实测】(写明 cost X→Y、等价 ✓);未通过/未校验的说明原因并标【推测】;每条注明针对哪个 [Pn]。\n- 索引 / 参数 / hint:无法直接校验收益,标【推测】,建议测试环境 EXPLAIN 验证。\n\n")
+	b.WriteString("## 预期效果\n标【推测】,需测试环境实测确认;指出不确定点(回填样例值只对该取值成立、统计是否陈旧等)。\n\n")
+	b.WriteString("可加深度分析(CBO 为何选此计划、谓词是否 sargable、连接方式/驱动表是否合理)。中文 markdown 输出;除了用 sqltune 校验改写,不要调用其它工具。")
 	return b.String()
 }
 
