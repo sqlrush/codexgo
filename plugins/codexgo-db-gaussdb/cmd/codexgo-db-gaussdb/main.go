@@ -17,7 +17,7 @@ import (
 	"github.com/sqlrush/codexgo-db-gaussdb/internal/tools"
 )
 
-const version = "0.8.0"
+const version = "0.9.0"
 
 // instructions is the server-level domain knowledge codexgo surfaces to the LLM
 // at initialize. It tells the model what this server is for and how to drive the
@@ -37,11 +37,16 @@ const instructions = `GaussDB 数据库专家插件 (codexgo-db-gaussdb)。
    你据此一轮写出一份完整诊断报告直接给用户 —— 保留准确数字/表格,补充带跨维
    因果链的根因分析与分优先级(P0/P1/P2)方案,不要再调用其它工具。
 3. 单条 SQL 深度调优走两趟:sqltune(pass 1 证据)→ sqltune_verify(pass 2 校验改写)。
-   其余下钻用 slowsql / topsql / explain / ash / index_health 等工具。
+4. 专项监控工具(确定性渲染,直接展示给用户,你勿复述其表格,可一句话点评或串联下钻):
+   · 会话/锁:sessions、locks(含阻塞树)、lwlocks、longtx
+   · MVCC/空间:vacuum、xid、bloat、space、tempusage、hotkey
+   · 内存/WAL/复制:gsmem、wal、replication、bgworker
+   · 系统/元数据:resource、os、users、alert、params、tableinfo、indexadvise、sqlcount
+   · 趋势:perfsnap(snap/list/compare/baseline,快照持久化)
 
 GaussDB 使用专有驱动与 SCRAM-SHA256 认证,系统视图复用 openGauss(pg_stat_*、
-dbe_perf.*)。当某项探针因权限或视图缺失而失败时,该项会标记为 UNKNOWN 且不影响
-其余检查 —— 请在结论中说明哪些项目未能采集。`
+dbe_perf.*)。当某项探针因权限或视图缺失而失败时,该项会标记为告警且不影响
+其余检查 —— 请在结论中说明哪些项目未能采集。所有工具均为只读。`
 
 func main() {
 	if err := run(); err != nil {
