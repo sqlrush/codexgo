@@ -25,6 +25,25 @@ func sevMark(sev string) string {
 	}
 }
 
+// kv is one "key : value" pair for a panel block.
+type kv struct{ K, V string }
+
+// kvBlock renders aligned "key : value" lines (key padded to the widest key's
+// display width) — the panel style for the memory / WAL / replication tools.
+func kvBlock(items []kv) string {
+	kw := 0
+	for _, it := range items {
+		if w := dispWidth(it.K); w > kw {
+			kw = w
+		}
+	}
+	var b strings.Builder
+	for _, it := range items {
+		b.WriteString(padRight(it.K, kw) + " : " + it.V + "\n")
+	}
+	return b.String()
+}
+
 // humanSecs formats a duration in seconds as 0.5s / 12s / 5m / 1.2h.
 func humanSecs(sec float64) string {
 	switch {
