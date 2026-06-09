@@ -1,6 +1,6 @@
 {
   "name": "codexgo-db-gaussdb",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "GaussDB / openGauss health-check and SQL-tuning tools for codexgo, exposed as an external MCP server (read-only).",
   "keywords": ["gaussdb", "opengauss", "database", "health-check", "sql-tuning", "dba"],
   "mcpServers": "./.mcp.json",

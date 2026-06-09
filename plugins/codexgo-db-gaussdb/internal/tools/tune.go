@@ -11,8 +11,10 @@ import (
 )
 
 // TuneReport is the structured, largely *verified* tuning material the plugin
-// gathers deterministically (the "evidence"). Pass 1 (sqltune) renders it for the
-// user; pass 2 (sqltune_verify) reuses it to verify the model's rewrites.
+// gathers deterministically (the "evidence"): structured plan with [Pn] cost
+// hotspots, schema/index/stats, anti-patterns, engine index advice, and
+// cost+equivalence-verified mechanical candidates. sqltune (single pass) feeds it
+// to the model with a format reference; the model authors the optimization report.
 type TuneReport struct {
 	Target       string             `json:"target"`
 	Resolved     SQLFetchResult     `json:"resolved"`
@@ -41,35 +43,6 @@ var tuneDimensions = []string{
 	"查询 hint(连接方式/扫描方式/并行)",
 	"表结构与统计信息(看 schema.stats 是否陈旧、缺索引)",
 	"执行计划稳定性(对照 planhistory 是否回退)",
-}
-
-// AnalysisInput is the model's structured tuning analysis (pass 2). The plugin
-// verifies the rewrites and renders it into the final fixed-format report, so
-// the model's free-form prose never reaches the user unchecked.
-type AnalysisInput struct {
-	RootCause string            `json:"root_cause"`
-	Rewrites  []AnalysisRewrite `json:"rewrites"`
-	Indexes   []AnalysisIndex   `json:"indexes"`
-	Expected  string            `json:"expected"`
-}
-
-// AnalysisRewrite is one model-proposed rewrite to be verified.
-type AnalysisRewrite struct {
-	Title   string   `json:"title"`
-	SQL     string   `json:"sql"`
-	Reasons []string `json:"reasons"`
-}
-
-// AnalysisIndex is one model-proposed index.
-type AnalysisIndex struct {
-	DDL       string `json:"ddl"`
-	Rationale string `json:"rationale"`
-}
-
-// VerifiedRewrite pairs a model rewrite with its deterministic verdict.
-type VerifiedRewrite struct {
-	In   AnalysisRewrite
-	Cand RewriteCandidate
 }
 
 // buildTuneReport does all deterministic collection for a SQL id/text: resolve,
@@ -178,12 +151,17 @@ func buildTuneReport(ctx context.Context, conn *db.Conn, sqlOrID string, analyze
 	return report, nil
 }
 
-// registerSQLTune is pass 1: render the deterministic evidence report to the user
-// and instruct the model to produce a structured analysis for pass 2.
+// registerSQLTune is single-pass SQL tuning: the plugin gathers verified
+// evidence (structured plan with [P1..Pn] cost-hotspot tags, schema/index/stats,
+// anti-patterns, engine index advice, cost+equivalence-VERIFIED mechanical
+// rewrite candidates) and hands it to the model with a format reference; the
+// model writes ONE optimization report tying each fix to a [Pn] hotspot. No
+// rigid schema, no second tool call — the model can deepen the analysis on top
+// of the format.
 func registerSQLTune(s *mcp.Server, conn *db.Conn) {
 	tool := mcp.Tool{
 		Name:        "sqltune",
-		Description: "Pass 1 of SQL tuning. Produces a deterministically-rendered EVIDENCE report (input SQL, structured plan with [P1..Pn] hotspot tags, cost hotspots, schema/index/stats, anti-patterns, engine index advice) for a query or unique SQL id — it is shown DIRECTLY to the user, so do NOT repeat it. It does NOT write the analysis. AFTER reading the evidence, produce a structured analysis and call sqltune_verify (pass 2) with the SAME sql_or_id; that pass verifies your rewrites (cost + equivalence) and renders the final fixed-format report. Args: sql_or_id (required); analyze (bool: EXECUTE for real actual rows/timings, default false). Read-only.",
+		Description: "SQL tuning (single pass) for a query or unique SQL id. The plugin deterministically gathers EVIDENCE — structured execution plan with [P1..Pn] cost-hotspot tags, cost hotspots, table/index/stats, anti-patterns, engine index advice, and mechanically-generated rewrite candidates that are cost+equivalence VERIFIED — and returns it with a format reference. Based on this evidence, write ONE complete optimization report directly to the user: root-cause analysis tied to each [Pn] hotspot; rewrites/indexes (each stating WHICH [Pn] it addresses); expected effect. Verified candidates are 【实测】; your own new rewrites are 【AI推断】 (advise test-env EXPLAIN + equivalence check). Do NOT call other tools. Args: sql_or_id (required); analyze (bool: EXECUTE for real rows/timings, default false). Read-only.",
 		InputSchema: jsonObjSchema(map[string]any{
 			"sql_or_id": strProp("full SQL text, or a unique SQL id to resolve"),
 			"analyze":   boolProp("EXECUTE the query for real plan-tree actual rows/timings (graded EXPLAIN ANALYZE); default false = estimated plan only"),
@@ -200,97 +178,18 @@ func registerSQLTune(s *mcp.Server, conn *db.Conn) {
 		if err := decodeArgs(raw, &a); err != nil {
 			return mcp.CallToolResult{}, err
 		}
-		report, err := buildTuneReport(ctx, conn, a.SQLOrID, a.Analyze, false, "")
+		// verifyEquiv=true so the mechanical candidates carry cost + equivalence
+		// verdicts in the evidence the model reasons over.
+		report, err := buildTuneReport(ctx, conn, a.SQLOrID, a.Analyze, true, "")
 		if err != nil {
 			return mcp.CallToolResult{}, err
 		}
-		// Evidence -> user (rendered directly). Material digest + instruction ->
-		// assistant (model produces structured analysis, then calls sqltune_verify).
+		// Single-pass: number-accurate evidence (incl. [Pn] hotspots + verified
+		// candidates) + format reference → model authors ONE report in its reply.
 		return mcp.CallToolResult{Content: []mcp.ContentItem{
-			mcp.TextContentFor(renderTuneReport(report), "user"),
-			mcp.TextContentFor(firstPassInstruction(report), "assistant"),
+			mcp.TextContentFor(tuneEvidenceWithTemplate(report), "assistant"),
 		}}, nil
 	})
-}
-
-// registerSQLTuneVerify is pass 2: verify the model's analysis and render the
-// final fixed-format report.
-func registerSQLTuneVerify(s *mcp.Server, conn *db.Conn) {
-	tool := mcp.Tool{
-		Name:        "sqltune_verify",
-		Description: "Pass 2 of SQL tuning: submit your structured analysis ({root_cause, rewrites[], indexes[], expected}) for a SQL id/text. The plugin VERIFIES each rewrite (plan-cost diff + result equivalence) and renders the FINAL fixed-format optimization report (with verified verdicts) directly to the user. Call this AFTER sqltune with the SAME sql_or_id. Every rewrite SQL must be complete and executable — no placeholders or ellipsis. Read-only.",
-		InputSchema: jsonObjSchema(map[string]any{
-			"sql_or_id": strProp("same SQL id/text passed to sqltune"),
-			"analysis":  analysisSchema(),
-		}, "sql_or_id", "analysis"),
-	}
-	s.Register(tool, func(ctx context.Context, raw json.RawMessage) (mcp.CallToolResult, error) {
-		if err := ensureConn(ctx, conn); err != nil {
-			return mcp.CallToolResult{}, err
-		}
-		var a struct {
-			SQLOrID  string        `json:"sql_or_id"`
-			Analysis AnalysisInput `json:"analysis"`
-		}
-		if err := decodeArgs(raw, &a); err != nil {
-			return mcp.CallToolResult{}, err
-		}
-		report, err := buildTuneReport(ctx, conn, a.SQLOrID, false, false, "")
-		if err != nil {
-			return mcp.CallToolResult{}, err
-		}
-		// Verify each model rewrite (cost diff + equivalence) against the original.
-		var verified []VerifiedRewrite
-		for _, rw := range a.Analysis.Rewrites {
-			sql := strings.TrimSpace(rw.SQL)
-			if sql == "" {
-				continue
-			}
-			candSQL, _ := substituteBinds(stripTrailingSemicolon(sql))
-			cand := RewriteCandidate{Rule: "model_rewrite", SQL: candSQL, Note: rw.Title}
-			if isReadOnlySQL(stripLeadingExplain(candSQL)) {
-				verifyCandidate(ctx, conn, report.EffectiveSQL, &cand, true)
-			} else {
-				cand.Equivalent = "skipped:非只读改写不做校验"
-			}
-			verified = append(verified, VerifiedRewrite{In: rw, Cand: cand})
-		}
-		return mcp.CallToolResult{Content: []mcp.ContentItem{
-			mcp.TextContentFor(renderAnalysisReport(report, &a.Analysis, verified), "user"),
-			mcp.TextContentFor("最终优化方案(含确定性校验)已直接展示给用户。无需重复内容,可用一句话收尾。", "assistant"),
-		}}, nil
-	})
-}
-
-// analysisSchema is the JSON schema for the pass-2 `analysis` argument.
-func analysisSchema() map[string]any {
-	rewriteItem := map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"title":   strProp("short title of the rewrite"),
-			"sql":     strProp("the COMPLETE rewritten SQL (executable, no placeholders/ellipsis)"),
-			"reasons": map[string]any{"type": "array", "items": strProp("one reason this rewrite helps"), "description": "why this rewrite helps"},
-		},
-		"required": []string{"sql"},
-	}
-	indexItem := map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"ddl":       strProp("a complete CREATE INDEX statement"),
-			"rationale": strProp("why this index helps"),
-		},
-		"required": []string{"ddl"},
-	}
-	return map[string]any{
-		"type":        "object",
-		"description": "your structured tuning analysis; rewrites are cost+equivalence verified by the plugin",
-		"properties": map[string]any{
-			"root_cause": strProp("root-cause analysis: why the query is slow (cite the evidence)"),
-			"rewrites":   map[string]any{"type": "array", "items": rewriteItem, "description": "rewritten SQL candidates"},
-			"indexes":    map[string]any{"type": "array", "items": indexItem, "description": "index recommendations"},
-			"expected":   strProp("expected effect after applying the plan"),
-		},
-	}
 }
 
 // isLikelySQLID reports whether input looks like a unique SQL id rather than a

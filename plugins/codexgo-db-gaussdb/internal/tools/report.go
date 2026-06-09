@@ -38,129 +38,29 @@ type reportMarker struct {
 	selfCost float64
 }
 
-// firstPassInstruction is the assistant-audience companion to the pass-1 evidence
-// report: a material digest plus instructions to produce a STRUCTURED analysis
-// and call sqltune_verify (pass 2). The model does not write the report itself —
-// it hands a structured analysis to the plugin, which verifies and renders it.
-func firstPassInstruction(r *TuneReport) string {
+// tuneEvidenceWithTemplate hands the model the deterministically-rendered,
+// number-accurate tuning evidence (via renderTuneReport — structured plan with
+// [P1..Pn] hotspots, schema/index/stats, anti-patterns, engine index advice, and
+// cost+equivalence-verified mechanical candidates) PLUS a format reference and an
+// instruction to write ONE optimization report that ties each fix to a [Pn]
+// hotspot. Single-pass: the model authors the report in its own reply, no rigid
+// schema and no second tool call, and may deepen the analysis on top of the
+// format. (Replaces the old two-pass firstPassInstruction + sqltune_verify, whose
+// pass-2 analysis was disconnected from the pass-1 [Pn] hotspots.)
+func tuneEvidenceWithTemplate(r *TuneReport) string {
 	var b strings.Builder
-	b.WriteString("【证据报告已直接展示给用户,勿重复其内容。现在做分析,但不要直接写给用户 —— 产出结构化分析后调用 sqltune_verify 校验并渲染】\n\n")
-	b.WriteString("素材摘要:\n")
-	b.WriteString("- 目标: " + r.Target)
-	if r.Resolved.Schema != "" {
-		b.WriteString(" · schema: " + r.Resolved.Schema)
-	}
-	b.WriteByte('\n')
-	if r.PlanCost != nil {
-		b.WriteString(fmt.Sprintf("- 总成本: %.2f\n", *r.PlanCost))
-	}
-	if r.PlanTree != nil {
-		var parts []string
-		for _, n := range topRelationNodes(r.PlanTree.Root, 3) {
-			name := n.Operator
-			if n.Relation != "" {
-				name += " on " + n.Relation
-			}
-			parts = append(parts, fmt.Sprintf("%s(cost=%.0f,rows=%d)", name, n.TotalCost, n.PlanRows))
-		}
-		if len(parts) > 0 {
-			b.WriteString("- 主要瓶颈: " + strings.Join(parts, "; ") + "\n")
-		}
-	}
-	if kinds := distinctIssueKinds(r); kinds != "" {
-		b.WriteString("- 反模式: " + kinds + "\n")
-	}
-	b.WriteString("\n下一步: 调用 sqltune_verify(sql_or_id 同上),analysis 结构:\n")
-	b.WriteString(`{"root_cause":"为何慢的根因","rewrites":[{"title":"...","sql":"完整改写SQL","reasons":["..."]}],"indexes":[{"ddl":"CREATE INDEX...","rationale":"..."}],"expected":"预期效果"}`)
-	b.WriteString("\nsqltune_verify 会对每个 rewrite 自动跑 cost+等价校验,并渲染成最终固定格式报告(直接给用户)。改写 SQL 必须完整可执行,不要用占位符或省略号。")
+	b.WriteString("【任务】下面是插件确定性采集并渲染的 SQL 调优证据(执行计划 + [P1..Pn] 代价热点 + 表/索引/统计 + 反模式 + 引擎索引建议 + 已校验的机械改写候选;计划/数字准确)。请你以它为基础,一轮产出一份完整的 SQL 优化报告直接给用户 —— 不要调用其它工具,也不要复述本说明。\n\n")
+	b.WriteString("=== 实测证据(计划 / 数字 / [Pn] 可直接引用,不得改动)===\n\n")
+	b.WriteString(renderTuneReport(r))
+	b.WriteString("\n=== 在证据基础上发挥 ===\n")
+	b.WriteString("- 根因分析:逐一针对上面的 [P1..Pn] 代价热点解释为何慢(大表顺序扫描 / 排序落盘 / 估算行数与实际偏差大 / 缺合适索引 等),给“现象 → 机制 → 根因”的因果链;\n")
+	b.WriteString("- 优化方案:SQL 改写(保持等价)、索引 DDL、查询 hint / 参数 —— **每条都注明它针对哪个 [Pn] 热点**,避免与热点脱节;\n")
+	b.WriteString("  · 证据中“确定性线索 / 候选”里带 cost 前后与等价结论的机械候选可直接采纳,标【实测】;\n")
+	b.WriteString("  · 你新提的改写 / 索引标【AI推断】,并提示在测试环境 EXPLAIN + 等价性抽样验证后再上线;\n")
+	b.WriteString("- 预期效果 + 不确定点(回填的样例值只对该取值成立、统计信息是否陈旧等);\n")
+	b.WriteString("- 上面的章节与格式只是参考,可在其上加深度分析(CBO 为何选此计划、谓词是否 sargable、连接方式/驱动表是否合理、统计信息是否需重收集),结构与详略自由调整;\n")
+	b.WriteString("- 中文,markdown 输出(codexgo 会渲染表格);实测数字标【实测】,推断标【AI推断】。\n")
 	return b.String()
-}
-
-// renderAnalysisReport renders the pass-2 final optimization plan: the model's
-// root cause / rewrites / indexes / expected, with deterministic verification
-// verdicts on each rewrite. Verified facts are 【实测】; model prose is 【AI推断】.
-func renderAnalysisReport(r *TuneReport, a *AnalysisInput, verified []VerifiedRewrite) string {
-	var b strings.Builder
-	b.WriteString("# 优化方案(模型分析 · 插件校验)\n\n")
-	b.WriteString("> 改写经 plan-cost + 等价性校验,标【实测】;根因/预期等定性叙述标【AI推断】,需人工复核。\n\n")
-
-	if rc := strings.TrimSpace(a.RootCause); rc != "" {
-		b.WriteString("## 根因分析\n\n【AI推断】" + rc + "\n\n")
-	}
-	renderVerifiedRewrites(&b, verified)
-	renderModelIndexes(&b, a.Indexes, r)
-	if exp := strings.TrimSpace(a.Expected); exp != "" {
-		b.WriteString("## 预期效果\n\n【AI推断】" + exp + "\n\n")
-		b.WriteString("> 预期为模型推断,未经真实执行验证;请在测试环境实测确认。\n")
-	}
-	return b.String()
-}
-
-func renderVerifiedRewrites(b *strings.Builder, vs []VerifiedRewrite) {
-	b.WriteString("## 改写方案(逐条校验)\n\n")
-	if len(vs) == 0 {
-		b.WriteString("(模型未提供改写)\n\n")
-		return
-	}
-	for i, v := range vs {
-		b.WriteString(fmt.Sprintf("### 改写 %d: %s\n\n", i+1, nz(v.In.Title)))
-		b.WriteString("```sql\n" + strings.TrimSpace(v.In.SQL) + "\n```\n\n")
-		if len(v.In.Reasons) > 0 {
-			b.WriteString("理由:\n")
-			for _, r := range v.In.Reasons {
-				b.WriteString("- " + strings.TrimSpace(r) + "\n")
-			}
-			b.WriteString("\n")
-		}
-		b.WriteString(verdictBadge(v.Cand) + "\n\n")
-	}
-}
-
-// verdictBadge renders the verification verdict + an adoption recommendation.
-func verdictBadge(c RewriteCandidate) string {
-	line := verdictLine(c)
-	switch {
-	case c.Equivalent == "yes" && c.CostRatio != nil && *c.CostRatio > 1:
-		return "✅【可直接采纳】" + line
-	case c.Equivalent == "no":
-		return "⚠️【需人工确认】" + line + " — 语义已改变,必须人工复核结果是否一致"
-	default:
-		return "⚠️【需人工确认】" + line
-	}
-}
-
-func renderModelIndexes(b *strings.Builder, idxs []AnalysisIndex, r *TuneReport) {
-	if len(idxs) == 0 {
-		return
-	}
-	b.WriteString("## 索引建议\n\n")
-	for _, ix := range idxs {
-		ddl := strings.TrimSpace(ix.DDL)
-		b.WriteString("```sql\n" + ddl + "\n```\n")
-		if ix.Rationale != "" {
-			b.WriteString("依据: " + strings.TrimSpace(ix.Rationale) + "\n")
-		}
-		if indexAdviceMentionsTable(r.IndexAdvice, ddl) {
-			b.WriteString("【对照引擎】gs_index_advise 也关注此表,方向一致 ✓\n")
-		} else {
-			b.WriteString("【对照引擎】不在 gs_index_advise 输出中 — 需在测试环境建索引后 EXPLAIN 验证收益\n")
-		}
-		b.WriteString("\n")
-	}
-}
-
-// indexAdviceMentionsTable does a rough check: does the engine advisor mention
-// the table the DDL targets?
-func indexAdviceMentionsTable(advice TableReport, ddl string) bool {
-	low := strings.ToLower(ddl)
-	for _, row := range advice.Rows {
-		if len(row) >= 2 {
-			if tbl := strings.ToLower(strings.TrimSpace(row[1])); tbl != "" && strings.Contains(low, tbl) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // renderTuneReport renders the full deterministic report as markdown.

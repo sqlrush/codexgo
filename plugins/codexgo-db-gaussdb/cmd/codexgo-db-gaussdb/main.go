@@ -17,7 +17,7 @@ import (
 	"github.com/sqlrush/codexgo-db-gaussdb/internal/tools"
 )
 
-const version = "0.9.1"
+const version = "0.9.2"
 
 // instructions is the server-level domain knowledge codexgo surfaces to the LLM
 // at initialize. It tells the model what this server is for and how to drive the
@@ -36,7 +36,10 @@ const instructions = `GaussDB 数据库专家插件 (codexgo-db-gaussdb)。
    (体检 + 等待 + 慢SQL + 锁 + 死元组 + 索引,数字准确)并连同格式参考返回给你;
    你据此一轮写出一份完整诊断报告直接给用户 —— 保留准确数字/表格,补充带跨维
    因果链的根因分析与分优先级(P0/P1/P2)方案,不要再调用其它工具。
-3. 单条 SQL 深度调优走两趟:sqltune(pass 1 证据)→ sqltune_verify(pass 2 校验改写)。
+3. 单条 SQL 深度调优一轮完成:调用 sqltune,它确定性采集证据(执行计划 + [Pn] 代价
+   热点 + 表/索引/统计 + 反模式 + 引擎索引建议 + 已校验机械改写候选)并连同格式参考返回;
+   你据此一轮写出优化报告,每条改写/索引注明针对哪个 [Pn] 热点(已校验候选标【实测】,
+   你新提的标【AI推断】)。
 4. 专项监控工具(确定性渲染,直接展示给用户,你勿复述其表格,可一句话点评或串联下钻):
    · 会话/锁:sessions、locks(含阻塞树)、lwlocks、longtx
    · MVCC/空间:vacuum、xid、bloat、space、tempusage、hotkey

@@ -48,9 +48,8 @@ func Register(s *mcp.Server, conn *db.Conn) {
 	registerExplain(s, conn)
 	registerASH(s, conn)
 	registerIndexHealth(s, conn)
-	// tuning (pass 1 evidence + pass 2 verify) + WDR
+	// tuning (single-pass evidence + model report) + WDR
 	registerSQLTune(s, conn)
-	registerSQLTuneVerify(s, conn)
 	registerWDR(s, conn)
 	// command catalog (no connection required)
 	registerHelp(s)
