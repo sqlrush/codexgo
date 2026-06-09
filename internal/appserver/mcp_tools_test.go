@@ -116,3 +116,35 @@ func TestHandleMcpCallToolErrors(t *testing.T) {
 		t.Error("expected error when qualified_name empty")
 	}
 }
+
+// TestFlattenMcpTextBlocksAudience verifies slash flattening returns only
+// user-addressed blocks when present (model-only material is not leaked), and
+// falls back to all blocks when nothing is annotated for the user.
+func TestFlattenMcpTextBlocksAudience(t *testing.T) {
+	mk := func(text string, audience []string) json.RawMessage {
+		m := map[string]any{"type": "text", "text": text}
+		if audience != nil {
+			m["annotations"] = map[string]any{"audience": audience}
+		}
+		b, _ := json.Marshal(m)
+		return b
+	}
+	// user + model blocks → only the user block.
+	got := flattenMcpTextBlocks([]json.RawMessage{
+		mk("EVIDENCE", []string{"user", "assistant"}),
+		mk("MODEL-ONLY INSTRUCTION", []string{"assistant"}),
+	})
+	if got != "EVIDENCE" {
+		t.Errorf("want only user block, got %q", got)
+	}
+	// no audience anywhere → all blocks (back-compat).
+	got = flattenMcpTextBlocks([]json.RawMessage{mk("a", nil), mk("b", nil)})
+	if got != "a\nb" {
+		t.Errorf("want all blocks, got %q", got)
+	}
+	// assistant-only (no user) → returned (back-compat: don't blank the output).
+	got = flattenMcpTextBlocks([]json.RawMessage{mk("digest", []string{"assistant"})})
+	if got != "digest" {
+		t.Errorf("want assistant block when no user audience, got %q", got)
+	}
+}

@@ -60,16 +60,38 @@ func (p *Processor) handleMcpCallTool(ctx context.Context, params *appserverprot
 }
 
 // flattenMcpTextBlocks concatenates the text content blocks of an MCP tool
-// result, ignoring non-text blocks.
+// result for deterministic (slash) display. When any block is addressed to the
+// user (annotations.audience contains "user"), ONLY those blocks are returned —
+// model-only material (audience without "user", e.g. analysis instructions) is
+// not leaked to the slash output. Tools that annotate nothing behave as before
+// (all text blocks concatenated).
 func flattenMcpTextBlocks(blocks []json.RawMessage) string {
-	var b strings.Builder
+	type textBlock struct {
+		Type        string `json:"type"`
+		Text        string `json:"text"`
+		Annotations *struct {
+			Audience []string `json:"audience"`
+		} `json:"annotations"`
+	}
+	parsed := make([]textBlock, 0, len(blocks))
+	hasUserAudience := false
 	for _, raw := range blocks {
-		var item struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		}
+		var item textBlock
 		if err := json.Unmarshal(raw, &item); err != nil || item.Type != "text" {
 			continue
+		}
+		parsed = append(parsed, item)
+		if item.Annotations != nil && mcpAudienceContains(item.Annotations.Audience, "user") {
+			hasUserAudience = true
+		}
+	}
+	var b strings.Builder
+	for _, item := range parsed {
+		// When user-addressed blocks exist, skip the model-only ones.
+		if hasUserAudience {
+			if item.Annotations == nil || !mcpAudienceContains(item.Annotations.Audience, "user") {
+				continue
+			}
 		}
 		if b.Len() > 0 {
 			b.WriteByte('\n')
@@ -77,4 +99,14 @@ func flattenMcpTextBlocks(blocks []json.RawMessage) string {
 		b.WriteString(item.Text)
 	}
 	return b.String()
+}
+
+// mcpAudienceContains reports whether an MCP audience list includes role.
+func mcpAudienceContains(audience []string, role string) bool {
+	for _, a := range audience {
+		if a == role {
+			return true
+		}
+	}
+	return false
 }
