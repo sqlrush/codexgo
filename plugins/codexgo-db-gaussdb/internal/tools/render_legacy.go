@@ -174,20 +174,22 @@ func renderSQLFetch(r SQLFetchResult) string {
 // --- wdranalyze: LLM-driven (model analyzes the engine WDR text) -------------
 
 func wdrAnalyzeResult(r WDRAnalyzeReport) (mcp.CallToolResult, error) {
-	var head strings.Builder
-	head.WriteString(fmt.Sprintf("# 📈 WDR 分析 · snap %d → %d\n\n", r.BeginSnap, r.EndSnap))
+	// Evidence = the engine-generated WDR report text, rendered to BOTH the user
+	// (so /wdranalyze via slash shows real content) and the model (to analyze).
+	var ev strings.Builder
+	ev.WriteString(fmt.Sprintf("# 📈 WDR 报告 · snap %d → %d\n\n", r.BeginSnap, r.EndSnap))
 	if len(r.Warnings) > 0 {
-		head.WriteString("> " + strings.Join(r.Warnings, " · ") + "\n\n")
+		ev.WriteString("> " + strings.Join(r.Warnings, " · ") + "\n\n")
 	}
-	head.WriteString("> 引擎 WDR 报告已生成,正在基于它分析:工作负载画像 → 风险发现(分级)→ Top SQL。\n")
+	ev.WriteString("```\n")
+	ev.WriteString(strings.TrimSpace(r.ReportText))
+	ev.WriteString("\n```\n")
 
-	var instr strings.Builder
-	instr.WriteString("以下是引擎生成的 WDR 原文(已向用户提示正在分析)。请据此一轮产出 markdown 分析报告直接给用户:\n")
-	instr.WriteString("① 工作负载画像 ② 风险发现(按严重度分级)③ Top SQL 列表(并对最重的 SQL 调 sqltune 下钻)。结论标注需人工复核。\n\n=== WDR 原文 ===\n")
-	instr.WriteString(r.ReportText)
+	instr := "上面是引擎生成的 WDR 原文(已直接展示给用户)。请勿复述原文,在其后产出 markdown 分析:\n" +
+		"## 工作负载画像\n## 风险发现(按严重度分级)\n## Top SQL(并对最重的 SQL 调 sqltune 下钻)\n结论标注需人工复核。中文输出,不要调用其它工具。"
 
 	return mcp.CallToolResult{Content: []mcp.ContentItem{
-		mcp.TextContentFor(head.String(), "user"),
-		mcp.TextContentFor(instr.String(), "assistant"),
+		mcp.TextContentFor(ev.String(), "user", "assistant"),
+		mcp.TextContentFor(instr, "assistant"),
 	}}, nil
 }

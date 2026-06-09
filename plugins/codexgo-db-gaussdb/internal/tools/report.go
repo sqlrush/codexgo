@@ -38,28 +38,21 @@ type reportMarker struct {
 	selfCost float64
 }
 
-// tuneEvidenceWithTemplate hands the model the deterministically-rendered,
-// number-accurate tuning evidence (via renderTuneReport — structured plan with
-// [P1..Pn] hotspots, schema/index/stats, anti-patterns, engine index advice, and
-// cost+equivalence-verified mechanical candidates) PLUS a format reference and an
-// instruction to write ONE optimization report that ties each fix to a [Pn]
-// hotspot. Single-pass: the model authors the report in its own reply, no rigid
-// schema and no second tool call, and may deepen the analysis on top of the
-// format. (Replaces the old two-pass firstPassInstruction + sqltune_verify, whose
-// pass-2 analysis was disconnected from the pass-1 [Pn] hotspots.)
-func tuneEvidenceWithTemplate(r *TuneReport) string {
+// tuneAnalysisInstruction is the assistant-only companion to the deterministic
+// evidence report (renderTuneReport, which is rendered to BOTH the user and the
+// model). It does NOT repeat the evidence — the structured plan with [P1..Pn]
+// hotspots is already shown deterministically — it only tells the model to add
+// its root-cause + optimization analysis ON TOP, tying each fix to a [Pn]
+// hotspot. This keeps the [Pn]-annotated execution plan always present (a model
+// authoring the whole report would otherwise drop it) while still getting an LLM
+// analysis layered on the evidence.
+func tuneAnalysisInstruction(r *TuneReport) string {
 	var b strings.Builder
-	b.WriteString("【任务】下面是插件确定性采集并渲染的 SQL 调优证据(执行计划 + [P1..Pn] 代价热点 + 表/索引/统计 + 反模式 + 引擎索引建议 + 已校验的机械改写候选;计划/数字准确)。请你以它为基础,一轮产出一份完整的 SQL 优化报告直接给用户 —— 不要调用其它工具,也不要复述本说明。\n\n")
-	b.WriteString("=== 实测证据(计划 / 数字 / [Pn] 可直接引用,不得改动)===\n\n")
-	b.WriteString(renderTuneReport(r))
-	b.WriteString("\n=== 在证据基础上发挥 ===\n")
-	b.WriteString("- 根因分析:逐一针对上面的 [P1..Pn] 代价热点解释为何慢(大表顺序扫描 / 排序落盘 / 估算行数与实际偏差大 / 缺合适索引 等),给“现象 → 机制 → 根因”的因果链;\n")
-	b.WriteString("- 优化方案:SQL 改写(保持等价)、索引 DDL、查询 hint / 参数 —— **每条都注明它针对哪个 [Pn] 热点**,避免与热点脱节;\n")
-	b.WriteString("  · 证据中“确定性线索 / 候选”里带 cost 前后与等价结论的机械候选可直接采纳,标【实测】;\n")
-	b.WriteString("  · 你新提的改写 / 索引标【AI推断】,并提示在测试环境 EXPLAIN + 等价性抽样验证后再上线;\n")
-	b.WriteString("- 预期效果 + 不确定点(回填的样例值只对该取值成立、统计信息是否陈旧等);\n")
-	b.WriteString("- 上面的章节与格式只是参考,可在其上加深度分析(CBO 为何选此计划、谓词是否 sargable、连接方式/驱动表是否合理、统计信息是否需重收集),结构与详略自由调整;\n")
-	b.WriteString("- 中文,markdown 输出(codexgo 会渲染表格);实测数字标【实测】,推断标【AI推断】。\n")
+	b.WriteString("【上面是插件确定性采集并渲染的 SQL 调优证据,已直接展示给用户:输入 SQL、带 [P1..Pn] 标注的执行计划、代价热点、表/索引/统计、反模式、引擎索引建议、已校验的机械改写候选。请勿重复这些证据表格或执行计划,只在其后产出你的深度分析:】\n\n")
+	b.WriteString("## 根因分析\n逐一针对执行计划上的 [P1..Pn] 热点解释为何慢(大表顺序扫描 / 排序落盘 / 估算与实际行数偏差 / 缺合适索引 等),给“现象 → 机制 → 根因”的因果链,并显式引用对应的 [Pn]。\n\n")
+	b.WriteString("## 优化方案\nSQL 改写(保持等价)、索引 DDL、查询 hint / 参数 —— 每条注明它针对哪个 [Pn] 热点;证据中带 cost 前后 / 等价结论的已校验候选可直接采纳并标【实测】,你新提的标【AI推断】并提示测试环境 EXPLAIN + 等价性抽样验证。\n\n")
+	b.WriteString("## 预期效果\n标【AI推断】,提示需测试环境实测确认;并指出不确定点(回填样例值只对该取值成立、统计信息是否陈旧等)。\n\n")
+	b.WriteString("可在此之上加深度分析(CBO 为何选此计划、谓词是否 sargable、连接方式/驱动表是否合理)。中文 markdown 输出,不要调用其它工具。")
 	return b.String()
 }
 

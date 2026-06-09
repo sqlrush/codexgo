@@ -64,7 +64,10 @@ func registerHealth(s *mcp.Server, conn *db.Conn) {
 		// it in its own reply. No rigid schema, no second tool call.
 		d := collectDiagnosis(ctx, conn)
 		return mcp.CallToolResult{Content: []mcp.ContentItem{
-			mcp.TextContentFor(diagEvidenceWithTemplate(d), "assistant"),
+			// Evidence (6-dim report) to BOTH user (rendered, always present +
+			// accurate) and model; analysis instruction model-only.
+			mcp.TextContentFor(renderDiagnosisReport(d), "user", "assistant"),
+			mcp.TextContentFor(diagAnalysisInstruction(d), "assistant"),
 		}}, nil
 	})
 }

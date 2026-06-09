@@ -5,26 +5,39 @@ import (
 	"testing"
 )
 
-// TestTuneEvidenceWithTemplate verifies the single-pass sqltune payload embeds
-// the deterministic evidence AND instructs the model to tie each fix to a [Pn]
-// hotspot (the fix for pass-2 analysis being disconnected from pass-1 hotspots).
-func TestTuneEvidenceWithTemplate(t *testing.T) {
-	r := &TuneReport{
-		Target:       "dbaa:gauss_local",
-		EffectiveSQL: "SELECT * FROM orders WHERE customer_id = 5",
-		Resolved:     SQLFetchResult{Query: "SELECT * FROM orders WHERE customer_id = 5", Source: "inline"},
-	}
-	out := tuneEvidenceWithTemplate(r)
+// TestTuneAnalysisInstruction verifies the assistant-only instruction asks the
+// model to tie its analysis to [Pn] hotspots WITHOUT repeating the evidence
+// (the [Pn]-annotated plan is rendered deterministically as the user evidence).
+func TestTuneAnalysisInstruction(t *testing.T) {
+	out := tuneAnalysisInstruction(&TuneReport{Target: "x"})
 	for _, want := range []string{
-		"实测证据",         // embeds renderTuneReport
-		"SQL 调优报告",     // renderTuneReport title
-		"针对哪个 [Pn] 热点", // ties fixes to hotspots (the disconnect fix)
-		"根因分析",
-		"【实测】", "【AI推断】", // verified vs inferred labelling
-		"不要调用其它工具", // single pass
+		"勿重复",         // don't repeat the evidence
+		"[P1..Pn] 热点", // tie to hotspots
+		"## 根因分析",
+		"## 优化方案",
+		"【实测】", "【AI推断】",
+		"不要调用其它工具",
 	} {
 		if !strings.Contains(out, want) {
-			t.Errorf("tuneEvidenceWithTemplate missing %q", want)
+			t.Errorf("tuneAnalysisInstruction missing %q", want)
 		}
+	}
+}
+
+// TestRenderTuneReportHasPlanSection verifies the deterministic evidence report
+// (rendered to the user) includes the execution-plan section between the input
+// SQL and the cost-hotspot evidence — the part the model used to drop.
+func TestRenderTuneReportHasPlanSection(t *testing.T) {
+	out := renderTuneReport(&TuneReport{
+		Target:       "x",
+		EffectiveSQL: "SELECT * FROM orders WHERE id = 1",
+		Resolved:     SQLFetchResult{Query: "SELECT * FROM orders WHERE id = 1", Source: "inline"},
+	})
+	// §1 input SQL then §3 evidence are always present; §2 plan appears when a
+	// plan tree was collected (live). Section ordering/titles must be stable.
+	iSQL := strings.Index(out, "## 1. 输入 SQL")
+	iEvi := strings.Index(out, "## 3. 关键证据")
+	if iSQL < 0 || iEvi < 0 || iSQL > iEvi {
+		t.Errorf("expected 输入SQL before 关键证据\n%s", out)
 	}
 }

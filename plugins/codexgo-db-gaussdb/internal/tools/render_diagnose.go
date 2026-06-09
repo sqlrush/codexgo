@@ -170,17 +170,17 @@ func renderIdxSection(b *strings.Builder, d *DiagnosisData) {
 // directly to the user. Single-pass: the model copies the accurate numbers and
 // adds the analysis (root-cause causal chains + prioritized actions) in its own
 // reply — no second tool call, no rigid schema, room to improvise.
-func diagEvidenceWithTemplate(d *DiagnosisData) string {
+// diagAnalysisInstruction is the assistant-only companion to the deterministic
+// 6-dimension evidence report (renderDiagnosisReport, rendered to BOTH user and
+// model). It does NOT repeat the evidence — it tells the model to layer its
+// cross-dimension diagnosis on top. Keeping the evidence deterministic means the
+// 6-dim tables always appear (and are accurate), while the model still adds the
+// root-cause/fix analysis.
+func diagAnalysisInstruction(d *DiagnosisData) string {
 	var b strings.Builder
-	b.WriteString("【任务】下面是插件确定性采集并渲染的 6 维实测证据(数字 100% 准确)。请你以它为基础,直接产出一份完整、浑然一体的数据库诊断报告给用户 —— 一轮写完,不要调用其它工具,也不要复述本说明。\n\n")
-	b.WriteString("=== 实测证据(数字与表格可直接引用,不得改动)===\n\n")
-	b.WriteString(renderDiagnosisReport(d))
-	b.WriteString("\n=== 在上面证据基础上发挥 ===\n")
-	b.WriteString("- 总览与证据表格:保留或精炼,数字以上面为准,严禁编造或改动;\n")
-	b.WriteString("- 补充【根因分析】:每条给 现象 → 中间机制 → 根因 的因果链,尽量跨维关联(如 死元组堆积 ↔ autovacuum 滞后 ↔ 表膨胀 ↔ 慢SQL;命中率低 ↔ 大表全扫 ↔ IO);\n")
-	b.WriteString("- 补充【优化方案】:按 P0/P1/P2 优先级,每条给可执行 SQL/命令 + 风险 + 前置检查 + 回滚;\n")
-	b.WriteString("- 标注:实测数据标【实测】,你的推断标【AI推断】,便于人工复核;\n")
-	b.WriteString("- 上面的章节/表格只是格式参考,结构、详略、emoji 可按你的判断自由调整;\n")
-	b.WriteString("- 中文输出,markdown 即可(codexgo 会渲染表格,优先用 markdown 表格)。\n")
+	b.WriteString("【上面是插件确定性采集并渲染的 6 维实测证据(总览 + 跨维问题 + 等待/慢SQL/锁/死元组/索引),已直接展示给用户。请勿重复这些证据表格,只在其后产出你的深度诊断:】\n\n")
+	b.WriteString("## 根因分析\n综合多维证据(不要只看单维),每条给 现象 → 中间机制 → 根因 的因果链,尽量跨维关联(如 死元组堆积 ↔ autovacuum 滞后 ↔ 表膨胀 ↔ 慢SQL;命中率低 ↔ 大表全扫 ↔ IO),数字引用以上面证据为准。\n\n")
+	b.WriteString("## 优化方案\n按 P0/P1/P2 优先级,每条给可执行 SQL/命令 + 风险 + 前置检查 + 回滚;实测数据标【实测】,你的推断标【AI推断】。\n\n")
+	b.WriteString("中文 markdown 输出。不要调用其它工具。")
 	return b.String()
 }

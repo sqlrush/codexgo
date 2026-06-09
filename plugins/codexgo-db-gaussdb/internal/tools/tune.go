@@ -184,10 +184,14 @@ func registerSQLTune(s *mcp.Server, conn *db.Conn) {
 		if err != nil {
 			return mcp.CallToolResult{}, err
 		}
-		// Single-pass: number-accurate evidence (incl. [Pn] hotspots + verified
-		// candidates) + format reference → model authors ONE report in its reply.
+		// Evidence (incl. SQL + [Pn]-annotated execution plan + verified candidates)
+		// goes to BOTH the user (rendered deterministically, so the plan + [Pn] are
+		// always present and accurate) AND the model (to reason over). A separate
+		// assistant-only instruction asks the model to layer its root-cause +
+		// optimization analysis on top, tying each fix to a [Pn] hotspot.
 		return mcp.CallToolResult{Content: []mcp.ContentItem{
-			mcp.TextContentFor(tuneEvidenceWithTemplate(report), "assistant"),
+			mcp.TextContentFor(renderTuneReport(report), "user", "assistant"),
+			mcp.TextContentFor(tuneAnalysisInstruction(report), "assistant"),
 		}}, nil
 	})
 }
