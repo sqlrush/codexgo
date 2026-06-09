@@ -17,7 +17,7 @@ import (
 	"github.com/sqlrush/codexgo-db-gaussdb/internal/tools"
 )
 
-const version = "0.6.0"
+const version = "0.8.0"
 
 // instructions is the server-level domain knowledge codexgo surfaces to the LLM
 // at initialize. It tells the model what this server is for and how to drive the
@@ -32,9 +32,12 @@ const instructions = `GaussDB 数据库专家插件 (codexgo-db-gaussdb)。
 典型流程:
 1. 先调用 connect 建立连接(host/port/user 必填;password 可由 codexgo 通过
    交互式输入安全收集;database 默认 postgres;sslmode 默认 disable)。
-2. 再调用 health 做整体体检,得到加权健康分(0-100)与分项评级。
-3. 针对体检暴露的问题,使用 SQL 调优类工具(slowsql / topsql / explain
-   等)逐项下钻定位。
+2. 开放式诊断("数据库有什么问题")一轮完成:调用 health,它确定性采集 6 维证据
+   (体检 + 等待 + 慢SQL + 锁 + 死元组 + 索引,数字准确)并连同格式参考返回给你;
+   你据此一轮写出一份完整诊断报告直接给用户 —— 保留准确数字/表格,补充带跨维
+   因果链的根因分析与分优先级(P0/P1/P2)方案,不要再调用其它工具。
+3. 单条 SQL 深度调优走两趟:sqltune(pass 1 证据)→ sqltune_verify(pass 2 校验改写)。
+   其余下钻用 slowsql / topsql / explain / ash / index_health 等工具。
 
 GaussDB 使用专有驱动与 SCRAM-SHA256 认证,系统视图复用 openGauss(pg_stat_*、
 dbe_perf.*)。当某项探针因权限或视图缺失而失败时,该项会标记为 UNKNOWN 且不影响

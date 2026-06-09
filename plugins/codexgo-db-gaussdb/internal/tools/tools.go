@@ -11,7 +11,7 @@ import (
 
 // Register wires all tools onto the server, sharing one connection handle.
 func Register(s *mcp.Server, conn *db.Conn) {
-	// connection + health diagnosis (health renders the full report itself)
+	// connection + open-ended diagnosis (single-pass: evidence + model analysis)
 	registerConnect(s, conn)
 	registerHealth(s, conn)
 	// statement-view tools: slowsql, topsql, sqlfetch, planhistory

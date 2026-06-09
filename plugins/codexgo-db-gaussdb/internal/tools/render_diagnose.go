@@ -9,6 +9,12 @@ import (
 // (reusing scoreBar / renderOverviewTable / renderDimBars) + cross-dimension核心问题
 // + per-dimension evidence modules (waits / slow SQL / locks / dead tuples /
 // indexes), all via the runewidth-aligned ASCII primitives. Every figure 实测.
+//
+// In the single-pass design this report is NOT rendered directly to the user;
+// it is handed to the model (with accurate numbers) as the evidence + format
+// reference, and the model produces ONE final report from it (see
+// diagEvidenceWithTemplate). Keeping the deterministic render means the numbers
+// the model copies are already correct.
 
 func renderDiagnosisReport(d *DiagnosisData) string {
 	var b strings.Builder
@@ -158,20 +164,23 @@ func renderIdxSection(b *strings.Builder, d *DiagnosisData) {
 	b.WriteString(fmt.Sprintf("## 索引概况\n\n```\n未使用索引 %d 个 · 大索引(>10MB) %d 个\n```\n\n", d.IdxUnused, d.IdxLarge))
 }
 
-// diagAssistantSummary is the terse assistant-audience digest (the user sees the
-// rendered report; the model just confirms and can drill deeper).
-func diagAssistantSummary(d *DiagnosisData) string {
+// diagEvidenceWithTemplate hands the model the deterministically-rendered,
+// number-accurate 6-dimension evidence (via renderDiagnosisReport) PLUS a soft
+// format reference and an instruction to produce ONE complete diagnosis report
+// directly to the user. Single-pass: the model copies the accurate numbers and
+// adds the analysis (root-cause causal chains + prioritized actions) in its own
+// reply — no second tool call, no rigid schema, room to improvise.
+func diagEvidenceWithTemplate(d *DiagnosisData) string {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("多维诊断报告已直接展示给用户(确定性渲染),评分 %d/100 %s。", d.Health.Score, d.Health.Grade))
-	if probs := detectDiagProblems(d); len(probs) > 0 {
-		var t []string
-		for _, p := range probs {
-			t = append(t, p.Title)
-		}
-		b.WriteString("发现:" + strings.Join(t, "、") + "。")
-	} else {
-		b.WriteString("多维扫描无 WARN/FAIL 级问题。")
-	}
-	b.WriteString("勿重复报告内容;可一句话收尾,或对最慢 SQL 用 sqltune 深入。")
+	b.WriteString("【任务】下面是插件确定性采集并渲染的 6 维实测证据(数字 100% 准确)。请你以它为基础,直接产出一份完整、浑然一体的数据库诊断报告给用户 —— 一轮写完,不要调用其它工具,也不要复述本说明。\n\n")
+	b.WriteString("=== 实测证据(数字与表格可直接引用,不得改动)===\n\n")
+	b.WriteString(renderDiagnosisReport(d))
+	b.WriteString("\n=== 在上面证据基础上发挥 ===\n")
+	b.WriteString("- 总览与证据表格:保留或精炼,数字以上面为准,严禁编造或改动;\n")
+	b.WriteString("- 补充【根因分析】:每条给 现象 → 中间机制 → 根因 的因果链,尽量跨维关联(如 死元组堆积 ↔ autovacuum 滞后 ↔ 表膨胀 ↔ 慢SQL;命中率低 ↔ 大表全扫 ↔ IO);\n")
+	b.WriteString("- 补充【优化方案】:按 P0/P1/P2 优先级,每条给可执行 SQL/命令 + 风险 + 前置检查 + 回滚;\n")
+	b.WriteString("- 标注:实测数据标【实测】,你的推断标【AI推断】,便于人工复核;\n")
+	b.WriteString("- 上面的章节/表格只是格式参考,结构、详略、emoji 可按你的判断自由调整;\n")
+	b.WriteString("- 中文输出,markdown 即可(codexgo 会渲染表格,优先用 markdown 表格)。\n")
 	return b.String()
 }

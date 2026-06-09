@@ -50,19 +50,21 @@ type healthCounts struct {
 func registerHealth(s *mcp.Server, conn *db.Conn) {
 	tool := mcp.Tool{
 		Name:        "health",
-		Description: "Open-ended database DIAGNOSIS for the connected GaussDB/openGauss instance — use this for ANY \"当前数据库有什么问题 / what's wrong / health / 体检 / 性能 / 慢 / 锁 / diagnose\" question. The plugin collects ALL dimensions itself (health metrics + wait events + top slow SQL + lock-blocking chains + dead-tuple distribution + index summary) and renders a full multi-dimension report DIRECTLY to the user. Present it as-is — do NOT rebuild tables or restate the numbers; you may add one short line or drill into the slowest SQL via sqltune. Read-only.",
+		Description: "Open-ended database DIAGNOSIS for the connected GaussDB/openGauss instance — use this for ANY \"当前数据库有什么问题 / what's wrong / health / 体检 / 性能 / 慢 / 锁 / diagnose\" question. The plugin deterministically collects 6 dimensions of EVIDENCE (health metrics + wait events + top slow SQL + lock-blocking chains + dead-tuple distribution + index summary) with accurate numbers and returns them together with a format reference. Based on this evidence, write ONE complete diagnosis report directly to the user in a single reply: keep the accurate numbers/tables, then add root-cause analysis (cross-dimension causal chains) and prioritized actions (P0/P1/P2 with executable SQL + risk). Do NOT call other tools for this. Read-only.",
 		InputSchema: jsonObjSchema(map[string]any{}),
 	}
 	s.Register(tool, func(ctx context.Context, _ json.RawMessage) (mcp.CallToolResult, error) {
 		if err := ensureConn(ctx, conn); err != nil {
 			return mcp.CallToolResult{}, err
 		}
-		// Multi-dimension collection (health + waits + slow SQL + locks + dead
-		// tuples + indexes) — coverage is deterministic, not model-chosen.
+		// Single-pass: multi-dimension collection (health + waits + slow SQL +
+		// locks + dead tuples + indexes) — coverage is deterministic, not
+		// model-chosen. The number-accurate evidence + a soft format reference go
+		// to the model (assistant audience), which produces ONE final report from
+		// it in its own reply. No rigid schema, no second tool call.
 		d := collectDiagnosis(ctx, conn)
 		return mcp.CallToolResult{Content: []mcp.ContentItem{
-			mcp.TextContentFor(renderDiagnosisReport(d), "user"),
-			mcp.TextContentFor(diagAssistantSummary(d), "assistant"),
+			mcp.TextContentFor(diagEvidenceWithTemplate(d), "assistant"),
 		}}, nil
 	})
 }
