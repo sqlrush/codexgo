@@ -83,6 +83,35 @@ func TestTranscriptRendersMcpToolResult(t *testing.T) {
 	}
 }
 
+// TestSlashResultRendersMarkdown verifies a successful deterministic slash
+// result is markdown-rendered (headings styled, code fences stripped) rather
+// than shown as raw text — the fix for "/slowsql shows literal ```".
+func TestSlashResultRendersMarkdown(t *testing.T) {
+	tr := NewChatTranscript(testTheme())
+	md := "## WAL\n\n```\n当前 LSN : 14A/6D8D\n```\n"
+	view, _ := tr.Update(McpToolResultMsg{Command: "wal", Text: md, IsError: false})
+	out := view.View(Rect{Width: 80, Height: 12})
+	if strings.Contains(out, "```") {
+		t.Errorf("code fences should be stripped, got:\n%s", out)
+	}
+	if !strings.Contains(out, "当前 LSN : 14A/6D8D") {
+		t.Errorf("code content missing:\n%s", out)
+	}
+	if !strings.Contains(out, "WAL") {
+		t.Errorf("heading content missing:\n%s", out)
+	}
+}
+
+// TestSlashErrorStillNotice verifies an error result keeps the raw notice path.
+func TestSlashErrorStillNotice(t *testing.T) {
+	tr := NewChatTranscript(testTheme())
+	view, _ := tr.Update(McpToolResultMsg{Command: "x", Text: "unknown tool: x", IsError: true})
+	out := view.View(Rect{Width: 60, Height: 6})
+	if !strings.Contains(out, "unknown tool: x") {
+		t.Errorf("error text missing:\n%s", out)
+	}
+}
+
 func TestIndexMcpToolsKeyedByLowerName(t *testing.T) {
 	idx := indexMcpTools(sampleMcpTools())
 	if _, ok := idx["health"]; !ok {
