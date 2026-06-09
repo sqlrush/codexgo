@@ -147,3 +147,116 @@ East-Asian-Ambiguous 宽度 = 2 cell,会与内容错位(已踩过坑)。codexgo 
 - 树形(blocktree)用 **ASCII 树**,避免歧义宽度;
 - 进度条/柱状用 `█░`(同一行内同宽,不与边框交错);
 - 数字采集确定性(插件)/ 叙述分析交模型,沿用单轮诊断范式。
+
+---
+
+# 逐命令迁移评估(去向 / 采样优化 / UI 优化)
+
+**评级**:🟢核心必迁 · 🔵推荐迁 · 🟡增强后迁 · 🔀合并入其他工具 · ⏭️后置(场景窄/依赖环境)· ⛔写操作(触只读边界,单独决策)· ✅已迁移。
+
+**判据**:诊断价值 × 使用频度 × GaussDB 适用性 × MCP(一问一答)可行性 × 与现有工具重叠度。
+
+## A. 会话 / 锁 / 阻塞 → 合并为 3 个工具
+
+| 命令 | 去向 | 采样优化 | UI 优化 |
+|---|---|---|---|
+| `/sessions` | 🟢 独立(吸收 activesessions) | 补 idle 时长(now−state_change)、wait_event_type 分类、backend_type 过滤后台、client_addr、按 state 聚合计数;参数 `active`/`all` | ASCII 表 + 顶部 state 分布条(active/idle/idle-in-tx)+ 长 idle-in-tx ⚠️高亮 |
+| `/activesessions` | 🔀 并入 `/sessions active` | 同上 | 同上 |
+| `/locks` | 🟢 独立(吸收 blocktree) | granted/waiting 区分、锁模式、持有者↔等待者 pid+query、等待时长 | 平铺 ASCII 表 **+** 阻塞链 ASCII 树二合一 |
+| `/blocktree` | 🔀 并入 `/locks` | 递归 CTE 多级链、环检测、根阻塞者标记、阻塞时长 | CJK-safe **ASCII 树**(非 box-drawing)+ 根因高亮 + "建议 kill 根 pid X" |
+| `/lwlocks` | 🔵 独立 | 按 wait_status/event 聚合、Top 争用、持续时间;补 OG 特有 LWLock 名 | ASCII 表 + 等待分布条 |
+| `/longtx` | 🟢 独立 | 补 backend_xmin(是否阻塞 vacuum)、是否持锁、时长分级阈值 | ASCII 表 + 时长分级(>5min⚠️ >30min🔴)+ "阻塞 vacuum"标记 |
+
+## B. 事务 / MVCC / 膨胀 / 空间 → 合并为 5 个工具
+
+| 命令 | 去向 | 采样优化 | UI 优化 |
+|---|---|---|---|
+| `/xid` | 🟢 独立(比 health 单项细) | per-db + Top 高龄表、距 autovacuum_freeze_max_age / wraparound 余量、需 freeze 表 | ASCII 表 + 回卷风险进度条(age/2³¹)+ 分级 |
+| `/vacuum` | 🟢 独立(吸收 autovacuum) | 死元组比、last_(auto)vacuum、距触发阈值(threshold+scale×reltuples)、超阈未触发 | ASCII 表 + 死元组比条 + "已超阈未触发"🔴 |
+| `/autovacuum` | 🔀 并入 `/vacuum` | 进行中 worker(pg_stat_progress_vacuum 若有)、被 longtx 阻塞源 | 进行中高亮 + 阻塞源关联 |
+| `/bloat` | 🔵 独立(或并 vacuum) | 升级:经典膨胀估算 SQL(reltuples/relpages+列宽,免扫表);pgstattuple 可选精确 | ASCII 表 + 膨胀比条 + 回收建议(VACUUM FULL/重建) |
+| `/space` | 🟢 独立(库级,吸收 segments/toast 钻取) | 库 size、表空间、磁盘剩余(配合 /os) | Panel + 大小条 |
+| `/segments` | 🔀 并入 `/space`(表级钻取) | 表+索引+TOAST 分解、relkind | ASCII 表 + 表/索引/TOAST 占比条 |
+| `/toasttable` | 🔀 并入 `/space`(大对象展开) | TOAST 占比、关联主表 | 仅大 TOAST 时展开列 |
+| `/tempusage` | 🔵 独立 | pg_stat_database temp_files/bytes + 实时 spill 会话 + work_mem 设置 | ASCII 表 + spill 会话高亮 + work_mem 调整建议 |
+| `/hotkey` | 🔵 独立 | seq/idx scan 比、HOT 比、ins/upd/del、关联表大小 | ASCII 表 + 活动评分条 + seq-heavy/update-heavy 标记 |
+
+## C. 内存 → 合并为 1 个工具
+
+| 命令 | 去向 | 采样优化 | UI 优化 |
+|---|---|---|---|
+| `/gsmem` | 🟢 独立(吸收 sessionmem) | 按 memorytype 分类、max_dynamic_memory vs used、命中率、各 context Top | Panel 分段(共享缓冲/动态内存/命中率)+ 使用率条 + 命中率分级 |
+| `/sessionmem` | 🔀 并入 `/gsmem`(Top 会话) | Top 内存会话 + 关联 query/user | 总览下挂 Top 会话表 |
+
+## D. WAL / 复制 / HA → 合并为 3 个工具
+
+| 命令 | 去向 | 采样优化 | UI 优化 |
+|---|---|---|---|
+| `/wal` | 🔵 独立(吸收 walsummary/checkpoint/backup) | LSN、归档状态、生成速率、checkpoint timed/req 比、completion_target | Panel 分段 + 请求式 checkpoint 占比⚠️条 |
+| `/walsummary` | 🔀 并入 `/wal` | OG5.0 无 archiver 的降级逻辑 | — |
+| `/checkpoint` | 🔀 并入 `/wal` | 写放大、buffers_checkpoint 占比 | 请求式占比警告 |
+| `/replication` | 🟢 独立(吸收 slots/logicalslots/pubsub) | 主端每备库 sent/write/flush/replay LSN + lag(字节/时间)、sync_state、断连告警 | Panel 每备库 + 延迟条 + 同步/异步分级 |
+| `/slots` | 🔀 并入 `/replication` | active/inactive、restart_lsn、retained WAL | retained WAL 过大⚠️条 |
+| `/logicalslots` | 🔀 并入 `/replication` | catalog_xmin 阻塞 vacuum、plugin、retained WAL | "阻塞 vacuum"标记 |
+| `/pubsub` | 🟡 并入 `/replication`(可选段) | publication/subscription 计数 | 仅有逻辑复制时展开 |
+| `/bgworker` | 🟡 独立或并 `/wal` | thread_wait_status 聚合、archiver 失败 | ASCII 表 + 失败告警行 |
+| `/cmha` | ⏭️ 后置 | 依赖企业版 CM 视图,普通部署无 | — |
+
+## E. SQL / 性能(多数已迁移)
+
+| 命令 | 去向 | 采样优化 | UI 优化 |
+|---|---|---|---|
+| `/topsql` `/slowsql` `/explain` `/ash` `/planhistory` `/sqltune` `/sqlfetch` `/wdr` `/wdranalyze` | ✅ 已迁移 | 增强:topsql 补全 sort_key 维度;ash 补 wait_event 分类树 | 已用 codexgo 范式;ash 可加等待分布条 |
+| `/perfsnap` `/psnap` | 🔵 独立(需持久化) | 多源 delta、ring buffer 持久化(snap/compare/list/baseline) | before/after/**delta 对比表** + 变化高亮(↑↓) |
+| `/sqlcount` | 🟡 独立 | gs_sql_count 按 user/类型、avg/max 延迟 | ASCII 表 + DML/DDL/DCL 占比条 |
+| `/sql` | ⛔/🟡 只读版 | 仅放行 SELECT/EXPLAIN(只读边界);DML 不做 | 表格;非只读语句拒绝 |
+| `/dbtop` | ⏭️ 降级 | 改"**单次快照仪表盘**"(放弃持续刷新,MCP 不适交互刷新) | 单帧 Panel 多指标 |
+
+## F. 体检 / 系统 / 资源 / 元数据
+
+| 命令 | 去向 | 采样优化 | UI 优化 |
+|---|---|---|---|
+| `/health` `/indexhealth` | ✅ 已迁移 | — | — |
+| `/resource` | 🔵 独立 | 各 max_*(连接/walsender/worker/prepared_xact)vs 当前使用率 | Panel + 4 组使用率条 |
+| `/os` | 🔵 独立(依赖视图) | pv_os_run_info(远程 DB 主机的 load/mem/cpu);插件本机 /proc≠DB 主机,须走视图 | Panel + 进度条;视图不可用时友好降级 |
+| `/users` | 🔵 独立 | pg_roles/pg_authid、rolvaliduntil、超权、登录权限、密码过期;权限不足 fallback pg_roles | ASCII 表 + 过期/超权🔴高亮 |
+| `/alert` | 🔵 独立或并 health | deadlocks/conflicts/temp_files、近期增量 | ASCII 表 + severity 标 |
+| `/respool` | ⏭️ 后置 | WLM 资源池,使用面窄 | — |
+| `/mot` | ⏭️ 后置 | MOT 需编译开启,极少用 | — |
+| `/ogerr` | 🟡 独立(低成本) | 纯本地 KB,无需 DB;模型本身懂错误码 → 做成模型可查参考即可 | 面板(成因/诊断命令/修复) |
+
+## G. 管理 / 变更 ⛔写(单独决策)
+
+| 命令 | 去向 | 采样优化 | UI 优化 |
+|---|---|---|---|
+| `/params` | 🔵 独立(只读) | pg_settings 全量 + 分类 + context(改后是否需重启) | ASCII 表 + 按类分组 + 可改性标记 |
+| `/backup` | 🔀 并入 `/wal`(只读) | archiver + 配置 | Panel 段 |
+| `/kill` | ⛔ 决策 | 只读边界:纳入需确认+审计+权限 | 确认面板 + 结果 |
+| `/alter` | ⛔ 决策(高危) | 改参数,后置 | 确认 + reload 校验 |
+| `/gather` | ⛔ 决策 | check(只读)可迁;run(写)受限 | check→run 两阶段 |
+| `/jobs` | ⏭️ 后置 | 依赖 pg_cron 扩展 | ASCII 表 |
+
+## H. Schema
+
+| 命令 | 去向 | 采样优化 | UI 优化 |
+|---|---|---|---|
+| `/tableinfo` | 🟢 独立 | 列/索引/约束/统计/大小/分区/最近 analyze | 多 section ASCII 表 |
+| `/indexadvise` | 🔵 独立(注意重叠) | gs_index_advise + EXPLAIN 分析;与 sqltune/indexhealth 重叠,定位"单 SQL 索引建议" | 建议列表 + 与现有索引去重提示 |
+
+## 关键结论:56 命令 → 约 24 个聚合工具
+
+合并是这次最大的"功能优化"—— opendb 命令细碎,codexgo 聚合成更少、更强的诊断工具:
+
+- **A 会话锁**:6 → 3(`sessions`含active / `locks`含blocktree / `lwlocks` / `longtx`)
+- **B 空间MVCC**:9 → 6(`xid` / `vacuum`含autovacuum / `bloat` / `space`含segments+toast / `tempusage` / `hotkey`)
+- **C 内存**:2 → 1(`gsmem`含sessionmem)
+- **D WAL复制**:9 → 3(`wal`含walsummary+checkpoint+backup / `replication`含slots+logicalslots+pubsub / `bgworker`)
+- **E 性能**:已迁 9 + 新 `perfsnap` / `sqlcount` / `dbtop`(单帧)
+- **F 系统**:`resource` / `os` / `users` / `alert`
+- **G/H**:`params` / `tableinfo` / `indexadvise`;写操作单独决策
+
+## 建议分批
+
+- **本版(纯只读,不破边界)**:A+B+C+D+F + perfsnap/sqlcount + tableinfo/indexadvise/params ≈ **新增 ~20 个聚合工具**。
+- **后置**:cmha / respool / mot / jobs / ogerr。
+- **单独议**:kill / alter / gather(写操作)、dbtop(交互刷新)、sql(任意执行)。
