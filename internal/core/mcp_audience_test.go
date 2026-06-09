@@ -18,41 +18,22 @@ func mkContent(text string, audience ...string) json.RawMessage {
 	return b
 }
 
-// TestMcpResultTextAudienceFilter verifies the model receives everything EXCEPT
-// content addressed only to the user (audience=["user"]). This is what keeps the
-// model from re-wording/duplicating a user-facing report block.
-func TestMcpResultTextAudienceFilter(t *testing.T) {
+// TestMcpResultTextIncludesAllBlocks verifies the model receives EVERY text
+// block — including user-addressed reports. In a model-driven turn the model
+// needs the full tool data to summarize it for the user; audience annotations
+// only steer the deterministic slash render path, not what the model sees.
+func TestMcpResultTextIncludesAllBlocks(t *testing.T) {
 	result := protocol.CallToolResult{Content: []json.RawMessage{
-		mkContent("FULL USER REPORT", "user"),       // user-only -> skipped
-		mkContent("terse digest", "assistant"),      // assistant -> kept
+		mkContent("FULL USER REPORT", "user"),         // user-only -> now kept
+		mkContent("terse digest", "assistant"),        // assistant -> kept
 		mkContent("shared note", "user", "assistant"), // both -> kept
-		mkContent("legacy untagged"),                 // no audience -> kept (back-compat)
+		mkContent("legacy untagged"),                  // no audience -> kept
 	}}
 	got := mcpResultText(result)
 
-	if strings.Contains(got, "FULL USER REPORT") {
-		t.Errorf("user-only content leaked to the model: %q", got)
-	}
-	for _, want := range []string{"terse digest", "shared note", "legacy untagged"} {
+	for _, want := range []string{"FULL USER REPORT", "terse digest", "shared note", "legacy untagged"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("expected %q in model text, got %q", want, got)
-		}
-	}
-}
-
-func TestAudienceExcludesModel(t *testing.T) {
-	cases := []struct {
-		aud  []string
-		want bool
-	}{
-		{nil, false},                       // unannotated -> goes to model
-		{[]string{"user"}, true},           // user-only -> excluded
-		{[]string{"assistant"}, false},     // assistant -> included
-		{[]string{"user", "assistant"}, false},
-	}
-	for _, c := range cases {
-		if got := audienceExcludesModel(c.aud); got != c.want {
-			t.Errorf("audienceExcludesModel(%v)=%v want %v", c.aud, got, c.want)
 		}
 	}
 }

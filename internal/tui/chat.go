@@ -273,13 +273,10 @@ func (t ChatTranscript) applyEvent(ev protocol.Event) ChatTranscript {
 		if ev.Msg.McpToolCallEnd != nil {
 			end := ev.Msg.McpToolCallEnd
 			t = t.completeTool(end.CallID, end.Result)
-			// Content addressed to the user (annotations.audience contains "user")
-			// is rendered directly here as markdown, bypassing the model. Generic
-			// across MCP tools; "" (no such content) renders nothing.
-			if md := userAudienceMarkdown(end.Result); md != "" {
-				t = t.commitStream()
-				t.cells = t.appendCell(NewMcpDirectCell(t.markdown, md))
-			}
+			// A model-invoked tool is NOT auto-rendered here: its full result is fed
+			// to the model (see core.mcpResultText), which then writes a single
+			// summary of all the tools it called. Only the tool-call chip shows. The
+			// deterministic slash path (McpToolResultMsg) renders tool output directly.
 		}
 
 	case protocol.EventMsgKindTurnDiff:
@@ -414,6 +411,13 @@ func (t ChatTranscript) completeTool(callID string, result []byte) ChatTranscrip
 		return t
 	}
 	text, failed := toolResultText(result)
+	// On success the chip shows only its title (✔ server · tool): the model
+	// receives the full tool result and summarizes it, so dumping the raw result
+	// body here would be redundant noise. Failures still surface their body so the
+	// user can see what broke.
+	if !failed {
+		text = ""
+	}
 	t.cells = cloneCells(t.cells)
 	t.cells[idx] = cell.Complete(text, failed)
 	return t
