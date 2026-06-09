@@ -31,6 +31,11 @@ func Register(s *mcp.Server, conn *db.Conn) {
 	registerWAL(s, conn)
 	registerReplication(s, conn)
 	registerBgWorker(s, conn)
+	// system / resource / metadata (batch 4)
+	registerResource(s, conn)
+	registerOS(s, conn)
+	registerUsers(s, conn)
+	registerAlert(s, conn)
 	// statement-view tools: slowsql, topsql, sqlfetch, planhistory
 	registerQuery(s, conn)
 	// plan + sessions + indexes
