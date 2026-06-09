@@ -31,7 +31,7 @@ FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE c.relkind IN ('r','t','m')
   AND c.relfrozenxid::text::bigint > 0
-  AND n.nspname NOT IN ('pg_catalog','information_schema','snapshot','dbe_perf','db4ai','gs_logical_cluster','sqladvisor')
+  AND n.nspname NOT IN ('pg_catalog','information_schema','pg_toast')
 ORDER BY txid_current() - c.relfrozenxid::text::bigint DESC
 LIMIT %d`
 

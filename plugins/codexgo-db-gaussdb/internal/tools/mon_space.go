@@ -41,7 +41,7 @@ const spaceToastSQL = `SELECT
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE c.relkind = 'r' AND c.reltoastrelid <> 0
-  AND n.nspname NOT IN ('pg_catalog','information_schema','snapshot','dbe_perf','db4ai','gs_logical_cluster','sqladvisor')
+  AND n.nspname NOT IN ('pg_catalog','information_schema','pg_toast')
 ORDER BY pg_relation_size(c.reltoastrelid) DESC
 LIMIT %d`
 

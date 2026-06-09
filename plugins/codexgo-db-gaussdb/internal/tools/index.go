@@ -10,9 +10,11 @@ import (
 	"github.com/sqlrush/codexgo-db-gaussdb/internal/mcp"
 )
 
-// sysSchemaFilter excludes openGauss/GaussDB internal schemas from index checks
-// (matches opendb's exclusion set).
-const sysSchemaFilter = `'pg_catalog','information_schema','snapshot','dbe_perf','dbe_pldeveloper','dbe_pldebugger','db4ai','gs_logical_cluster','sqladvisor'`
+// sysSchemaFilter excludes only the core PG system catalogs (pure metadata, not
+// data tables). openGauss engine-internal schemas (snapshot / dbe_perf / db4ai /
+// …) are KEPT so every tool counts them uniformly — same scope as /health, which
+// reads pg_stat_user_tables (engine-internal included, PG catalogs excluded).
+const sysSchemaFilter = `'pg_catalog','information_schema','pg_toast'`
 
 // IndexHealthReport bundles the four index checks plus a roll-up summary. Each
 // section is independent: one failing query degrades to an empty section with a
