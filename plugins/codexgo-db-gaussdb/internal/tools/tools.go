@@ -14,6 +14,11 @@ func Register(s *mcp.Server, conn *db.Conn) {
 	// connection + open-ended diagnosis (single-pass: evidence + model analysis)
 	registerConnect(s, conn)
 	registerHealth(s, conn)
+	// monitoring — session & lock (batch 1)
+	registerSessions(s, conn)
+	registerLocks(s, conn)
+	registerLWLocks(s, conn)
+	registerLongTx(s, conn)
 	// statement-view tools: slowsql, topsql, sqlfetch, planhistory
 	registerQuery(s, conn)
 	// plan + sessions + indexes
