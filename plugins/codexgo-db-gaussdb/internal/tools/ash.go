@@ -70,6 +70,6 @@ LIMIT 20`)
 				nil, detail,
 			)
 		}
-		return jsonResult(report)
+		return ashResult(report)
 	})
 }

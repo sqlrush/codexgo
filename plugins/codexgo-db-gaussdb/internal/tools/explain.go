@@ -84,7 +84,7 @@ func registerExplain(s *mcp.Server, conn *db.Conn) {
 		if len(report.Issues) == 0 {
 			report.Note = "未发现常见低效算子;若仍慢,结合 planhistory 看是否计划回退或统计信息陈旧。"
 		}
-		return jsonResult(report)
+		return explainResult(report)
 	})
 }
 

@@ -76,7 +76,7 @@ LIMIT %d`, a.ThresholdMS, limit)
 			map[string]string{"threshold_ms": strconv.Itoa(a.ThresholdMS), "limit": strconv.Itoa(limit)},
 			res,
 		)
-		return jsonResult(report)
+		return tableResult(report)
 	})
 }
 
@@ -146,7 +146,7 @@ LIMIT %d`, orderBy, limit)
 			map[string]string{"sort": sortKey, "limit": strconv.Itoa(limit)},
 			res,
 		)
-		return jsonResult(report)
+		return tableResult(report)
 	})
 }
 
@@ -209,7 +209,7 @@ func registerSQLFetch(s *mcp.Server, conn *db.Conn) {
 		if res.Query == "" {
 			return mcp.CallToolResult{}, fmt.Errorf("sql_id %s not found in statement_history or statement", id)
 		}
-		return jsonResult(res)
+		return sqlFetchResult(res)
 	})
 }
 
@@ -322,6 +322,6 @@ LIMIT %d`, limit)
 			map[string]string{"sql_id": id, "limit": strconv.Itoa(limit)},
 			res,
 		)
-		return jsonResult(report)
+		return tableResult(report)
 	})
 }

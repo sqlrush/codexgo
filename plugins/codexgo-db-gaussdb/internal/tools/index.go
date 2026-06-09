@@ -104,7 +104,7 @@ ORDER BY pg_relation_size(indexrelid) DESC
 LIMIT %d`, sysSchemaFilter, limit),
 			"超过 10MB 的大索引;若 idx_scan 也低则优先排查,必要时 REINDEX 回收膨胀空间。")
 
-		return jsonResult(report)
+		return indexHealthResult(report)
 	})
 }
 

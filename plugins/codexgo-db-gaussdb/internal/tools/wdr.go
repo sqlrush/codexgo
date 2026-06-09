@@ -57,7 +57,7 @@ LIMIT %d`, limit))
 			map[string]string{"limit": strconv.Itoa(limit)},
 			res,
 		)
-		return jsonResult(report)
+		return tableResult(report)
 	})
 }
 
@@ -126,7 +126,7 @@ func registerWDRAnalyze(s *mcp.Server, conn *db.Conn) {
 		}
 		report.ReportText = text
 		report.Note = "report_text 为引擎生成的 WDR 原文;请据此输出:工作负载画像、风险发现(分级)、Top SQL 列表,并对 Top SQL 调 sqltune 下钻。提醒结论需人工复核。"
-		return jsonResult(report)
+		return wdrAnalyzeResult(report)
 	})
 }
 
