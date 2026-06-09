@@ -174,16 +174,20 @@ func renderSQLFetch(r SQLFetchResult) string {
 // --- wdranalyze: LLM-driven (model analyzes the engine WDR text) -------------
 
 func wdrAnalyzeResult(r WDRAnalyzeReport) (mcp.CallToolResult, error) {
-	// Evidence = the engine-generated WDR report text, rendered to BOTH the user
-	// (so /wdranalyze via slash shows real content) and the model (to analyze).
+	// Evidence = the engine-generated WDR report. openGauss returns it as HTML, so
+	// parse it into readable text tables (raw HTML is useless to read). Rendered to
+	// BOTH the user (slash shows real content) and the model (to analyze).
 	var ev strings.Builder
 	ev.WriteString(fmt.Sprintf("# 📈 WDR 报告 · snap %d → %d\n\n", r.BeginSnap, r.EndSnap))
 	if len(r.Warnings) > 0 {
 		ev.WriteString("> " + strings.Join(r.Warnings, " · ") + "\n\n")
 	}
-	ev.WriteString("```\n")
-	ev.WriteString(strings.TrimSpace(r.ReportText))
-	ev.WriteString("\n```\n")
+	if secs := parseWDRHTML(r.ReportText); len(secs) > 0 {
+		ev.WriteString(renderWDRSections(secs))
+	} else {
+		// not HTML (or unparsable) — fall back to the raw text in a fence.
+		ev.WriteString("```\n" + strings.TrimSpace(r.ReportText) + "\n```\n")
+	}
 
 	instr := "上面是引擎生成的 WDR 原文(已直接展示给用户)。请勿复述原文,在其后产出 markdown 分析:\n" +
 		"## 工作负载画像\n## 风险发现(按严重度分级)\n## Top SQL(并对最重的 SQL 调 sqltune 下钻)\n结论标注需人工复核。中文输出,不要调用其它工具。"
