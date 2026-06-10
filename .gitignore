@@ -29,3 +29,4 @@ go.work.sum
 /testdata/golden/*.json
 # local debug/screenshot scratch
 prd/
+/codex

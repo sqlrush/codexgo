@@ -57,6 +57,12 @@ type ChatTranscript struct {
 	turnStartedAt   time.Time
 	hadWorkActivity bool
 
+	// renderedThisTurn dedups model-invoked MCP direct-renders within a turn: a
+	// tool whose rendered markdown matches one already shown this turn is skipped,
+	// so the model calling the same tool twice does not double-render. Reset on
+	// TurnStarted.
+	renderedThisTurn map[string]bool
+
 	// header retains the session-header seed (version/model/directory) supplied to
 	// WithSessionHeader so a fresh session after /clear can re-seed the same
 	// welcome card. seeded records whether a header was ever attached, so
@@ -205,6 +211,7 @@ func (t ChatTranscript) applyEvent(ev protocol.Event) ChatTranscript {
 		// the completed-turn separator (turn_runtime.rs had_work_activity).
 		t.turnStartedAt = time.Now()
 		t.hadWorkActivity = false
+		t.renderedThisTurn = nil
 
 	case protocol.EventMsgKindUserMessage:
 		if ev.Msg.UserMessage != nil && strings.TrimSpace(ev.Msg.UserMessage.Message) != "" {
@@ -273,10 +280,18 @@ func (t ChatTranscript) applyEvent(ev protocol.Event) ChatTranscript {
 		if ev.Msg.McpToolCallEnd != nil {
 			end := ev.Msg.McpToolCallEnd
 			t = t.completeTool(end.CallID, end.Result)
-			// A model-invoked tool is NOT auto-rendered here: its full result is fed
-			// to the model (see core.mcpResultText), which then writes a single
-			// summary of all the tools it called. Only the tool-call chip shows. The
-			// deterministic slash path (McpToolResultMsg) renders tool output directly.
+			// User-addressed content (annotations.audience contains "user") is
+			// rendered directly here as the plugin's deterministic markdown — the
+			// rich tables/panels, not a model re-wording. The model ALSO receives
+			// this content (see core.mcpResultText) so it can answer precisely
+			// without re-querying; it adds a short note on top, not the table.
+			// Dedup within a turn so a tool the model calls twice renders once.
+			if md := userAudienceMarkdown(end.Result); md != "" && !t.renderedThisTurn[md] {
+				t = t.commitStream()
+				t.renderedThisTurn = cloneStringSet(t.renderedThisTurn)
+				t.renderedThisTurn[md] = true
+				t.cells = t.appendCell(NewMcpDirectCell(t.markdown, md))
+			}
 		}
 
 	case protocol.EventMsgKindTurnDiff:
@@ -583,6 +598,16 @@ func cloneIndex(m map[string]int) map[string]int {
 	out := make(map[string]int, len(m))
 	for k, v := range m {
 		out[k] = v
+	}
+	return out
+}
+
+// cloneStringSet returns a copy of a string set with room for one more entry
+// (immutability for the turn-scoped MCP direct-render dedup). Handles a nil map.
+func cloneStringSet(m map[string]bool) map[string]bool {
+	out := make(map[string]bool, len(m)+1)
+	for k := range m {
+		out[k] = true
 	}
 	return out
 }
