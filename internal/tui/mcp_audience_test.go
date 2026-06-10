@@ -24,35 +24,41 @@ func okResult(content ...json.RawMessage) json.RawMessage {
 	return b
 }
 
-// TestUserAudienceMarkdown verifies only user-addressed content is extracted for
-// direct rendering, and assistant-only / untagged content is NOT (so it doesn't
-// double-render alongside the model's reply).
-func TestUserAudienceMarkdown(t *testing.T) {
+// TestSplitUserAudience verifies the routing: user+assistant => autoShow (a
+// deliberate report, shown immediately), user-only => gated (a monitoring table,
+// held for @show), assistant-only / untagged => neither.
+func TestSplitUserAudience(t *testing.T) {
 	raw := okResult(
-		mkContent("# SQL 调优报告\nbody", "user"),
-		mkContent("terse digest", "assistant"),
+		mkContent("# 报告\nREPORT_BODY", "user", "assistant"), // report -> autoShow
+		mkContent("MONITOR_TABLE", "user"),                  // monitoring -> gated
+		mkContent("analysis instruction", "assistant"),      // model-only -> neither
+		mkContent("legacy untagged"),                        // untagged -> neither
 	)
-	got := userAudienceMarkdown(raw)
-	if !strings.Contains(got, "# SQL 调优报告") {
-		t.Errorf("user content not extracted: %q", got)
+	auto, gated := splitUserAudience(raw)
+	if !strings.Contains(auto, "REPORT_BODY") {
+		t.Errorf("user+assistant block should be auto-shown: %q", auto)
 	}
-	if strings.Contains(got, "terse digest") {
-		t.Errorf("assistant content leaked into direct render: %q", got)
+	if strings.Contains(auto, "MONITOR_TABLE") || strings.Contains(auto, "instruction") || strings.Contains(auto, "legacy") {
+		t.Errorf("autoShow leaked non-report content: %q", auto)
+	}
+	if !strings.Contains(gated, "MONITOR_TABLE") {
+		t.Errorf("user-only block should be gated: %q", gated)
+	}
+	if strings.Contains(gated, "REPORT_BODY") || strings.Contains(gated, "instruction") {
+		t.Errorf("gated leaked non-monitoring content: %q", gated)
 	}
 }
 
-func TestUserAudienceMarkdownNoneWhenUntagged(t *testing.T) {
-	// Ordinary tool result (no audience) must render nothing here — it flows to
-	// the model as usual.
-	if got := userAudienceMarkdown(okResult(mkContent("legacy"))); got != "" {
-		t.Errorf("expected empty for untagged content, got %q", got)
+func TestSplitUserAudienceNoneWhenUntagged(t *testing.T) {
+	auto, gated := splitUserAudience(okResult(mkContent("legacy")))
+	if auto != "" || gated != "" {
+		t.Errorf("untagged content should be neither, got auto=%q gated=%q", auto, gated)
 	}
-	// Error result / garbage -> empty, no panic.
-	if got := userAudienceMarkdown(json.RawMessage(`{"Err":"boom"}`)); got != "" {
-		t.Errorf("expected empty for error result, got %q", got)
+	if a, g := splitUserAudience(json.RawMessage(`{"Err":"boom"}`)); a != "" || g != "" {
+		t.Errorf("error result should be empty, got %q/%q", a, g)
 	}
-	if got := userAudienceMarkdown(nil); got != "" {
-		t.Errorf("expected empty for nil, got %q", got)
+	if a, g := splitUserAudience(nil); a != "" || g != "" {
+		t.Errorf("nil should be empty, got %q/%q", a, g)
 	}
 }
 

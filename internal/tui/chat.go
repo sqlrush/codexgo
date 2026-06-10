@@ -288,16 +288,24 @@ func (t ChatTranscript) applyEvent(ev protocol.Event) ChatTranscript {
 		if ev.Msg.McpToolCallEnd != nil {
 			end := ev.Msg.McpToolCallEnd
 			t = t.completeTool(end.CallID, end.Result)
-			// Do NOT auto-render: the model may call many tools while exploring, and
-			// flooding the transcript with every (often irrelevant) table is what we
-			// are avoiding. Instead stash the tool's user-addressed render; the model
-			// declares which results are relevant to the user's question via a
-			// trailing "@show: <tools>" line in its final reply, and only those
-			// tables render (see appendAgentText). The model still receives the full
-			// result (core.mcpResultText) to reason over.
-			if md := userAudienceMarkdown(end.Result); md != "" {
+			// Two kinds of user-addressed output (see splitUserAudience):
+			//   - autoShow: a deliberately-invoked report (health/sqltune/wdranalyze,
+			//     audience user+assistant) — render NOW so it never vanishes.
+			//   - gated: a per-call monitoring table (audience user-only) — stash it;
+			//     the model declares the relevant ones via a trailing "@show: <tools>"
+			//     line and only those render (see appendAgentText), so exploring with
+			//     many tools doesn't flood the transcript.
+			// The model still receives the full result (core.mcpResultText) either way.
+			autoShow, gated := splitUserAudience(end.Result)
+			if autoShow != "" && !t.renderedThisTurn[autoShow] {
+				t = t.commitStream()
+				t.renderedThisTurn = cloneStringSet(t.renderedThisTurn)
+				t.renderedThisTurn[autoShow] = true
+				t.cells = t.appendCell(NewMcpDirectCell(t.markdown, autoShow))
+			}
+			if gated != "" {
 				t.toolRenders = cloneStringMap(t.toolRenders)
-				t.toolRenders[strings.ToLower(strings.TrimSpace(end.Invocation.Tool))] = md
+				t.toolRenders[strings.ToLower(strings.TrimSpace(end.Invocation.Tool))] = gated
 			}
 		}
 

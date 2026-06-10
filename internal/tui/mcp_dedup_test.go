@@ -27,6 +27,38 @@ func agentMsg(text string) protocol.Event {
 	}}
 }
 
+// mcpEndReport builds an McpToolCallEnd whose body is addressed to BOTH user and
+// assistant — a deliberately-invoked report (health/sqltune/wdranalyze).
+func mcpEndReport(callID, tool, body string) protocol.Event {
+	return protocol.Event{Msg: protocol.EventMsg{
+		Type: protocol.EventMsgKindMcpToolCallEnd,
+		McpToolCallEnd: &protocol.McpToolCallEndEvent{
+			CallID:     callID,
+			Invocation: protocol.McpInvocation{Server: "gaussdb", Tool: tool},
+			Result:     okResult(mkContent(body, "user", "assistant")),
+		},
+	}}
+}
+
+// TestReportToolAutoShownWithoutDirective verifies a report tool (user+assistant
+// audience, e.g. wdranalyze) renders immediately and is NOT gated behind @show —
+// so its result never vanishes when the model omits the directive.
+func TestReportToolAutoShownWithoutDirective(t *testing.T) {
+	tr := NewChatTranscript(testTheme())
+	tr = tr.applyEvent(mcpEndReport("c1", "wdranalyze", "```\nWDR_REPORT_BODY\n```"))
+	// Even before any agent message, the report is already on screen.
+	out := tr.View(Rect{Width: 60, Height: 20})
+	if !strings.Contains(out, "WDR_REPORT_BODY") {
+		t.Fatalf("report tool must auto-show without @show:\n%s", out)
+	}
+	// A follow-up agent message with no @show must not double-render it.
+	tr = tr.applyEvent(agentMsg("回滚率偏高。"))
+	out = tr.View(Rect{Width: 60, Height: 30})
+	if n := strings.Count(out, "WDR_REPORT_BODY"); n != 1 {
+		t.Fatalf("report should render exactly once, got %d:\n%s", n, out)
+	}
+}
+
 // TestRelevanceGateShowsOnlyDeclared verifies tool tables are NOT auto-rendered;
 // only the tools the model declares via "@show:" render, and the directive line
 // is stripped from the displayed analysis.

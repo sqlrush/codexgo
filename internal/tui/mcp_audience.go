@@ -7,24 +7,39 @@ import (
 	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
-// userAudienceMarkdown extracts the text of MCP result content blocks addressed
-// to the user (standard MCP annotations.audience contains "user"), for direct
-// rendering in the transcript. Returns "" when there is none — the common case —
-// so ordinary tool results render nothing here and flow to the model unchanged.
+// splitUserAudience separates a tool result's user-addressed text by intent,
+// using the standard MCP annotations.audience:
+//
+//	autoShow — blocks addressed to BOTH "user" and "assistant". These are the
+//	  deliberately-invoked report tools (health / sqltune / wdranalyze evidence,
+//	  which a user asks for explicitly and which don't flood). They render
+//	  immediately and are never gated behind @show, so a result never silently
+//	  vanishes because the model forgot to declare it.
+//
+//	gated — blocks addressed to "user" only. These are the per-call monitoring
+//	  tables (space / sessions / wait / …) the model may fan out over while
+//	  exploring; they are stashed and rendered only if the model declares them
+//	  via "@show:" (the relevance gate), so the transcript isn't flooded.
 //
 // raw is the externally-tagged Result<CallToolResult,String> payload
-// ({"Ok":{...}} on success); anything else yields "".
-func userAudienceMarkdown(raw json.RawMessage) string {
+// ({"Ok":{...}} on success); anything else yields "","".
+func splitUserAudience(raw json.RawMessage) (autoShow, gated string) {
 	if len(raw) == 0 {
-		return ""
+		return "", ""
 	}
 	var tagged struct {
 		Ok *protocol.CallToolResult `json:"Ok"`
 	}
 	if err := json.Unmarshal(raw, &tagged); err != nil || tagged.Ok == nil {
-		return ""
+		return "", ""
 	}
-	var b strings.Builder
+	var ab, gb strings.Builder
+	appendLine := func(b *strings.Builder, s string) {
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(s)
+	}
 	for _, c := range tagged.Ok.Content {
 		var item struct {
 			Type        string `json:"type"`
@@ -39,12 +54,13 @@ func userAudienceMarkdown(raw json.RawMessage) string {
 		if item.Annotations == nil || !audienceContains(item.Annotations.Audience, "user") {
 			continue
 		}
-		if b.Len() > 0 {
-			b.WriteByte('\n')
+		if audienceContains(item.Annotations.Audience, "assistant") {
+			appendLine(&ab, item.Text)
+		} else {
+			appendLine(&gb, item.Text)
 		}
-		b.WriteString(item.Text)
 	}
-	return b.String()
+	return ab.String(), gb.String()
 }
 
 // audienceContains reports whether an audience list includes the given role.
