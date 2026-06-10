@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -127,12 +128,15 @@ func (m Model) runMcpTool(desc appserverproto.McpToolDescriptor, args, rawText s
 			return nil
 		}
 	}
+	return m, m.callMcpCmd(desc.Tool, desc.QualifiedName, argsJSON)
+}
 
+// callMcpCmd dispatches a deterministic MCP tool call off the UI loop and
+// delivers the (markdown-rendered) result via McpToolResultMsg.
+func (m Model) callMcpCmd(toolName, qualified string, argsJSON json.RawMessage) tea.Cmd {
 	engine := m.engine
 	sender := m.sender
-	qualified := desc.QualifiedName
-	toolName := desc.Tool
-	return m, func() tea.Msg {
+	return func() tea.Msg {
 		go func() {
 			resp, err := engine.CallMcpTool(context.Background(), qualified, argsJSON)
 			if err != nil {
@@ -143,6 +147,40 @@ func (m Model) runMcpTool(desc appserverproto.McpToolDescriptor, args, rawText s
 		}()
 		return nil
 	}
+}
+
+// dbRawKeywordRe matches input that opens with a SQL statement keyword. Combined
+// with a leading backslash (psql meta-command), this is the third "native psql"
+// entry: such input is routed deterministically to the connected `sql` tool
+// (read-only; writes are rejected there with a clear message) instead of starting
+// an LLM turn. The CJK natural-language the user normally types never matches.
+var dbRawKeywordRe = regexp.MustCompile(`(?i)^(SELECT|WITH|EXPLAIN|SHOW|VALUES|TABLE|INSERT|UPDATE|DELETE|MERGE|CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE|CALL|COMMENT|VACUUM|ANALYZE|REINDEX|CLUSTER|COPY|LOCK|CHECKPOINT)\b`)
+
+// matchDbRaw reports whether text is bare SQL (starts with a SQL keyword) or a
+// psql backslash meta-command, AND a connected MCP tool named "sql" exists to run
+// it. Returns the sql tool descriptor and the statement (the verbatim input).
+func (m Model) matchDbRaw(text string) (appserverproto.McpToolDescriptor, string, bool) {
+	t := strings.TrimSpace(text)
+	if t == "" || strings.HasPrefix(t, "/") {
+		return appserverproto.McpToolDescriptor{}, "", false
+	}
+	desc, ok := m.mcpTools["sql"]
+	if !ok {
+		return appserverproto.McpToolDescriptor{}, "", false
+	}
+	if strings.HasPrefix(t, `\`) || dbRawKeywordRe.MatchString(t) {
+		return desc, t, true
+	}
+	return appserverproto.McpToolDescriptor{}, "", false
+}
+
+// runDbRaw dispatches bare SQL / a backslash meta-command to the `sql` tool with
+// {"statement": <verbatim>}, bypassing the LLM and the @show gate (deterministic,
+// like a slash). The tool enforces read-only and renders the result table.
+func (m Model) runDbRaw(desc appserverproto.McpToolDescriptor, statement, rawText string) (tea.Model, tea.Cmd) {
+	m.transcript = m.transcript.AppendUserMessage(strings.TrimSpace(rawText))
+	argsJSON, _ := json.Marshal(map[string]string{"statement": statement})
+	return m, m.callMcpCmd(desc.Tool, desc.QualifiedName, json.RawMessage(argsJSON))
 }
 
 // prettyJSON indents s when it is a JSON document, otherwise returns it as-is.

@@ -49,6 +49,42 @@ func TestMatchMcpSlashNoToolsNeverMatches(t *testing.T) {
 	}
 }
 
+func TestMatchDbRaw(t *testing.T) {
+	withSQL := Model{mcpTools: indexMcpTools([]appserverproto.McpToolDescriptor{
+		{QualifiedName: "mcp__gaussdb__sql", Server: "gaussdb", Tool: "sql"},
+	})}
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{`\d+ sqltune_demo.orders`, true},     // backslash meta-command
+		{`\dt`, true},                         // backslash
+		{"SELECT count(*) FROM t", true},      // SQL keyword
+		{"  explain select 1", true},          // leading space + lowercase
+		{"UPDATE t SET x=1", true},            // write routes too (tool rejects)
+		{"数据库有哪些表", false},                    // CJK natural language
+		{"how many tables are there?", false}, // English NL, no leading keyword
+		{"/health", false},                    // slash command
+		{"", false},                           // empty
+	}
+	for _, c := range cases {
+		_, stmt, ok := withSQL.matchDbRaw(c.in)
+		if ok != c.want {
+			t.Errorf("matchDbRaw(%q) ok=%v want %v", c.in, ok, c.want)
+		}
+		if ok && stmt != strings.TrimSpace(c.in) {
+			t.Errorf("matchDbRaw(%q) statement=%q want trimmed input", c.in, stmt)
+		}
+	}
+	// No `sql` tool connected -> never matches, even for obvious SQL.
+	noSQL := Model{mcpTools: indexMcpTools([]appserverproto.McpToolDescriptor{
+		{QualifiedName: "mcp__gaussdb__health", Server: "gaussdb", Tool: "health"},
+	})}
+	if _, _, ok := noSQL.matchDbRaw("SELECT 1"); ok {
+		t.Error("expected no match when no `sql` tool is connected")
+	}
+}
+
 func TestMcpSlashArgsToJSON(t *testing.T) {
 	if js, err := mcpSlashArgsToJSON(""); err != "" || string(js) != "{}" {
 		t.Errorf("empty args -> (%q,%q), want ({}, \"\")", js, err)

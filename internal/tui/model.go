@@ -257,6 +257,12 @@ func (m Model) handleAppEvent(ev AppEvent) (tea.Model, tea.Cmd) {
 		if desc, args, ok := m.matchMcpSlash(ev.Text); ok {
 			return m.runMcpTool(desc, args, ev.Text)
 		}
+		// Native-psql dual-entry: bare SQL (SELECT …) or a backslash meta-command
+		// (\d, \dt, …) routes deterministically to the connected `sql` tool
+		// (read-only), bypassing the LLM. CJK natural language never matches.
+		if desc, stmt, ok := m.matchDbRaw(ev.Text); ok {
+			return m.runDbRaw(desc, stmt, ev.Text)
+		}
 		// Echo the submitted message into history TUI-side (codex's
 		// on_user_message_display), then forward the turn to the engine. The
 		// withScrollback wrapper applied to the returned cmd drains the new user
