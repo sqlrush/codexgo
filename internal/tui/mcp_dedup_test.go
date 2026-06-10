@@ -7,35 +7,106 @@ import (
 	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
-// TestModelInvokedMcpDedup verifies a tool the model calls twice in a turn with
-// the same user-addressed result renders its rich body only once (no re-flooding
-// the transcript), while still feeding the model every call.
-func TestModelInvokedMcpDedup(t *testing.T) {
-	res := okResult(mkContent("```\nUNIQ_SPACE_ROW 42\n```", "user"))
-	end := func(id string) protocol.Event {
-		return protocol.Event{Msg: protocol.EventMsg{
-			Type: protocol.EventMsgKindMcpToolCallEnd,
-			McpToolCallEnd: &protocol.McpToolCallEndEvent{
-				CallID:     id,
-				Invocation: protocol.McpInvocation{Server: "gaussdb", Tool: "space"},
-				Result:     res,
-			},
-		}}
-	}
+// mcpEnd builds an McpToolCallEnd event whose result carries a user-addressed
+// body (the deterministic render the framework stashes for the relevance gate).
+func mcpEnd(callID, tool, userBody string) protocol.Event {
+	return protocol.Event{Msg: protocol.EventMsg{
+		Type: protocol.EventMsgKindMcpToolCallEnd,
+		McpToolCallEnd: &protocol.McpToolCallEndEvent{
+			CallID:     callID,
+			Invocation: protocol.McpInvocation{Server: "gaussdb", Tool: tool},
+			Result:     okResult(mkContent(userBody, "user")),
+		},
+	}}
+}
 
+func agentMsg(text string) protocol.Event {
+	return protocol.Event{Msg: protocol.EventMsg{
+		Type:         protocol.EventMsgKindAgentMessage,
+		AgentMessage: &protocol.AgentMessageEvent{Message: text},
+	}}
+}
+
+// TestRelevanceGateShowsOnlyDeclared verifies tool tables are NOT auto-rendered;
+// only the tools the model declares via "@show:" render, and the directive line
+// is stripped from the displayed analysis.
+func TestRelevanceGateShowsOnlyDeclared(t *testing.T) {
 	tr := NewChatTranscript(testTheme())
-	tr = tr.applyEvent(end("c1"))
-	tr = tr.applyEvent(end("c2"))
-	out := tr.View(Rect{Width: 60, Height: 20})
-	if n := strings.Count(out, "UNIQ_SPACE_ROW 42"); n != 1 {
-		t.Fatalf("expected the report to render once after dedup, got %d:\n%s", n, out)
+	tr = tr.applyEvent(mcpEnd("c1", "ash", "```\nASH_BODY_ROW\n```"))
+	tr = tr.applyEvent(mcpEnd("c2", "hotkey", "```\nHOTKEY_BODY_ROW\n```"))
+	// Nothing rendered yet — only chips would show (no McpDirectCell bodies).
+	mid := tr.View(Rect{Width: 60, Height: 20})
+	if strings.Contains(mid, "ASH_BODY_ROW") || strings.Contains(mid, "HOTKEY_BODY_ROW") {
+		t.Fatalf("tool bodies must not auto-render before @show:\n%s", mid)
 	}
+	tr = tr.applyEvent(agentMsg("无明显等待事件。\n@show: ash"))
+	out := tr.View(Rect{Width: 60, Height: 30})
+	if strings.Count(out, "ASH_BODY_ROW") != 1 {
+		t.Errorf("declared tool ash should render exactly once:\n%s", out)
+	}
+	if strings.Contains(out, "HOTKEY_BODY_ROW") {
+		t.Errorf("undeclared tool hotkey must not render:\n%s", out)
+	}
+	if strings.Contains(out, "@show") {
+		t.Errorf("the @show directive must be stripped from display:\n%s", out)
+	}
+	if !strings.Contains(out, "无明显等待事件") {
+		t.Errorf("analysis text missing:\n%s", out)
+	}
+}
 
-	// A new turn resets the dedup set, so the same report can render again.
-	tr = tr.applyEvent(protocol.Event{Msg: protocol.EventMsg{Type: protocol.EventMsgKindTurnStarted}})
-	tr = tr.applyEvent(end("c3"))
-	out = tr.View(Rect{Width: 60, Height: 40})
-	if n := strings.Count(out, "UNIQ_SPACE_ROW 42"); n != 2 {
-		t.Fatalf("expected a fresh render in the next turn (total 2), got %d:\n%s", n, out)
+// TestRelevanceGateSingleToolFallback: a turn that stashed exactly one tool and
+// declared nothing still shows it (unambiguous single-tool answer).
+func TestRelevanceGateSingleToolFallback(t *testing.T) {
+	tr := NewChatTranscript(testTheme())
+	tr = tr.applyEvent(mcpEnd("c1", "space", "```\nSPACE_ONLY_ROW\n```"))
+	tr = tr.applyEvent(agentMsg("当前有 3 个库。"))
+	out := tr.View(Rect{Width: 60, Height: 20})
+	if !strings.Contains(out, "SPACE_ONLY_ROW") {
+		t.Errorf("single stashed tool should render without @show:\n%s", out)
+	}
+}
+
+// TestRelevanceGateNoFallbackWhenMany: multiple tools stashed, no @show → render
+// nothing (cannot guess relevance).
+func TestRelevanceGateNoFallbackWhenMany(t *testing.T) {
+	tr := NewChatTranscript(testTheme())
+	tr = tr.applyEvent(mcpEnd("c1", "ash", "```\nASH_X\n```"))
+	tr = tr.applyEvent(mcpEnd("c2", "space", "```\nSPACE_X\n```"))
+	tr = tr.applyEvent(agentMsg("综述。"))
+	out := tr.View(Rect{Width: 60, Height: 20})
+	if strings.Contains(out, "ASH_X") || strings.Contains(out, "SPACE_X") {
+		t.Errorf("nothing should render when many tools and no @show:\n%s", out)
+	}
+}
+
+// TestRelevanceGateDedup: declaring the same tool twice renders it once.
+func TestRelevanceGateDedup(t *testing.T) {
+	tr := NewChatTranscript(testTheme())
+	tr = tr.applyEvent(mcpEnd("c1", "ash", "```\nASH_DEDUP\n```"))
+	tr = tr.applyEvent(agentMsg("x\n@show: ash, ash"))
+	out := tr.View(Rect{Width: 60, Height: 20})
+	if n := strings.Count(out, "ASH_DEDUP"); n != 1 {
+		t.Errorf("expected one render after dedup, got %d:\n%s", n, out)
+	}
+}
+
+func TestExtractShowDirective(t *testing.T) {
+	cases := []struct {
+		in    string
+		names []string
+	}{
+		{"分析文本\n@show: ash, lwlocks", []string{"ash", "lwlocks"}},
+		{"x\n@show：ash、sessions", []string{"ash", "sessions"}},  // full-width colon + 、
+		{"y\n[[show: mcp__gaussdb__space]]", []string{"space"}}, // bracket + qualified name
+		{"z\n> @show: /hotkey", []string{"hotkey"}},             // quote-prefixed, slash
+		{"no directive here", nil},
+		{"a line with show: but no at-marker", nil},
+	}
+	for _, c := range cases {
+		_, got := extractShowDirective(c.in)
+		if strings.Join(got, ",") != strings.Join(c.names, ",") {
+			t.Errorf("extractShowDirective(%q) = %v, want %v", c.in, got, c.names)
+		}
 	}
 }

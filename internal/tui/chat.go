@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -57,11 +58,17 @@ type ChatTranscript struct {
 	turnStartedAt   time.Time
 	hadWorkActivity bool
 
-	// renderedThisTurn dedups model-invoked MCP direct-renders within a turn: a
-	// tool whose rendered markdown matches one already shown this turn is skipped,
-	// so the model calling the same tool twice does not double-render. Reset on
-	// TurnStarted.
+	// renderedThisTurn dedups MCP direct-renders within a turn: a tool whose
+	// rendered markdown matches one already shown this turn is skipped, so a tool
+	// shown twice does not double-render. Reset on TurnStarted.
 	renderedThisTurn map[string]bool
+
+	// toolRenders stashes each model-invoked MCP tool's user-addressed render this
+	// turn, keyed by lowercase tool name. Tool output is NOT auto-rendered; instead
+	// the model declares which results are relevant via a trailing "@show: a, b"
+	// line in its final reply, and only those tables are rendered (relevance gate).
+	// Reset on TurnStarted.
+	toolRenders map[string]string
 
 	// header retains the session-header seed (version/model/directory) supplied to
 	// WithSessionHeader so a fresh session after /clear can re-seed the same
@@ -212,6 +219,7 @@ func (t ChatTranscript) applyEvent(ev protocol.Event) ChatTranscript {
 		t.turnStartedAt = time.Now()
 		t.hadWorkActivity = false
 		t.renderedThisTurn = nil
+		t.toolRenders = nil
 
 	case protocol.EventMsgKindUserMessage:
 		if ev.Msg.UserMessage != nil && strings.TrimSpace(ev.Msg.UserMessage.Message) != "" {
@@ -230,7 +238,7 @@ func (t ChatTranscript) applyEvent(ev protocol.Event) ChatTranscript {
 			if t.streaming != nil && t.streaming.kind == streamAgent {
 				t = t.commitStream()
 			} else if strings.TrimSpace(ev.Msg.AgentMessage.Message) != "" {
-				t.cells = t.appendCell(NewAgentCell(t.markdown, ev.Msg.AgentMessage.Message))
+				t = t.appendAgentText(strings.TrimRight(ev.Msg.AgentMessage.Message, "\n"))
 			}
 		}
 
@@ -280,17 +288,16 @@ func (t ChatTranscript) applyEvent(ev protocol.Event) ChatTranscript {
 		if ev.Msg.McpToolCallEnd != nil {
 			end := ev.Msg.McpToolCallEnd
 			t = t.completeTool(end.CallID, end.Result)
-			// User-addressed content (annotations.audience contains "user") is
-			// rendered directly here as the plugin's deterministic markdown — the
-			// rich tables/panels, not a model re-wording. The model ALSO receives
-			// this content (see core.mcpResultText) so it can answer precisely
-			// without re-querying; it adds a short note on top, not the table.
-			// Dedup within a turn so a tool the model calls twice renders once.
-			if md := userAudienceMarkdown(end.Result); md != "" && !t.renderedThisTurn[md] {
-				t = t.commitStream()
-				t.renderedThisTurn = cloneStringSet(t.renderedThisTurn)
-				t.renderedThisTurn[md] = true
-				t.cells = t.appendCell(NewMcpDirectCell(t.markdown, md))
+			// Do NOT auto-render: the model may call many tools while exploring, and
+			// flooding the transcript with every (often irrelevant) table is what we
+			// are avoiding. Instead stash the tool's user-addressed render; the model
+			// declares which results are relevant to the user's question via a
+			// trailing "@show: <tools>" line in its final reply, and only those
+			// tables render (see appendAgentText). The model still receives the full
+			// result (core.mcpResultText) to reason over.
+			if md := userAudienceMarkdown(end.Result); md != "" {
+				t.toolRenders = cloneStringMap(t.toolRenders)
+				t.toolRenders[strings.ToLower(strings.TrimSpace(end.Invocation.Tool))] = md
 			}
 		}
 
@@ -370,16 +377,77 @@ func (t ChatTranscript) commitStream() ChatTranscript {
 	}
 	source := t.streaming.collector.CommittedSource() + t.streaming.collector.FinalizeAndDrainSource()
 	source = strings.TrimRight(source, "\n")
-	if strings.TrimSpace(source) != "" {
-		switch t.streaming.kind {
-		case streamReasoning:
+	kind := t.streaming.kind
+	t.streaming = nil
+	switch kind {
+	case streamReasoning:
+		if strings.TrimSpace(source) != "" {
 			t.cells = t.appendCell(NewReasoningCell(t.theme, source))
-		default:
-			t.cells = t.appendCell(NewAgentCell(t.markdown, source))
+		}
+		return t
+	default:
+		return t.appendAgentText(source)
+	}
+}
+
+// appendAgentText commits a finalized agent message: it honors the relevance
+// gate. The model declares which tool results to show the user via a trailing
+// "@show: <tool>, <tool>" line; only those stashed renders (see toolRenders) are
+// rendered — as the plugin's deterministic tables — before the analysis text,
+// and the directive is stripped from the displayed text. A turn that stashed
+// exactly one tool and declared nothing falls back to showing it (an unambiguous
+// single-tool answer should not require the directive).
+func (t ChatTranscript) appendAgentText(source string) ChatTranscript {
+	cleaned, names := extractShowDirective(source)
+	if len(names) == 0 && len(t.toolRenders) == 1 {
+		for name := range t.toolRenders {
+			names = []string{name}
 		}
 	}
-	t.streaming = nil
+	for _, name := range names {
+		md, ok := t.toolRenders[name]
+		if !ok || md == "" || t.renderedThisTurn[md] {
+			continue
+		}
+		t.renderedThisTurn = cloneStringSet(t.renderedThisTurn)
+		t.renderedThisTurn[md] = true
+		t.cells = t.appendCell(NewMcpDirectCell(t.markdown, md))
+	}
+	if strings.TrimSpace(cleaned) != "" {
+		t.cells = t.appendCell(NewAgentCell(t.markdown, cleaned))
+	}
 	return t
+}
+
+// showDirectiveRe matches a standalone declaration line "@show: a, b" (also
+// tolerating 「[[show: ...]]」, full-width colon, leading quote/bullet). It
+// requires an "@" or a "[" before "show" so a normal "show: ..." sentence does
+// not falsely match. Group 1 is the comma/space/、-separated tool list.
+var showDirectiveRe = regexp.MustCompile(`(?im)^[ \t>*\-]*(?:@\s*show|\[+\s*show)\s*[:：]\s*(.+?)\s*\]*\s*$`)
+
+// extractShowDirective pulls the @show declaration out of an agent message,
+// returning the message with that line removed and the normalized tool names the
+// model asked to show (lowercased, stripped of any "mcp__server__"/"/" prefix).
+func extractShowDirective(source string) (string, []string) {
+	m := showDirectiveRe.FindStringSubmatch(source)
+	if m == nil {
+		return source, nil
+	}
+	cleaned := strings.TrimRight(showDirectiveRe.ReplaceAllString(source, ""), "\n")
+	var names []string
+	for _, tok := range strings.FieldsFunc(m[1], func(r rune) bool {
+		return r == ',' || r == '，' || r == '、' || r == ' ' || r == '\t' || r == '/'
+	}) {
+		tok = strings.ToLower(strings.TrimSpace(tok))
+		if i := strings.LastIndex(tok, "__"); i >= 0 {
+			tok = tok[i+2:]
+		}
+		tok = strings.Trim(tok, "`\"'。.")
+		if tok != "" {
+			names = append(names, tok)
+		}
+	}
+	return cleaned, names
 }
 
 // appendExecOutput appends streamed output to a running exec cell.
@@ -608,6 +676,16 @@ func cloneStringSet(m map[string]bool) map[string]bool {
 	out := make(map[string]bool, len(m)+1)
 	for k := range m {
 		out[k] = true
+	}
+	return out
+}
+
+// cloneStringMap returns a copy of a string map with room for one more entry
+// (immutability for the turn-scoped tool-render stash). Handles a nil map.
+func cloneStringMap(m map[string]string) map[string]string {
+	out := make(map[string]string, len(m)+1)
+	for k, v := range m {
+		out[k] = v
 	}
 	return out
 }
