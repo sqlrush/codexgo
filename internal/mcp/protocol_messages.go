@@ -6,10 +6,11 @@ import (
 	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
-// MCPProtocolVersion is the protocol version Codex advertises during the
-// initialize handshake. It matches the MCP 2025-06-18 revision used by the
-// reference rmcp client.
-const MCPProtocolVersion = "2025-06-18"
+// MCPProtocolVersion is the legacy protocol version advertised by default
+// during the initialize handshake. Version negotiation (spec 49 need 1) is
+// driven by ProtocolMode; this remains the Legacy-policy default and the single
+// source for the legacy revision string.
+const MCPProtocolVersion = ProtocolVersion20250618
 
 // Method names for the MCP requests and notifications issued by the client.
 // These mirror the JSON-RPC method strings the reference rmcp SDK sends.

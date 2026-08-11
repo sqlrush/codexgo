@@ -163,10 +163,9 @@ func (p *MessageProcessor) handleInitialize(id RequestID, params json.RawMessage
 	// the MCP-shaped response below is the only one written.
 	p.advanceAppServerHandshake(req.ClientInfo.Name, req.ClientInfo.Version)
 
-	protocolVersion := req.ProtocolVersion
-	if protocolVersion == "" {
-		protocolVersion = defaultProtocolVersion
-	}
+	// Echo the client's requested version when supported, else fall back to the
+	// legacy default (spec 49 need 1: accept 2026-07-28 and 2025-06-18 clients).
+	protocolVersion := negotiateServerVersion(req.ProtocolVersion)
 
 	si := map[string]any{
 		"name":       p.info.name,
@@ -311,8 +310,25 @@ func orDefault(v, def string) string {
 	return v
 }
 
-// defaultProtocolVersion is echoed when the client omits protocolVersion.
-const defaultProtocolVersion = "2025-06-18"
+// Protocol revisions codexgo accepts when acting as an MCP server (spec 49
+// need 1). defaultProtocolVersion is echoed when the client omits or requests
+// an unsupported version.
+const (
+	defaultProtocolVersion = "2025-06-18"
+	modernProtocolVersion  = "2026-07-28"
+)
+
+// negotiateServerVersion picks the version to echo: the client's request when
+// supported, else the legacy default. Kept package-local so the server does not
+// depend on the MCP client package.
+func negotiateServerVersion(clientRequested string) string {
+	switch clientRequested {
+	case modernProtocolVersion, defaultProtocolVersion:
+		return clientRequested
+	default:
+		return defaultProtocolVersion
+	}
+}
 
 // emptyListResult builds the conventional empty result for a read-only MCP
 // discovery request.
