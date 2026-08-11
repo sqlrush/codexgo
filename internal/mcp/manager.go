@@ -51,6 +51,10 @@ type ManagerOptions struct {
 	// zero value is Legacy (2025-06-18); set ProtocolModeV20260728 to offer the
 	// 2026-07-28 revision with legacy fallback.
 	ProtocolMode ProtocolMode
+	// CatalogCache is the process-scoped tool catalog cache (spec 49 need 2/4).
+	// Share one instance across manager restarts within a process so reconnects
+	// reuse cached tool lists. The zero value causes NewManager to allocate one.
+	CatalogCache McpToolCatalogCache
 	// EnvLookup overrides environment-variable resolution; nil reads the
 	// process environment.
 	EnvLookup EnvLookup
@@ -67,6 +71,7 @@ type Manager struct {
 	mu      sync.RWMutex
 	clients map[string]*ManagedClient
 
+	catalogCache    McpToolCatalogCache
 	prefixToolNames bool
 }
 
@@ -86,6 +91,12 @@ func NewManager(ctx context.Context, mcpServers map[string]config.McpServerConfi
 	if factory == nil {
 		store := NewOAuthStore(opts.CodexHome)
 		factory = NewDefaultTransportFactory(store, storeMode, nil, opts.EnvLookup)
+	}
+
+	// Ensure a process-scoped tool catalog cache (spec 49 need 2/4). A caller
+	// (app-server/TUI) may pass one to persist across manager restarts.
+	if !opts.CatalogCache.valid() {
+		opts.CatalogCache = NewToolCatalogCache()
 	}
 
 	type startupResult struct {
@@ -116,7 +127,7 @@ func NewManager(ctx context.Context, mcpServers map[string]config.McpServerConfi
 	wg.Wait()
 	close(resultsCh)
 
-	manager := &Manager{clients: make(map[string]*ManagedClient)}
+	manager := &Manager{clients: make(map[string]*ManagedClient), catalogCache: opts.CatalogCache}
 	var results []ServerStartupResult
 	for res := range resultsCh {
 		if res.err != nil {
@@ -147,10 +158,21 @@ func startServer(ctx context.Context, name string, cfg config.McpServerConfig, f
 	}
 	client := NewClient(transport, clientOpts...)
 
+	// Reserve a fetch ticket before discovery so a concurrent (re)start cannot
+	// publish a staler catalog over ours (spec 49 need 2/4).
+	cacheCtx, cacheable := opts.CatalogCache.Context(name, cfg)
+	var ticket McpToolCatalogFetchTicket
+	if cacheable {
+		ticket = cacheCtx.BeginFetch()
+	}
+
 	filter := ToolFilterFromConfig(cfg)
 	managed, err := startManagedClient(ctx, name, client, filter, opts.ProtocolMode, startupTimeoutFor(cfg), toolTimeoutFor(cfg))
 	if err != nil {
 		return nil, err
+	}
+	if cacheable {
+		cacheCtx.PublishIfNewest(ticket, managed.NamespacedTools())
 	}
 	return managed, nil
 }

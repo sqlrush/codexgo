@@ -41,6 +41,9 @@ func NewToolCatalogCache() McpToolCatalogCache {
 	}
 }
 
+// valid reports whether the cache has been initialized (vs the zero value).
+func (c McpToolCatalogCache) valid() bool { return c.mu != nil && c.entries != nil }
+
 // Context resolves (or creates) the cache entry for a server's stable identity.
 // Returns ok=false for transports that cannot be safely shared across
 // connections (currently: non-stdio, or stdio with a remote-sourced env var),
