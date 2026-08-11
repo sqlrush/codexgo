@@ -31,11 +31,16 @@ server 面 `internal/mcpserver`），使 MCP 面达到 0.147 等价：协议版�
 
 ## 源参考 / Source reference
 
-- `../reference-codex-0147/codex-rs/rmcp-client/src/`（client 行为与可靠性语义的主对照）；
-- `../reference-codex-0147/codex-rs/core/src/mcp/`（tool 目录缓存、config 变更重连、工具搜索开关）；
-- `../reference-codex-0147/codex-rs/app-server*/`（server 面协议版本与非阻塞启动）；
-- 精确文件映射在步骤 1（fetch 后）落到本节的实施附注——上游 crate 在 0.136→0.147
-  间有目录重组，fetch 前写死路径必错；
+> **步骤1 已校正路径**（初稿的 `core/src/mcp/` 在两棵树均不存在——实际是
+> `core/src/mcp.rs` 单文件 + 独立 `codex-mcp` crate）。完整映射见 `49-diff-inventory.md`。
+
+- `../reference-codex-0147/codex-rs/rmcp-client/src/`（client 行为、协议模式、OAuth、重试）；
+- `../reference-codex-0147/codex-rs/codex-mcp/src/`（连接管理重构：`connection_manager/{required,
+  resources,startup,tool_catalog}.rs` + `tool_catalog_cache.rs` 内存 LRU）；
+- `../reference-codex-0147/codex-rs/tools/src/`（`json_schema.rs` schema 保形、`tool_search.rs`）；
+- `../reference-codex-0147/codex-rs/mcp-server/src/message_processor.rs`（server 面协议版本回显）；
+- MCP 规范修订 2026-07-28（版本协商矩阵权威）；
+- 步骤1 差异盘点全文：`docs/specs/49-diff-inventory.md`（含每需求行号级锚点与移植要点）；
 - MCP 规范修订 2026-07-28（公开 spec，版本协商矩阵的权威来源）；
 - 现状锚点：`internal/mcp/protocol_messages.go:12`（2025-06-18）、
   `internal/mcp/http_transport.go`（session 头/SSE 已有）、`internal/mcp/operations.go:53`
@@ -48,9 +53,16 @@ server 面 `internal/mcpserver`），使 MCP 面达到 0.147 等价：协议版�
    2025-06-18 → 2025-03-26 协商矩阵）；`mcpserver` 面 `defaultProtocolVersion`
    同步升级并接受旧版本 client；版本常量收敛到单一定义点；
 2. **非阻塞启动 + 工具目录缓存**（0.147）：MCP server 启动移出装配期关键路径——
-   引擎先用**磁盘缓存的工具目录**（`~/.codexgo` 下新缓存文件，格式对齐上游）提供
-   工具面，server 就绪后增量刷新；单 server 启动失败/超时不再只是"跳过"而是进入
-   重试轨（需求 4）；缓存目录随 tools/list 成功刷新写回；
+   引擎先用**缓存的工具目录**提供工具面，server 就绪后增量刷新；单 server 启动
+   失败/超时不再只是"跳过"而是进入重试轨（需求 4）；缓存随 tools/list 成功刷新更新。
+   **⚠ 步骤1 校正（与源码不符，含 maintainer 决策点）**：上游 0.147 的工具目录缓存
+   是**进程内内存 LRU**（`codex-mcp/src/tool_catalog_cache.rs`，`Arc<Mutex<LruCache>>`，
+   容量 32 / TTL 30min），**无磁盘文件、无 JSON 落盘**；本 spec 初稿写的"`~/.codexgo`
+   磁盘缓存文件 + JSON 格式对齐上游"**没有可抄的上游依据**。CLI 每次是新进程，内存缓存
+   对单次调用无收益——"启动移出关键路径"在内存缓存语义下**只对同进程内多轮 turn 生效**。
+   决策：（a）忠实移植内存 LRU（等价上游，但对 CLI 单次调用几乎无感）；（b）改磁盘
+   持久化（超出"对齐上游"，触规则5硬门槛，需 maintainer 批准）——**待 user 决策，未决前
+   本需求按 (a) 收敛，"非阻塞启动"仅指 manager 生命周期不阻塞装配**；
 3. **Schema 保形**（0.139）：工具 schema 透传保留 `oneOf`/`allOf`；超大 schema
    压缩路径保形（不丢关键字段）；golden 用例覆盖嵌套组合子；
 4. **连接可靠性包**（0.140/0.145/0.146）：per-server 启动超时（可配置，默认对齐
@@ -60,9 +72,12 @@ server 面 `internal/mcpserver`），使 MCP 面达到 0.147 等价：协议版�
 5. **OAuth token 刷新**（0.140/0.145）：`oauth_tokens.go` 增 refresh_token 流
    （过期前/401 后刷新、序列化写回 keyring/文件 blob 保持与上游字节级同形）；
    完整 authorization-code 授权流仍**不做**（见非目标）；
-6. **工具搜索默认启用**（0.143）：对照上游确认 codexgo 是否已有对应开关面；有则
-   翻默认值 + config 覆盖，无则按上游语义补最小实现（实施时按 0.147 源确认边界，
-   若发现是大型独立功能则拆分出去并回报——不静默扩 scope）；
+6. **工具搜索默认启用**（0.143）：**步骤1 裁定——不拆分，实为一行默认翻转**。
+   tool search 子系统（`internal/tools/{tool_search_spec,mcp_search,bm25}.go`）codexgo
+   已整体移植；上游 0.147 与 0.136 均为 Removed no-op「always enabled」——spec 归因的
+   "0.143 翻默认"在 0.136 已成事实。真实增量仅 `internal/features/feature.go:353`
+   `tool_search_always_defer_mcp_tools` 由 UnderDevelopment/false → Removed/true 一行。
+   注意：翻转会改变 MCP 工具对模型的可见暴露方式（deferred-MCP 路径），实施前确认；
 7. **簿记**：每项与 0.136 基线的行为差登记 DEVIATIONS `forward-synced`；
    `docs/PARITY.md` 增 MCP 面基准说明；`docs/STATUS.md` 增 spec 49 行。
 
