@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/sqlrush/codexgo/internal/config"
 	"github.com/sqlrush/codexgo/internal/protocol"
@@ -144,7 +145,51 @@ func NewManager(ctx context.Context, mcpServers map[string]config.McpServerConfi
 
 // startServer opens a transport, wraps it in a client with the elicitation
 // handler, and runs the full per-server startup handshake and tool discovery.
+// Per-server startup retry (spec 49 need 4 step 2): a transient failure (dead
+// process, slow first connect) no longer means "failed forever". Bounded so a
+// genuinely-broken server does not stall startup.
+const (
+	maxStartupAttempts = 3
+	startupRetryBase   = 250 * time.Millisecond
+	startupRetryCap    = 2 * time.Second
+)
+
 func startServer(ctx context.Context, name string, cfg config.McpServerConfig, factory TransportFactory, opts ManagerOptions) (*ManagedClient, error) {
+	// Reserve a fetch ticket before discovery so a concurrent (re)start cannot
+	// publish a staler catalog over ours (spec 49 need 2/4).
+	cacheCtx, cacheable := opts.CatalogCache.Context(name, cfg)
+	var ticket McpToolCatalogFetchTicket
+	if cacheable {
+		ticket = cacheCtx.BeginFetch()
+	}
+
+	var managed *ManagedClient
+	var err error
+	for attempt := 0; attempt < maxStartupAttempts; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-time.After(startupBackoff(attempt)):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		managed, err = attemptStartServer(ctx, name, cfg, factory, opts)
+		if err == nil {
+			break
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	if cacheable {
+		cacheCtx.PublishIfNewest(ticket, managed.NamespacedTools())
+	}
+	return managed, nil
+}
+
+// attemptStartServer runs one connect+handshake+discovery attempt. Each attempt
+// opens a fresh transport so a dead stdio process from a prior try is replaced.
+func attemptStartServer(ctx context.Context, name string, cfg config.McpServerConfig, factory TransportFactory, opts ManagerOptions) (*ManagedClient, error) {
 	transport, err := factory.NewTransport(ctx, name, cfg, opts.FallbackCwd)
 	if err != nil {
 		return nil, fmt.Errorf("mcp: open transport for server %q: %w", name, err)
@@ -158,23 +203,17 @@ func startServer(ctx context.Context, name string, cfg config.McpServerConfig, f
 	}
 	client := NewClient(transport, clientOpts...)
 
-	// Reserve a fetch ticket before discovery so a concurrent (re)start cannot
-	// publish a staler catalog over ours (spec 49 need 2/4).
-	cacheCtx, cacheable := opts.CatalogCache.Context(name, cfg)
-	var ticket McpToolCatalogFetchTicket
-	if cacheable {
-		ticket = cacheCtx.BeginFetch()
-	}
-
 	filter := ToolFilterFromConfig(cfg)
-	managed, err := startManagedClient(ctx, name, client, filter, opts.ProtocolMode, startupTimeoutFor(cfg), toolTimeoutFor(cfg))
-	if err != nil {
-		return nil, err
+	return startManagedClient(ctx, name, client, filter, opts.ProtocolMode, startupTimeoutFor(cfg), toolTimeoutFor(cfg))
+}
+
+// startupBackoff is an exponential backoff (250ms, 500ms, …) capped at 2s.
+func startupBackoff(attempt int) time.Duration {
+	d := startupRetryBase << (attempt - 1)
+	if d <= 0 || d > startupRetryCap {
+		return startupRetryCap
 	}
-	if cacheable {
-		cacheCtx.PublishIfNewest(ticket, managed.NamespacedTools())
-	}
-	return managed, nil
+	return d
 }
 
 // declineElicitation is the default server-request handler: it declines every
