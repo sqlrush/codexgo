@@ -1,6 +1,6 @@
 # 49 — MCP Forward-Sync (0.137→0.147, Cluster A)
 
-> **DRAFT — pending maintainer approval.** 本 spec 是首个**定向前向同步** spec：
+> **APPROVED** — maintainer approve 2026-08-11（含两决策点：0.147 基线引用扩展、DEVIATIONS forward-synced 状态）。 本 spec 是首个**定向前向同步** spec：
 > 不做全量 rebase，只把上游 0.137→0.147 的 MCP 协议演进簇移植进主线（airush
 > 抽核依赖，见 ~/airush/docs/codexgo-sync-assessment.md 簇 A / 策略 C）。
 > 含两个 §8 级 maintainer 决策点，随本 spec approve 一并生效（见「决策点」节）。
@@ -8,7 +8,7 @@
 | | |
 |---|---|
 | **Phase** | 6 — Extensibility（forward-sync 轨） |
-| **Status** | Draft |
+| **Status** | In progress |
 | **Depends on** | 21 (mcp-client), 26 (mcp wiring), 42 (app-server v2 faces) |
 | **Size** | L |
 | **Drop-in critical** | ★（wire protocol：版本协商 + schema 保形 + token 序列化互通） |

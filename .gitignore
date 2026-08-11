@@ -30,3 +30,4 @@ go.work.sum
 # local debug/screenshot scratch
 prd/
 /codex
+reference-codex-0147/
