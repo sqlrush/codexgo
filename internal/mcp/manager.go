@@ -47,6 +47,10 @@ type ManagerOptions struct {
 	// ElicitationHandler answers server-initiated elicitation/create requests.
 	// When nil, such requests are declined.
 	ElicitationHandler ServerRequestHandler
+	// ProtocolMode selects the MCP compatibility policy (spec 49 need 1). The
+	// zero value is Legacy (2025-06-18); set ProtocolModeV20260728 to offer the
+	// 2026-07-28 revision with legacy fallback.
+	ProtocolMode ProtocolMode
 	// EnvLookup overrides environment-variable resolution; nil reads the
 	// process environment.
 	EnvLookup EnvLookup
@@ -144,7 +148,7 @@ func startServer(ctx context.Context, name string, cfg config.McpServerConfig, f
 	client := NewClient(transport, clientOpts...)
 
 	filter := ToolFilterFromConfig(cfg)
-	managed, err := startManagedClient(ctx, name, client, filter, startupTimeoutFor(cfg), toolTimeoutFor(cfg))
+	managed, err := startManagedClient(ctx, name, client, filter, opts.ProtocolMode, startupTimeoutFor(cfg), toolTimeoutFor(cfg))
 	if err != nil {
 		return nil, err
 	}

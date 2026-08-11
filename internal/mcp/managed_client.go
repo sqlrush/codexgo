@@ -106,10 +106,11 @@ func startManagedClient(
 	serverName string,
 	client *Client,
 	filter ToolFilter,
+	mode ProtocolMode,
 	startupTimeout, toolTimeout time.Duration,
 ) (*ManagedClient, error) {
 	params := InitializeParams{
-		ProtocolVersion: MCPProtocolVersion,
+		ProtocolVersion: mode.PreferredProtocolVersion(),
 		Capabilities: ClientCapabilities{
 			Elicitation: &struct{}{},
 		},
@@ -124,6 +125,12 @@ func startManagedClient(
 	if err != nil {
 		_ = client.Close()
 		return nil, fmt.Errorf("mcp: initialize server %q: %w", serverName, err)
+	}
+	// spec 49 need 1: the server-selected version must be one this policy speaks
+	// (modern preferred, legacy fallback). A mismatch is a fatal handshake error.
+	if _, err := mode.NegotiateVersion(initResult.ProtocolVersion); err != nil {
+		_ = client.Close()
+		return nil, fmt.Errorf("mcp: server %q: %w", serverName, err)
 	}
 
 	rawTools, err := client.ListAllTools(ctx, startupTimeout)
