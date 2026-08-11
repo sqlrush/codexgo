@@ -12,8 +12,25 @@ import (
 var definitionTableKeys = [2]string{"$defs", "definitions"}
 
 // schemaChildKeys are non-property schema-child keywords traversed during
-// sanitization and ref collection.
-var schemaChildKeys = [2]string{"items", "anyOf"}
+// sanitization and ref collection. Extended to preserve oneOf/allOf composition
+// (spec 49 need 1/3 → upstream 0.147 SCHEMA_CHILD_KEYS).
+var schemaChildKeys = [4]string{"items", "anyOf", "oneOf", "allOf"}
+
+// compositionSchemaKeys are the JSON-Schema composition keywords (upstream
+// COMPOSITION_SCHEMA_KEYS). Preserved verbatim through lowering so oneOf/allOf
+// tool schemas are not flattened.
+var compositionSchemaKeys = [3]string{"anyOf", "oneOf", "allOf"}
+
+// hasCompositionKeyword reports whether the object carries any composition
+// keyword (anyOf/oneOf/allOf).
+func hasCompositionKeyword(m map[string]any) bool {
+	for _, key := range compositionSchemaKeys {
+		if _, ok := m[key]; ok {
+			return true
+		}
+	}
+	return false
+}
 
 // Use compact normalized JSON bytes as a cheap local proxy for the 1k-token
 // schema budget.

@@ -43,9 +43,13 @@ func sanitizeSchemaObject(m map[string]any) {
 		sanitizeJSONSchema(&v)
 		m["prefixItems"] = v
 	}
-	if v, ok := m["anyOf"]; ok {
-		sanitizeJSONSchema(&v)
-		m["anyOf"] = v
+	// Preserve every composition keyword (anyOf/oneOf/allOf), sanitizing each
+	// child (spec 49 need 3 → upstream COMPOSITION_SCHEMA_KEYS).
+	for _, key := range compositionSchemaKeys {
+		if v, ok := m[key]; ok {
+			sanitizeJSONSchema(&v)
+			m[key] = v
+		}
 	}
 	for _, table := range definitionTableKeys {
 		sanitizeSchemaTable(m, table)
@@ -59,8 +63,7 @@ func sanitizeSchemaObject(m map[string]any) {
 	schemaTypes := normalizedSchemaTypes(m)
 
 	_, hasRef := m["$ref"]
-	_, hasAnyOf := m["anyOf"]
-	if len(schemaTypes) == 0 && (hasRef || hasAnyOf) {
+	if len(schemaTypes) == 0 && (hasRef || hasCompositionKeyword(m)) {
 		return
 	}
 
