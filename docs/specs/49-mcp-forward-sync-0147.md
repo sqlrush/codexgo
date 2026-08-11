@@ -13,14 +13,18 @@
 | **Size** | L |
 | **Drop-in critical** | ★（wire protocol：版本协商 + schema 保形 + token 序列化互通） |
 
-## 决策点（maintainer 一次性批准，approve 本 spec 即视为批准）
+## 决策点（maintainer 已批 2026-08-11）
 
-1. **基线引用扩展（ROADMAP §8 触发⑤：外网操作）**：`git -C reference-codex fetch
-   --tags && git worktree add ../reference-codex-0147 rust-v0.147.0`——0.136.0 主基线
-   与 parity 二进制**不动**，0.147 仅作为移植对照的第二参考（同样不入库，.gitignore 增行）；
-2. **DEVIATIONS 新状态 `forward-synced`（§8 触发②的制度化）**：凡因定向同步而领先
-   0.136 基线的行为，登记为 `forward-synced (spec 49, target 0.147)` 而非 `review`——
-   与上游**未来版本**对齐不算未解释偏差；DEVIATIONS.md 标题补注说明。
+1. ✅ **基线引用扩展**：`reference-codex-0147`（rust-v0.147.0）worktree 已就位（不入库，
+   .gitignore 已加）；0.136.0 主基线与 parity 二进制不动；
+2. ✅ **DEVIATIONS 新状态 `forward-synced`**：定向同步领先 0.136 的行为登记为
+   `forward-synced (spec 49, target 0.147)`，与上游未来版本对齐不算未解释偏差；
+3. ✅ **需求 2 工具目录缓存 = 内存 LRU（方案 a）**：忠实照搬上游 0.147
+   `McpToolCatalogCache`（`Arc<Mutex<LruCache>>`，容量 32/TTL 30min，进程内、无磁盘）。
+   不做磁盘持久化（那是超上游的自创设计，已否）；
+4. ✅ **需求 6 摘出簇 A**：工具暴露策略（eager vs always-defer-behind-tool-search）是路线
+   抉择，与协议同步正交，且与本仓在建的 `@show`/relevance-gate 路线可能冲突——本 spec
+   **范围收敛为需求 1-5**，需求 6 待「@show vs tool-search」方向定后单独立项。
 
 ## 目标 / Goal
 
@@ -72,12 +76,12 @@ server 面 `internal/mcpserver`），使 MCP 面达到 0.147 等价：协议版�
 5. **OAuth token 刷新**（0.140/0.145）：`oauth_tokens.go` 增 refresh_token 流
    （过期前/401 后刷新、序列化写回 keyring/文件 blob 保持与上游字节级同形）；
    完整 authorization-code 授权流仍**不做**（见非目标）；
-6. **工具搜索默认启用**（0.143）：**步骤1 裁定——不拆分，实为一行默认翻转**。
-   tool search 子系统（`internal/tools/{tool_search_spec,mcp_search,bm25}.go`）codexgo
-   已整体移植；上游 0.147 与 0.136 均为 Removed no-op「always enabled」——spec 归因的
-   "0.143 翻默认"在 0.136 已成事实。真实增量仅 `internal/features/feature.go:353`
-   `tool_search_always_defer_mcp_tools` 由 UnderDevelopment/false → Removed/true 一行。
-   注意：翻转会改变 MCP 工具对模型的可见暴露方式（deferred-MCP 路径），实施前确认；
+6. ~~**工具搜索默认启用**~~ **——已摘出本 spec（见决策点 4）**。步骤1 深挖发现这不是
+   "一行翻转"：codexgo live 装配走 eager 暴露（`cli/assembly.go:272`/`appserver/mcp_tools.go:20`
+   调 `ListAllToolInfos`），deferred 机制（`ListAllToolSpecs`/`McpToolToDeferredResponsesApiTool`）
+   已移植但零 live 调用，flag 声明却无消费方。上游 0.147 走 always-defer-behind-tool-search，
+   而本仓在建 `@show`/relevance-gate 路线（commit 28f45de/1de5f98）——两条路线抉择属 §8
+   维护者决策，与协议同步正交，单独立项，不在本 spec；
 7. **簿记**：每项与 0.136 基线的行为差登记 DEVIATIONS `forward-synced`；
    `docs/PARITY.md` 增 MCP 面基准说明；`docs/STATUS.md` 增 spec 49 行。
 
