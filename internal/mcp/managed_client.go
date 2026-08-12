@@ -29,10 +29,17 @@ const (
 // JSON-RPC client, the server's advertised info, its discovered (filtered) tools,
 // and the per-server tool-call timeout. ManagedClient values are immutable after
 // construction.
+//
+// One exception carries no live client: a cache-backed placeholder published
+// during non-blocking startup (spec 49 need 4 step 3) exposes the cached tool
+// catalog while its connection is established. Such a value reports
+// LiveConnection() == false and is replaced by the real client once it lands;
+// the manager never dispatches calls to it.
 type ManagedClient struct {
 	// ServerName is the raw MCP server name from config.
 	ServerName string
-	// Client is the live JSON-RPC client for this server.
+	// Client is the live JSON-RPC client for this server, or nil for a
+	// cache-backed placeholder awaiting its connection.
 	Client *Client
 	// ServerInfo is the implementation metadata advertised at initialize.
 	ServerInfo Implementation
@@ -156,6 +163,9 @@ func (m *ManagedClient) CallTool(ctx context.Context, toolName string, arguments
 	if !m.filter.Allows(toolName) {
 		return protocol.CallToolResult{}, fmt.Errorf("mcp: tool %q is disabled for MCP server %q", toolName, m.ServerName)
 	}
+	if m.Client == nil {
+		return protocol.CallToolResult{}, fmt.Errorf("mcp: MCP server %q has no live connection", m.ServerName)
+	}
 	return m.Client.CallTool(ctx, toolName, arguments, meta, m.ToolTimeout)
 }
 
@@ -169,8 +179,16 @@ func (m *ManagedClient) NamespacedTools() []NamespacedTool {
 	return out
 }
 
-// Close shuts down the underlying client and its transport.
+// LiveConnection reports whether this client has an established transport. False
+// means it is a cache-backed placeholder still awaiting its connection.
+func (m *ManagedClient) LiveConnection() bool { return m.Client != nil }
+
+// Close shuts down the underlying client and its transport. Closing a
+// cache-backed placeholder is a no-op — it owns no transport.
 func (m *ManagedClient) Close() error {
+	if m.Client == nil {
+		return nil
+	}
 	return m.Client.Close()
 }
 

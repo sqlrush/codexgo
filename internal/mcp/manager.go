@@ -22,6 +22,11 @@ const (
 	StartupReady StartupStatus = iota
 	// StartupFailed means startup errored before the server became ready.
 	StartupFailed
+	// StartupDeferred means the server's tools are served from the cached
+	// catalog while its live connection is established in the background
+	// (spec 49 need 4 step 3). Its tools are usable; a tool call waits for the
+	// connection to land.
+	StartupDeferred
 )
 
 // ServerStartupResult records the per-server startup outcome surfaced by the
@@ -71,17 +76,43 @@ type ManagerOptions struct {
 type Manager struct {
 	mu      sync.RWMutex
 	clients map[string]*ManagedClient
+	// pending holds the resolution handles of servers still connecting behind a
+	// cache-backed placeholder (spec 49 need 4 step 3).
+	pending map[string]*pendingStartup
+	// closed is set by Shutdown so a background startup that finishes afterwards
+	// closes its connection instead of installing it.
+	closed bool
+
+	// cancelBackground stops in-flight background startups on Shutdown;
+	// background counts them so Shutdown can wait them out.
+	cancelBackground context.CancelFunc
+	background       sync.WaitGroup
 
 	catalogCache    McpToolCatalogCache
 	prefixToolNames bool
 }
 
+// pendingStartup is the resolution handle for one background server startup.
+// done is closed once the live connection has either replaced the cache-backed
+// placeholder or failed; err is set before done closes.
+type pendingStartup struct {
+	done chan struct{}
+	err  error
+}
+
 // NewManager starts every enabled MCP server in mcpServers concurrently, each
 // bounded by its configured startup timeout, and returns the manager alongside
 // the per-server startup results. Servers that fail to start are omitted from the
-// manager but reported in the results. The context bounds the whole startup; a
-// per-server transport that ignores cancellation is still bounded by its
-// initialize timeout.
+// manager but reported in the results.
+//
+// A server with a fresh cached tool catalog does not block startup at all: its
+// tools are exposed immediately from the cache and the live connection is
+// established in the background (StartupDeferred, spec 49 need 4 step 3).
+//
+// The context bounds the whole startup and the background connections that
+// outlive it; a per-server transport that ignores cancellation is still bounded
+// by its initialize timeout. Shutdown cancels any background startup still
+// running.
 func NewManager(ctx context.Context, mcpServers map[string]config.McpServerConfig, opts ManagerOptions) (*Manager, []ServerStartupResult, error) {
 	storeMode := opts.StoreMode
 	if storeMode == "" {
@@ -100,10 +131,19 @@ func NewManager(ctx context.Context, mcpServers map[string]config.McpServerConfi
 		opts.CatalogCache = NewToolCatalogCache()
 	}
 
+	manager := &Manager{
+		clients:      make(map[string]*ManagedClient),
+		pending:      make(map[string]*pendingStartup),
+		catalogCache: opts.CatalogCache,
+	}
+	bgCtx, cancelBackground := context.WithCancel(ctx)
+	manager.cancelBackground = cancelBackground
+
 	type startupResult struct {
-		name    string
-		managed *ManagedClient
-		err     error
+		name     string
+		managed  *ManagedClient
+		deferred bool
+		err      error
 	}
 
 	resultsCh := make(chan startupResult, len(mcpServers))
@@ -117,6 +157,13 @@ func NewManager(ctx context.Context, mcpServers map[string]config.McpServerConfi
 			resultsCh <- startupResult{name: name, err: err}
 			continue
 		}
+		// spec 49 need 4 step 3: a fresh cached catalog makes this server's tools
+		// available at once, so a slow connect never delays the assembly.
+		if cached := freshCachedCatalog(opts.CatalogCache, name, cfg); cached != nil {
+			manager.startInBackground(bgCtx, name, cfg, factory, opts, cached)
+			resultsCh <- startupResult{name: name, deferred: true}
+			continue
+		}
 		wg.Add(1)
 		go func(name string, cfg config.McpServerConfig) {
 			defer wg.Done()
@@ -128,19 +175,110 @@ func NewManager(ctx context.Context, mcpServers map[string]config.McpServerConfi
 	wg.Wait()
 	close(resultsCh)
 
-	manager := &Manager{clients: make(map[string]*ManagedClient), catalogCache: opts.CatalogCache}
 	var results []ServerStartupResult
 	for res := range resultsCh {
-		if res.err != nil {
+		switch {
+		case res.err != nil:
 			results = append(results, ServerStartupResult{ServerName: res.name, Status: StartupFailed, Err: res.err})
-			continue
+		case res.deferred:
+			results = append(results, ServerStartupResult{ServerName: res.name, Status: StartupDeferred})
+		default:
+			manager.install(res.name, res.managed)
+			results = append(results, ServerStartupResult{ServerName: res.name, Status: StartupReady})
 		}
-		manager.clients[res.name] = res.managed
-		results = append(results, ServerStartupResult{ServerName: res.name, Status: StartupReady})
 	}
 
 	sort.Slice(results, func(i, j int) bool { return results[i].ServerName < results[j].ServerName })
 	return manager, results, nil
+}
+
+// install records a fully-started client. It takes the lock because background
+// startups may be publishing concurrently.
+func (m *Manager) install(name string, client *ManagedClient) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.clients[name] = client
+}
+
+// freshCachedCatalog returns a fresh cached tool catalog for a server, or nil
+// when the transport is not cacheable (non-stdio, remote-sourced env var) or no
+// fresh snapshot exists.
+func freshCachedCatalog(cache McpToolCatalogCache, serverName string, cfg config.McpServerConfig) []NamespacedTool {
+	cacheCtx, ok := cache.Context(serverName, cfg)
+	if !ok {
+		return nil
+	}
+	return cacheCtx.CurrentTools()
+}
+
+// startInBackground publishes a cache-backed placeholder immediately and resolves
+// the live connection on a background goroutine (spec 49 need 4 step 3). Readers
+// of the tool surface (ListAllTools and friends) see the cached catalog right
+// away; tool calls wait on the pending handle for the real connection.
+func (m *Manager) startInBackground(
+	ctx context.Context,
+	name string,
+	cfg config.McpServerConfig,
+	factory TransportFactory,
+	opts ManagerOptions,
+	cached []NamespacedTool,
+) {
+	pending := &pendingStartup{done: make(chan struct{})}
+	m.mu.Lock()
+	m.clients[name] = cachedManagedClient(name, cfg, cached)
+	m.pending[name] = pending
+	m.mu.Unlock()
+
+	m.background.Add(1)
+	go func() {
+		defer m.background.Done()
+		managed, err := startServer(ctx, name, cfg, factory, opts)
+		m.resolvePending(name, pending, managed, err)
+	}()
+}
+
+// cachedManagedClient builds a tools-only client from a cached catalog. It holds
+// no transport: the manager routes calls only after the live client replaces it.
+// The current filter is re-applied because the cache identity does not cover the
+// enabled/disabled tool lists — a tool disabled since caching stays hidden.
+func cachedManagedClient(name string, cfg config.McpServerConfig, cached []NamespacedTool) *ManagedClient {
+	filter := ToolFilterFromConfig(cfg)
+	discovered := make([]protocol.Tool, 0, len(cached))
+	for _, nt := range cached {
+		discovered = append(discovered, nt.Tool)
+	}
+	return &ManagedClient{
+		ServerName:  name,
+		Tools:       filterTools(discovered, filter),
+		ToolTimeout: toolTimeoutFor(cfg),
+		filter:      filter,
+	}
+}
+
+// resolvePending swaps the placeholder for the live client — or drops the server
+// when its startup failed, so the tool surface stops advertising tools that
+// cannot be called (the same contract as a synchronous startup failure) — and
+// then wakes every waiting tool call.
+func (m *Manager) resolvePending(name string, pending *pendingStartup, managed *ManagedClient, err error) {
+	m.mu.Lock()
+	closed := m.closed
+	if !closed {
+		if err != nil {
+			delete(m.clients, name)
+		} else {
+			m.clients[name] = managed
+		}
+		delete(m.pending, name)
+	}
+	m.mu.Unlock()
+
+	if closed && managed != nil {
+		// Shutdown won the race: close the connection we just opened so the
+		// stdio process does not outlive the manager.
+		_ = managed.Close()
+	}
+	pending.err = err
+	close(pending.done)
 }
 
 // startServer opens a transport, wraps it in a client with the elicitation
@@ -245,7 +383,9 @@ func (m *Manager) ServerNames() []string {
 	return names
 }
 
-// ServerInfo returns the advertised implementation metadata for a server.
+// ServerInfo returns the advertised implementation metadata for a server. A
+// server still connecting behind a cached catalog reports zero-value metadata
+// until its live connection lands (spec 49 need 4 step 3).
 func (m *Manager) ServerInfo(serverName string) (Implementation, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -289,7 +429,7 @@ func (m *Manager) ListAllToolInfos() []tools.McpToolInfo {
 // CallTool routes a tool call to the named server, validating the tool against
 // the server's filter. arguments and meta must each be a JSON object or nil.
 func (m *Manager) CallTool(ctx context.Context, serverName, toolName string, arguments, meta json.RawMessage) (protocol.CallToolResult, error) {
-	client, err := m.clientByName(serverName)
+	client, err := m.clientByName(ctx, serverName)
 	if err != nil {
 		return protocol.CallToolResult{}, err
 	}
@@ -313,7 +453,7 @@ func (m *Manager) CallQualifiedTool(ctx context.Context, qualifiedName string, a
 // ListResources returns all resources from the named server, paging through the
 // server's resources/list endpoint.
 func (m *Manager) ListResources(ctx context.Context, serverName string) ([]protocol.Resource, error) {
-	client, err := m.clientByName(serverName)
+	client, err := m.clientByName(ctx, serverName)
 	if err != nil {
 		return nil, err
 	}
@@ -326,7 +466,7 @@ func (m *Manager) ListResources(ctx context.Context, serverName string) ([]proto
 
 // ListResourceTemplates returns all resource templates from the named server.
 func (m *Manager) ListResourceTemplates(ctx context.Context, serverName string) ([]protocol.ResourceTemplate, error) {
-	client, err := m.clientByName(serverName)
+	client, err := m.clientByName(ctx, serverName)
 	if err != nil {
 		return nil, err
 	}
@@ -339,7 +479,7 @@ func (m *Manager) ListResourceTemplates(ctx context.Context, serverName string) 
 
 // ReadResource reads a resource by URI from the named server.
 func (m *Manager) ReadResource(ctx context.Context, serverName, uri string) (ReadResourceResult, error) {
-	client, err := m.clientByName(serverName)
+	client, err := m.clientByName(ctx, serverName)
 	if err != nil {
 		return ReadResourceResult{}, err
 	}
@@ -365,26 +505,73 @@ func (m *Manager) ListAllResources(ctx context.Context) map[string][]protocol.Re
 }
 
 // Shutdown closes every connected server, terminating stdio processes and HTTP
-// streams. After Shutdown the manager holds no clients.
+// streams. Background startups still connecting are cancelled and waited out, so
+// a connection that lands during the race is closed too (spec 49 need 4 step 3).
+// After Shutdown the manager holds no clients.
 func (m *Manager) Shutdown() {
 	m.mu.Lock()
+	m.closed = true
 	clients := m.clients
+	cancel := m.cancelBackground
 	m.clients = make(map[string]*ManagedClient)
+	m.pending = make(map[string]*pendingStartup)
 	m.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+	m.background.Wait()
+
 	for _, client := range clients {
 		_ = client.Close()
 	}
 }
 
-// clientByName returns the managed client for a server or an error when unknown.
-func (m *Manager) clientByName(serverName string) (*ManagedClient, error) {
+// clientByName returns the live managed client for a server, or an error when
+// the server is unknown. A server still resolving behind a cache-backed
+// placeholder (spec 49 need 4 step 3) is waited out rather than dispatched to:
+// the call blocks until its connection lands, its startup fails, or ctx expires.
+func (m *Manager) clientByName(ctx context.Context, serverName string) (*ManagedClient, error) {
+	client, pending, err := m.lookup(serverName)
+	if err != nil {
+		return nil, err
+	}
+	if client.LiveConnection() {
+		return client, nil
+	}
+	if pending == nil {
+		return nil, fmt.Errorf("mcp: MCP server %q has no live connection", serverName)
+	}
+
+	select {
+	case <-ctx.Done():
+		return nil, fmt.Errorf("mcp: waiting for MCP server %q to connect: %w", serverName, ctx.Err())
+	case <-pending.done:
+	}
+	if pending.err != nil {
+		return nil, fmt.Errorf("mcp: MCP server %q failed to start: %w", serverName, pending.err)
+	}
+
+	client, _, err = m.lookup(serverName)
+	if err != nil {
+		return nil, err
+	}
+	if !client.LiveConnection() {
+		return nil, fmt.Errorf("mcp: MCP server %q has no live connection", serverName)
+	}
+	return client, nil
+}
+
+// lookup returns a server's current client and its pending-startup handle (nil
+// when the connection is already live).
+func (m *Manager) lookup(serverName string) (*ManagedClient, *pendingStartup, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	client, ok := m.clients[serverName]
 	if !ok {
-		return nil, fmt.Errorf("mcp: unknown MCP server %q", serverName)
+		return nil, nil, fmt.Errorf("mcp: unknown MCP server %q", serverName)
 	}
-	return client, nil
+	return client, m.pending[serverName], nil
 }
 
 // sortedServerNamesLocked returns connected server names in sorted order. The
