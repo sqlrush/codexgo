@@ -222,6 +222,37 @@ shell, e.g. `/bin/zsh -lc '…'`; both binaries resolve the same account shell o
 same host, so it matches. On a host where the two binaries would resolve different
 default shells the rendered `command` could differ — not observed here.)
 
+## ⚠ Baseline binary drift (2026-08-12) — suite currently unusable
+
+The differential suite pins the **0.136.0** reference binary, but the machine's
+`codex` install has since moved to **0.147.0** (`~/.codex/packages/standalone`
+keeps no release older than 0.144.1). Run against 0.147 the suite reports 13
+failures that are pure version drift, not codexgo regressions — e.g. codex 0.147
+emits a `cache_write_input_tokens` usage field and an `id` on
+`tool_search_output` that 0.136 (and therefore codexgo) does not.
+
+Verified as drift, not regression: the same 13 failures reproduce **identically**
+at commit `deff240`, before the spec 49 cluster-A work landed.
+
+To restore the gate, install a 0.136.0 codex binary and point
+`CODEX_PARITY_BIN` at it. Until then no parity claim can be made in either
+direction, and any release DoD requiring "parity suite green" is **blocked on
+this**, not on the code under review.
+
+## MCP surface baseline (spec 49 forward-sync)
+
+The MCP client面 is deliberately **not** measured against 0.136: spec 49 ports the
+0.137→0.147 MCP protocol evolution ahead of the rest of the tree (protocol
+negotiation, tool-catalog cache + non-blocking startup, schema shape
+preservation, startup retry + selective reconnect, OAuth refresh). Its baseline
+is upstream **0.147** (`reference-codex-0147`), and the behaviors are registered
+in `DEVIATIONS.md` with status `forward-synced` rather than as gaps.
+
+This costs the 0.136 differentials nothing and needs no masks: the parity harness
+configures no MCP servers, so the forward-synced code never enters the compared
+surface. Should a future differential wire an MCP server, each mask added must
+cite the corresponding `forward-synced` DEVIATIONS row.
+
 ## Pending (need a one-time authenticated recording — maintainer)
 
 The turn-level `exec --json` differential above no longer needs credentials.

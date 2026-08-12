@@ -53,6 +53,7 @@ Legend: ✅ implemented + tested · 🟡 implemented with documented deviation/p
 | 46 | OSS providers (ollama/lmstudio) | ✅ | |
 | 47 | realtime webrtc | 🟡 | pion session; audio backend pluggable |
 | 48 | parity validation | 🟡 | automated differential suite (6/6 surfaces); broader scenarios ongoing |
+| 49 | MCP forward-sync 0.147 (cluster A) | ✅ | needs 1-5: protocol negotiation, tool-catalog cache + non-blocking startup, schema shape preservation, startup retry + selective reconnect, OAuth refresh. Need 6 (tool-search exposure) split out |
 
 ## Parity scorecard (vs real codex 0.136.0 — `docs/PARITY.md`)
 

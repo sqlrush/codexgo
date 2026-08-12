@@ -8,7 +8,7 @@
 | | |
 |---|---|
 | **Phase** | 6 — Extensibility（forward-sync 轨） |
-| **Status** | In progress |
+| **Status** | Needs 1-5 implemented（2026-08-12；待 user 验证二进制后 push/tag v0.5.0） |
 | **Depends on** | 21 (mcp-client), 26 (mcp wiring), 42 (app-server v2 faces) |
 | **Size** | L |
 | **Drop-in critical** | ★（wire protocol：版本协商 + schema 保形 + token 序列化互通） |
@@ -123,3 +123,40 @@ server 面 `internal/mcpserver`），使 MCP 面达到 0.147 等价：协议版�
 - in-process transport、`roots/list`、`sampling/createMessage`（spec 21 遗留，非簇 A 范围）；
 - airush 侧租户注入/服务化（airush spec-1.9 的事，本仓保持单机产品语义）；
 - MCP 工具渲染/TUI 展示面变更（在途工作，互不侵入）。
+
+## 实施 changelog（approve 后追加，不改上文）
+
+**2026-08-12 — 需求 1-5 实施完成**（commits `3a2d6d7`…`ae617d2`，分支 `feat/opendb-mvp`）：
+
+| 需求 | 落点 | 备注 |
+|---|---|---|
+| 1 协议协商 | `internal/mcp/protocol_mode.go` + client/server 两侧接线 | 版本常量单点；协商矩阵单测。**回归修复**：严格协商把仍停在首个稳定修订 2024-11-05 的服务端判为致命，打断了真实 gaussdb 插件（`TestBuildMcpManagerLaunchesGaussdbPlugin`）；现接受该修订（codexgo 仍只 offer 2025-06-18/2026-07-28），未知版本仍致命 |
+| 2 工具目录缓存 | `internal/mcp/tool_catalog_cache.go` + `startServer` 接线 | 内存 LRU(32)/TTL 30min，身份=server 名+EnvironmentID+stdio 指纹；代际发布 `BeginFetch`/`PublishIfNewest`（决策点 3a：无磁盘） |
+| 3 schema 保形 | `internal/tools` schema 透传 | oneOf/allOf 保留 + golden |
+| 4 步骤 1-2 | 缓存接线 + per-server 启动重试 | 退避 250ms→2s 上限、3 次；失败不再"跳过即永久" |
+| 4 步骤 3 非阻塞启动 | `Manager.startInBackground` / `resolvePending` / `clientByName` | 有新鲜缓存目录 → 立即以缓存工具挂占位 client（`StartupDeferred`）+ 后台建连；工具调用等 pending 落地；后台失败即摘除该 server；`Shutdown` 取消并等待在途启动（竞态中落地的连接被关闭）。占位重新套用当前工具过滤（缓存身份不含 enabled/disabled 列表） |
+| 4 步骤 4 选择性 reconnect | `Manager.Reconcile` | 增→启、删→关、改→重连（新连接就绪后再换下旧连接，旧目录在窗口内仍可调用）、未变→连接与在途调用不动；被 Reconcile 取代的后台启动自带 cancel 并在 resolve 时判定"已非当前"而不安装 |
+| 5 OAuth 刷新 | `internal/mcp/oauth_refresh.go` | 过期前/401 后刷新 + 序列化写回 |
+
+**裁剪**（见 `49-need4-manager-lifecycle-design.md` §3，未移植）：上游 `McpStartupUpdateEvent`
+进度事件流、ChatGPT auth provider 与 apps-server 专属缓存——codexgo 面向非 OpenAI 后端且
+CLI 装配不消费该事件流。
+
+**簿记**：DEVIATIONS 增 `49 MCP forward-sync (cluster A)` 行（状态 `forward-synced`，
+并在表头说明该状态语义）；`docs/PARITY.md` 增「MCP surface baseline」节说明该面基线为
+0.147、当前 parity 差分不涉（harness 不接 MCP server，故无需 mask）；`docs/STATUS.md` 增 49 行。
+
+**验证**：`gofmt`/`go vet` 全绿；`go test -race ./internal/mcp/...` 全绿（新增
+`manager_nonblocking_test.go` 6 例 + `manager_reconcile_test.go` 7 例）；`internal/cli`
+的 gaussdb 插件端到端用例由红转绿。全量 `go test -race ./...` 余两处**环境性、与本 spec 无关**
+的失败（已实证在 HEAD 同样失败）：`internal/cli` skills 用例读取宿主机真实
+`~/.agents/skills`；`internal/uds` 在 macOS 沙箱 TMPDIR 下 socket 路径超 `sun_path` 上限。
+
+**⚠ parity 闸门受阻（非本 spec 引起）**：验收要求"既有 parity 套件（0.136 二进制）保持绿"，
+但宿主机 `codex` 已升到 **0.147.0**（standalone 缓存最老仅 0.144.1，无 0.136 可用）。对 0.147
+跑差分套件报 13 例失败，全部是版本漂移（0.147 新增 `cache_write_input_tokens` 用量字段、
+`tool_search_output.id` 等），**已实证与本 spec 无关**：同样 13 例在本簇工作落地前的
+`deff240` 上逐例复现。恢复该闸门需装回 0.136 二进制并指向 `CODEX_PARITY_BIN`；详见
+`docs/PARITY.md` 顶部「Baseline binary drift」节。
+
+**待办**：VERSION 已 0.4.12→0.5.0；`deploy-local.sh` 部署 → **user 验证二进制后**才 push/tag。
