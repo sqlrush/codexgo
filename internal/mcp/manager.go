@@ -3,7 +3,9 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"sync"
 	"time"
@@ -76,17 +78,26 @@ type ManagerOptions struct {
 type Manager struct {
 	mu      sync.RWMutex
 	clients map[string]*ManagedClient
+	// configs records the config each connected server was started from, so
+	// Reconcile can tell a changed server from an untouched one.
+	configs map[string]config.McpServerConfig
 	// pending holds the resolution handles of servers still connecting behind a
 	// cache-backed placeholder (spec 49 need 4 step 3).
 	pending map[string]*pendingStartup
-	// closed is set by Shutdown so a background startup that finishes afterwards
-	// closes its connection instead of installing it.
+	// closed is set by Shutdown; the manager starts no further servers after it.
 	closed bool
 
-	// cancelBackground stops in-flight background startups on Shutdown;
-	// background counts them so Shutdown can wait them out.
+	// lifetime bounds background startups and is cancelled by Shutdown, which
+	// then waits out background. Held on the struct because it scopes the
+	// manager's own lifetime rather than any single call.
+	lifetime         context.Context
 	cancelBackground context.CancelFunc
 	background       sync.WaitGroup
+
+	// factory and opts are retained so Reconcile can start servers the same way
+	// NewManager did.
+	factory TransportFactory
+	opts    ManagerOptions
 
 	catalogCache    McpToolCatalogCache
 	prefixToolNames bool
@@ -94,10 +105,12 @@ type Manager struct {
 
 // pendingStartup is the resolution handle for one background server startup.
 // done is closed once the live connection has either replaced the cache-backed
-// placeholder or failed; err is set before done closes.
+// placeholder or failed; err is set before done closes. cancel abandons the
+// startup when Reconcile supersedes it.
 type pendingStartup struct {
-	done chan struct{}
-	err  error
+	done   chan struct{}
+	cancel context.CancelFunc
+	err    error
 }
 
 // NewManager starts every enabled MCP server in mcpServers concurrently, each
@@ -133,10 +146,14 @@ func NewManager(ctx context.Context, mcpServers map[string]config.McpServerConfi
 
 	manager := &Manager{
 		clients:      make(map[string]*ManagedClient),
+		configs:      make(map[string]config.McpServerConfig),
 		pending:      make(map[string]*pendingStartup),
+		factory:      factory,
+		opts:         opts,
 		catalogCache: opts.CatalogCache,
 	}
 	bgCtx, cancelBackground := context.WithCancel(ctx)
+	manager.lifetime = bgCtx
 	manager.cancelBackground = cancelBackground
 
 	type startupResult struct {
@@ -183,7 +200,7 @@ func NewManager(ctx context.Context, mcpServers map[string]config.McpServerConfi
 		case res.deferred:
 			results = append(results, ServerStartupResult{ServerName: res.name, Status: StartupDeferred})
 		default:
-			manager.install(res.name, res.managed)
+			manager.install(res.name, mcpServers[res.name], res.managed)
 			results = append(results, ServerStartupResult{ServerName: res.name, Status: StartupReady})
 		}
 	}
@@ -192,12 +209,13 @@ func NewManager(ctx context.Context, mcpServers map[string]config.McpServerConfi
 	return manager, results, nil
 }
 
-// install records a fully-started client. It takes the lock because background
-// startups may be publishing concurrently.
-func (m *Manager) install(name string, client *ManagedClient) {
+// install records a fully-started client and the config it came from. It takes
+// the lock because background startups may be publishing concurrently.
+func (m *Manager) install(name string, cfg config.McpServerConfig, client *ManagedClient) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.clients[name] = client
+	m.configs[name] = cfg
 }
 
 // freshCachedCatalog returns a fresh cached tool catalog for a server, or nil
@@ -223,16 +241,19 @@ func (m *Manager) startInBackground(
 	opts ManagerOptions,
 	cached []NamespacedTool,
 ) {
-	pending := &pendingStartup{done: make(chan struct{})}
+	startCtx, cancel := context.WithCancel(ctx)
+	pending := &pendingStartup{done: make(chan struct{}), cancel: cancel}
 	m.mu.Lock()
 	m.clients[name] = cachedManagedClient(name, cfg, cached)
+	m.configs[name] = cfg
 	m.pending[name] = pending
 	m.mu.Unlock()
 
 	m.background.Add(1)
 	go func() {
 		defer m.background.Done()
-		managed, err := startServer(ctx, name, cfg, factory, opts)
+		defer cancel()
+		managed, err := startServer(startCtx, name, cfg, factory, opts)
 		m.resolvePending(name, pending, managed, err)
 	}()
 }
@@ -259,12 +280,16 @@ func cachedManagedClient(name string, cfg config.McpServerConfig, cached []Names
 // when its startup failed, so the tool surface stops advertising tools that
 // cannot be called (the same contract as a synchronous startup failure) — and
 // then wakes every waiting tool call.
+//
+// A startup that is no longer this server's current one (Shutdown or Reconcile
+// superseded it) installs nothing and closes whatever it opened.
 func (m *Manager) resolvePending(name string, pending *pendingStartup, managed *ManagedClient, err error) {
 	m.mu.Lock()
-	closed := m.closed
-	if !closed {
+	current := !m.closed && m.pending[name] == pending
+	if current {
 		if err != nil {
 			delete(m.clients, name)
+			delete(m.configs, name)
 		} else {
 			m.clients[name] = managed
 		}
@@ -272,13 +297,149 @@ func (m *Manager) resolvePending(name string, pending *pendingStartup, managed *
 	}
 	m.mu.Unlock()
 
-	if closed && managed != nil {
-		// Shutdown won the race: close the connection we just opened so the
-		// stdio process does not outlive the manager.
+	if !current && managed != nil {
+		// Superseded: close the connection we just opened so the stdio process
+		// does not outlive its owner.
 		_ = managed.Close()
 	}
 	pending.err = err
 	close(pending.done)
+}
+
+// ErrManagerClosed is returned by Reconcile after Shutdown.
+var ErrManagerClosed = errors.New("mcp: manager is shut down")
+
+// Reconcile brings the running server set in line with servers (spec 49 need 4
+// step 4): newly-configured servers start, removed servers close, and servers
+// whose config changed reconnect. A server whose config is unchanged keeps its
+// existing connection — its in-flight calls are untouched, which is the whole
+// point of reconciling instead of restarting the manager.
+//
+// The returned results cover only the servers that were started (or attempted);
+// unchanged and removed servers produce no result. Disabled servers count as
+// removed.
+func (m *Manager) Reconcile(ctx context.Context, servers map[string]config.McpServerConfig) ([]ServerStartupResult, error) {
+	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return nil, ErrManagerClosed
+	}
+	running := make(map[string]config.McpServerConfig, len(m.configs))
+	for name, cfg := range m.configs {
+		running[name] = cfg
+	}
+	m.mu.Unlock()
+
+	var toStart []string   // not running yet
+	var toReplace []string // running with a changed config
+	var toStop []string
+	for name, cfg := range servers {
+		if !cfg.Enabled {
+			continue
+		}
+		current, isRunning := running[name]
+		switch {
+		case !isRunning:
+			toStart = append(toStart, name)
+		case !reflect.DeepEqual(current, cfg):
+			// Changed: reconnect, swapping the old connection out only once the
+			// new one is up, so the tool surface is never silently emptied.
+			toReplace = append(toReplace, name)
+		}
+	}
+	for name := range running {
+		if cfg, keep := servers[name]; !keep || !cfg.Enabled {
+			toStop = append(toStop, name)
+		}
+	}
+
+	for _, name := range toStop {
+		m.stopServer(name)
+	}
+
+	sort.Strings(toStart)
+	sort.Strings(toReplace)
+	results := make([]ServerStartupResult, 0, len(toStart)+len(toReplace))
+	for _, name := range toStart {
+		cfg := servers[name]
+		if err := validateServerName(name); err != nil {
+			results = append(results, ServerStartupResult{ServerName: name, Status: StartupFailed, Err: err})
+			continue
+		}
+		// A newly-added server with a fresh cached catalog starts non-blocking,
+		// exactly as it would at construction (step 3).
+		if cached := freshCachedCatalog(m.opts.CatalogCache, name, cfg); cached != nil {
+			m.startInBackground(m.lifetime, name, cfg, m.factory, m.opts, cached)
+			results = append(results, ServerStartupResult{ServerName: name, Status: StartupDeferred})
+			continue
+		}
+		results = append(results, m.startAndInstall(ctx, name, cfg))
+	}
+	// Reconnects run after the additions so a changed server keeps serving its
+	// old connection for as short a window as the new one needs.
+	for _, name := range toReplace {
+		results = append(results, m.startAndInstall(ctx, name, servers[name]))
+	}
+	return results, nil
+}
+
+// startAndInstall starts one server and installs it, closing whatever connection
+// it displaced.
+func (m *Manager) startAndInstall(ctx context.Context, name string, cfg config.McpServerConfig) ServerStartupResult {
+	managed, err := startServer(ctx, name, cfg, m.factory, m.opts)
+	if err != nil {
+		return ServerStartupResult{ServerName: name, Status: StartupFailed, Err: err}
+	}
+	if replaced := m.replace(name, cfg, managed); replaced != nil {
+		_ = replaced.Close()
+	}
+	return ServerStartupResult{ServerName: name, Status: StartupReady}
+}
+
+// stopServer removes a server, abandoning any background startup still running
+// for it, and closes its connection.
+func (m *Manager) stopServer(name string) {
+	m.mu.Lock()
+	client := m.clients[name]
+	pending := m.pending[name]
+	delete(m.clients, name)
+	delete(m.configs, name)
+	delete(m.pending, name)
+	m.mu.Unlock()
+
+	if pending != nil {
+		// The goroutine sees it is no longer current and closes what it opened.
+		pending.cancel()
+	}
+	if client != nil {
+		_ = client.Close()
+	}
+}
+
+// replace installs a freshly-started client and returns the connection it
+// displaced (nil when there was none) for the caller to close. Any background
+// startup for that server is abandoned.
+func (m *Manager) replace(name string, cfg config.McpServerConfig, client *ManagedClient) *ManagedClient {
+	m.mu.Lock()
+	previous := m.clients[name]
+	pending := m.pending[name]
+	m.clients[name] = client
+	m.configs[name] = cfg
+	delete(m.pending, name)
+	closed := m.closed
+	m.mu.Unlock()
+
+	if pending != nil {
+		pending.cancel()
+	}
+	if closed {
+		// Shutdown ran while this server was connecting: do not leak it.
+		return client
+	}
+	if previous != nil && previous.LiveConnection() {
+		return previous
+	}
+	return nil
 }
 
 // startServer opens a transport, wraps it in a client with the elicitation
@@ -514,6 +675,7 @@ func (m *Manager) Shutdown() {
 	clients := m.clients
 	cancel := m.cancelBackground
 	m.clients = make(map[string]*ManagedClient)
+	m.configs = make(map[string]config.McpServerConfig)
 	m.pending = make(map[string]*pendingStartup)
 	m.mu.Unlock()
 
