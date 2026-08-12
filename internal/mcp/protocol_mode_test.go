@@ -25,10 +25,17 @@ func TestNegotiateVersion(t *testing.T) {
 		{"legacy accepts legacy", ProtocolModeLegacy, "2025-06-18", "2025-06-18", false},
 		{"legacy rejects modern", ProtocolModeLegacy, "2026-07-28", "", true},
 		{"legacy empty→legacy fallback", ProtocolModeLegacy, "", "2025-06-18", false},
+		// A server pinned to the first stable revision (2024-11-05) must still
+		// connect: codexgo offers a newer version, the server answers with the one
+		// it speaks, and the surface codexgo uses (tools, resources) is unchanged
+		// across the two. Rejecting it broke real servers (gaussdb plugin).
+		{"legacy accepts oldest revision", ProtocolModeLegacy, "2024-11-05", "2024-11-05", false},
 		{"modern accepts modern", ProtocolModeV20260728, "2026-07-28", "2026-07-28", false},
 		{"modern accepts legacy downgrade", ProtocolModeV20260728, "2025-06-18", "2025-06-18", false},
+		{"modern accepts oldest revision", ProtocolModeV20260728, "2024-11-05", "2024-11-05", false},
 		{"modern empty→legacy fallback", ProtocolModeV20260728, "", "2025-06-18", false},
 		{"modern rejects unknown", ProtocolModeV20260728, "2099-01-01", "", true},
+		{"legacy rejects unknown", ProtocolModeLegacy, "2099-01-01", "", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

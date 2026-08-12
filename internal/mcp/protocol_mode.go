@@ -5,6 +5,11 @@ import "fmt"
 // Protocol version strings advertised during the initialize handshake.
 // Port of the reference `rmcp::model::ProtocolVersion` values codexgo speaks.
 const (
+	// ProtocolVersion20241105 is the first stable MCP revision. codexgo never
+	// offers it, but accepts a server that answers with it: the tool and resource
+	// surface codexgo uses is identical to 2025-06-18, and real servers (the
+	// gaussdb plugin among them) are still pinned to it.
+	ProtocolVersion20241105 = "2024-11-05"
 	// ProtocolVersion20250618 is the legacy revision codexgo has always used.
 	ProtocolVersion20250618 = "2025-06-18"
 	// ProtocolVersion20260728 is the MCP 2026-07-28 revision (spec 49 need 1:
@@ -39,13 +44,15 @@ func (m ProtocolMode) PreferredProtocolVersion() string {
 }
 
 // supportedVersions is the set this policy accepts in an initialize response,
-// newest first. Legacy accepts only the legacy revision; the modern policy
-// accepts the modern revision and negotiates down to legacy.
+// newest first. Legacy accepts the legacy revision; the modern policy also
+// accepts the modern revision and negotiates down. Both accept the first stable
+// revision (2024-11-05) from servers still pinned to it — codexgo offers a newer
+// version but speaks the older one over the same tool/resource surface.
 func (m ProtocolMode) supportedVersions() []string {
 	if m == ProtocolModeV20260728 {
-		return []string{ProtocolVersion20260728, ProtocolVersion20250618}
+		return []string{ProtocolVersion20260728, ProtocolVersion20250618, ProtocolVersion20241105}
 	}
-	return []string{ProtocolVersion20250618}
+	return []string{ProtocolVersion20250618, ProtocolVersion20241105}
 }
 
 // NegotiateVersion validates the server's chosen protocolVersion against this
