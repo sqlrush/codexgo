@@ -159,4 +159,11 @@ CLI 装配不消费该事件流。
 `deff240` 上逐例复现。恢复该闸门需装回 0.136 二进制并指向 `CODEX_PARITY_BIN`；详见
 `docs/PARITY.md` 顶部「Baseline binary drift」节。
 
-**待办**：VERSION 已 0.4.12→0.5.0；`deploy-local.sh` 部署 → **user 验证二进制后**才 push/tag。
+**部署后验证（2026-08-12，Mac 宿主机 `/opt/homebrew/bin/codexgo` v0.5.0 `e2b2ad6`）**：
+以临时 `-c mcp_servers.gaussdb.command=…` 覆盖接入真实 gaussdb 插件跑一轮 exec，装配无 MCP
+启动告警，模型完整列出该 server 的 38 个工具。**地面真值另取**（`scripts/mac-probe-mcp-stdio.py`
+直接对二进制走 JSON-RPC initialize+tools/list，不经模型）：服务端自报
+`protocolVersion=2024-11-05`、`codexgo-db-gaussdb v0.9.16`、38 个工具，与模型所述集合逐名一致。
+该 2024-11-05 正是需求 1 严格协商此前判死的修订——本次修复为承重项，非锦上添花。
+
+**待办**：VERSION 已 0.4.12→0.5.0；`deploy-local.sh` 已部署且验证通过 → 待 user 指示后 push/tag。
