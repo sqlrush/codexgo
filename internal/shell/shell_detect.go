@@ -1,15 +1,10 @@
-// Package shellcmd ports the subset of codex-shell-command and
-// codex-shell-escalation that codexgo relies on: detecting the shell type and
-// login-shell invocation, tokenizing bash scripts into word-only command
-// sequences (via mvdan.cc/sh instead of tree-sitter-bash), extracting URLs from
-// command arguments, and detecting privilege-escalation wrappers (sudo, su,
-// doas).
-//
-// Faithful port of codex 0.136.0. Where the Rust implementation uses
-// tree-sitter-bash, this port uses mvdan.cc/sh's syntax package; the observable
-// facts (which scripts are accepted as word-only sequences, and what argv each
-// command splits into) match codex.
-package shellcmd
+// Package shell ports the turn-running subset of codex_core::shell /
+// codex-shell: classifying a shell binary (ShellType), resolving the user's
+// default interactive shell (DefaultUserShell) and deriving the argv used to
+// run a command through it. It has no third-party dependencies; the bash
+// tokenizer, URL and escalation detection live in the sibling package shellcmd
+// (which mirrors codex-shell-command and pulls in mvdan.cc/sh).
+package shell
 
 import "path/filepath"
 

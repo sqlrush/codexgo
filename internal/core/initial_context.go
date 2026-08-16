@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/shellcmd"
+	"github.com/sqlrush/codexgo/internal/shell"
 )
 
 // buildSessionInitialContext renders the codex initial-context messages seeded
@@ -103,14 +103,14 @@ func sessionShellName(configured string) string {
 	if configured != "" {
 		return configured
 	}
-	switch shellcmd.DefaultUserShell().Type {
-	case shellcmd.ShellTypeZsh:
+	switch shell.DefaultUserShell().Type {
+	case shell.ShellTypeZsh:
 		return "zsh"
-	case shellcmd.ShellTypeBash:
+	case shell.ShellTypeBash:
 		return "bash"
-	case shellcmd.ShellTypePowerShell:
+	case shell.ShellTypePowerShell:
 		return "powershell"
-	case shellcmd.ShellTypeCmd:
+	case shell.ShellTypeCmd:
 		return "cmd"
 	default:
 		return "sh"
