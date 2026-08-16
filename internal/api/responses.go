@@ -43,7 +43,11 @@ func (c *ResponsesClient) WithTelemetry(request client.RequestTelemetry, sse SSE
 	return c
 }
 
-const responsesPath = "responses"
+// ResponsesPath is the Responses API path segment appended to a provider base
+// URL (also used by the websocket transport in api/responsesws).
+const ResponsesPath = "responses"
+
+const responsesPath = ResponsesPath
 
 // StreamRequest streams a typed ResponsesApiRequest. It mirrors the Rust
 // `stream_request`: it serializes the body, optionally attaches item ids for

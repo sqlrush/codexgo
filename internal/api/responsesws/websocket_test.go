@@ -1,4 +1,4 @@
-package api
+package responsesws
 
 import (
 	"context"
@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/sqlrush/codexgo/internal/api"
 	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
@@ -40,12 +42,12 @@ func TestResponsesWebsocketStreamRequest(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	provider := Provider{
+	provider := api.Provider{
 		Name:              "test",
 		BaseURL:           srv.URL,
 		StreamIdleTimeout: 2 * time.Second,
 	}
-	wsClient := NewResponsesWebsocketClient(provider, NewBearerAuth("tok"), srv.Client())
+	wsClient := NewResponsesWebsocketClient(provider, api.NewBearerAuth("tok"), srv.Client())
 
 	conn, apiErr := wsClient.Connect(context.Background(), http.Header{}, http.Header{}, nil, nil)
 	if apiErr != nil {
@@ -53,9 +55,9 @@ func TestResponsesWebsocketStreamRequest(t *testing.T) {
 	}
 	defer conn.Close()
 
-	req := ResponsesWsRequest{
-		Kind: ResponsesWsRequestCreate,
-		Create: &ResponseCreateWsRequest{
+	req := api.ResponsesWsRequest{
+		Kind: api.ResponsesWsRequestCreate,
+		Create: &api.ResponseCreateWsRequest{
 			Model:      "m",
 			Input:      []protocol.ResponseItem{},
 			ToolChoice: "auto",
@@ -67,7 +69,7 @@ func TestResponsesWebsocketStreamRequest(t *testing.T) {
 		t.Fatalf("stream request: %v", apiErr)
 	}
 
-	var kinds []ResponseEventKind
+	var kinds []api.ResponseEventKind
 	for res := range stream.Events {
 		if res.Err != nil {
 			t.Fatalf("stream error: %v", res.Err)
@@ -77,10 +79,10 @@ func TestResponsesWebsocketStreamRequest(t *testing.T) {
 	if len(kinds) < 3 {
 		t.Fatalf("expected at least 3 events, got %v", kinds)
 	}
-	if kinds[0] != ResponseEventServerModel {
+	if kinds[0] != api.ResponseEventServerModel {
 		t.Fatalf("expected server model first, got %v", kinds[0])
 	}
-	if kinds[len(kinds)-1] != ResponseEventCompleted {
+	if kinds[len(kinds)-1] != api.ResponseEventCompleted {
 		t.Fatalf("expected completed last, got %v", kinds[len(kinds)-1])
 	}
 }
@@ -101,29 +103,29 @@ func TestResponsesWebsocketConnectionLimitReachedIsRetryable(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	provider := Provider{BaseURL: srv.URL, StreamIdleTimeout: 2 * time.Second}
-	wsClient := NewResponsesWebsocketClient(provider, NoOpAuth{}, srv.Client())
+	provider := api.Provider{BaseURL: srv.URL, StreamIdleTimeout: 2 * time.Second}
+	wsClient := NewResponsesWebsocketClient(provider, api.NoOpAuth{}, srv.Client())
 	conn, apiErr := wsClient.Connect(context.Background(), http.Header{}, http.Header{}, nil, nil)
 	if apiErr != nil {
 		t.Fatalf("connect: %v", apiErr)
 	}
 	defer conn.Close()
 
-	req := ResponsesWsRequest{
-		Kind:   ResponsesWsRequestCreate,
-		Create: &ResponseCreateWsRequest{Model: "m", Input: []protocol.ResponseItem{}, ToolChoice: "auto"},
+	req := api.ResponsesWsRequest{
+		Kind:   api.ResponsesWsRequestCreate,
+		Create: &api.ResponseCreateWsRequest{Model: "m", Input: []protocol.ResponseItem{}, ToolChoice: "auto"},
 	}
 	stream, apiErr := conn.StreamRequest(context.Background(), req, false)
 	if apiErr != nil {
 		t.Fatalf("stream request: %v", apiErr)
 	}
-	var lastErr *APIError
+	var lastErr *api.APIError
 	for res := range stream.Events {
 		if res.Err != nil {
 			lastErr = res.Err
 		}
 	}
-	if lastErr == nil || lastErr.Kind != APIErrorRetryable {
+	if lastErr == nil || lastErr.Kind != api.APIErrorRetryable {
 		t.Fatalf("expected retryable error, got %v", lastErr)
 	}
 }
@@ -131,7 +133,7 @@ func TestResponsesWebsocketConnectionLimitReachedIsRetryable(t *testing.T) {
 func TestMergeRequestHeaders(t *testing.T) {
 	provider := http.Header{}
 	provider.Set("X-Common", "provider")
-	provider.Set("X-Provider-Only", "p")
+	provider.Set("X-api.Provider-Only", "p")
 	extra := http.Header{}
 	extra.Set("X-Common", "extra")
 	def := http.Header{}
@@ -142,7 +144,7 @@ func TestMergeRequestHeaders(t *testing.T) {
 	if merged.Get("X-Common") != "extra" {
 		t.Fatalf("extra should override, got %q", merged.Get("X-Common"))
 	}
-	if merged.Get("X-Provider-Only") != "p" {
+	if merged.Get("X-api.Provider-Only") != "p" {
 		t.Fatalf("provider-only missing")
 	}
 	if merged.Get("X-Default-Only") != "d" {

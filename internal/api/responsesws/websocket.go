@@ -1,4 +1,4 @@
-package api
+package responsesws
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/sqlrush/codexgo/internal/api"
 	"github.com/sqlrush/codexgo/internal/client"
 )
 
@@ -18,7 +19,7 @@ import (
 const (
 	wsXCodexTurnStateHeader   = "X-Codex-Turn-State"
 	wsXModelsEtagHeader       = "X-Models-Etag"
-	wsXReasoningIncluded      = "X-Reasoning-Included"
+	wsXReasoningIncluded      = "X-api.Reasoning-Included"
 	wsOpenAIModelHeader       = "OpenAI-Model"
 	wsConnLimitReachedCode    = "websocket_connection_limit_reached"
 	wsConnLimitReachedMessage = "Responses websocket connection limit reached (60 minutes). Create a new websocket connection to continue."
@@ -34,8 +35,8 @@ type ResponsesWebsocketClose struct {
 // ResponsesWebsocketClient connects to the Responses WebSocket endpoint for one
 // provider. It mirrors the Rust `ResponsesWebsocketClient`.
 type ResponsesWebsocketClient struct {
-	provider Provider
-	auth     AuthProvider
+	provider api.Provider
+	auth     api.AuthProvider
 	// httpClient is used for the WebSocket handshake. When nil the default
 	// client is used.
 	httpClient *http.Client
@@ -43,7 +44,7 @@ type ResponsesWebsocketClient struct {
 
 // NewResponsesWebsocketClient builds a WebSocket client for a provider and auth
 // source. httpClient may be nil to use the default.
-func NewResponsesWebsocketClient(provider Provider, auth AuthProvider, httpClient *http.Client) *ResponsesWebsocketClient {
+func NewResponsesWebsocketClient(provider api.Provider, auth api.AuthProvider, httpClient *http.Client) *ResponsesWebsocketClient {
 	return &ResponsesWebsocketClient{provider: provider, auth: auth, httpClient: httpClient}
 }
 
@@ -57,7 +58,7 @@ type ResponsesWebsocketConnection struct {
 	serverReasoningIncluded bool
 	modelsEtag              string
 	serverModel             string
-	telemetry               WebsocketTelemetry
+	telemetry               api.WebsocketTelemetry
 }
 
 // Connect opens a WebSocket connection. It mirrors the Rust `connect`. The
@@ -66,9 +67,9 @@ func (c *ResponsesWebsocketClient) Connect(
 	ctx context.Context,
 	extraHeaders, defaultHeaders http.Header,
 	setTurnState func(string),
-	telemetry WebsocketTelemetry,
-) (*ResponsesWebsocketConnection, *APIError) {
-	wsURL := c.provider.WebsocketURLForPath(responsesPath)
+	telemetry api.WebsocketTelemetry,
+) (*ResponsesWebsocketConnection, *api.APIError) {
+	wsURL := c.provider.WebsocketURLForPath(api.ResponsesPath)
 
 	headers := mergeRequestHeaders(c.provider.Headers, extraHeaders, defaultHeaders)
 	c.auth.AddAuthHeaders(headers)
@@ -130,37 +131,37 @@ func (c *ResponsesWebsocketConnection) Close() error {
 
 // SendResponseProcessed sends a "response.processed" frame on a reused
 // connection. It mirrors the Rust `send_response_processed`.
-func (c *ResponsesWebsocketConnection) SendResponseProcessed(ctx context.Context, responseID string) *APIError {
-	request := ResponsesWsRequest{
-		Kind:      ResponsesWsRequestProcessed,
-		Processed: &ResponseProcessedWsRequest{ResponseID: responseID},
+func (c *ResponsesWebsocketConnection) SendResponseProcessed(ctx context.Context, responseID string) *api.APIError {
+	request := api.ResponsesWsRequest{
+		Kind:      api.ResponsesWsRequestProcessed,
+		Processed: &api.ResponseProcessedWsRequest{ResponseID: responseID},
 	}
 	body, err := json.Marshal(request)
 	if err != nil {
-		return NewStreamError(fmt.Sprintf("failed to encode websocket request: %v", err))
+		return api.NewStreamError(fmt.Sprintf("failed to encode websocket request: %v", err))
 	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed || c.conn == nil {
-		return NewStreamError("websocket connection is closed")
+		return api.NewStreamError("websocket connection is closed")
 	}
 	return sendWebsocketRequest(ctx, c.conn, body, c.idleTimeout, c.telemetry, true)
 }
 
-// StreamRequest sends a request frame and returns a ResponseStream of the
+// StreamRequest sends a request frame and returns a api.ResponseStream of the
 // resulting events. It mirrors the Rust `stream_request`. The connection is held
 // exclusively for the lifetime of the returned stream.
-func (c *ResponsesWebsocketConnection) StreamRequest(ctx context.Context, request ResponsesWsRequest, connectionReused bool) (ResponseStream, *APIError) {
+func (c *ResponsesWebsocketConnection) StreamRequest(ctx context.Context, request api.ResponsesWsRequest, connectionReused bool) (api.ResponseStream, *api.APIError) {
 	body, err := json.Marshal(request)
 	if err != nil {
-		return ResponseStream{}, NewStreamError(fmt.Sprintf("failed to encode websocket request: %v", err))
+		return api.ResponseStream{}, api.NewStreamError(fmt.Sprintf("failed to encode websocket request: %v", err))
 	}
 
-	out := make(chan ResponseResult, 1600)
+	out := make(chan api.ResponseResult, 1600)
 	go func() {
 		defer close(out)
-		send := func(res ResponseResult) bool {
+		send := func(res api.ResponseResult) bool {
 			select {
 			case <-ctx.Done():
 				return false
@@ -170,17 +171,17 @@ func (c *ResponsesWebsocketConnection) StreamRequest(ctx context.Context, reques
 		}
 
 		if c.serverModel != "" {
-			if !send(ResponseResult{Event: &ResponseEvent{Kind: ResponseEventServerModel, Model: c.serverModel}}) {
+			if !send(api.ResponseResult{Event: &api.ResponseEvent{Kind: api.ResponseEventServerModel, Model: c.serverModel}}) {
 				return
 			}
 		}
 		if c.modelsEtag != "" {
-			if !send(ResponseResult{Event: &ResponseEvent{Kind: ResponseEventModelsEtag, ModelsEtag: c.modelsEtag}}) {
+			if !send(api.ResponseResult{Event: &api.ResponseEvent{Kind: api.ResponseEventModelsEtag, ModelsEtag: c.modelsEtag}}) {
 				return
 			}
 		}
 		if c.serverReasoningIncluded {
-			if !send(ResponseResult{Event: &ResponseEvent{Kind: ResponseEventServerReasoningIncluded, ReasoningIncluded: true}}) {
+			if !send(api.ResponseResult{Event: &api.ResponseEvent{Kind: api.ResponseEventServerReasoningIncluded, ReasoningIncluded: true}}) {
 				return
 			}
 		}
@@ -188,7 +189,7 @@ func (c *ResponsesWebsocketConnection) StreamRequest(ctx context.Context, reques
 		c.mu.Lock()
 		if c.closed || c.conn == nil {
 			c.mu.Unlock()
-			send(ResponseResult{Err: NewStreamError("websocket connection is closed")})
+			send(api.ResponseResult{Err: api.NewStreamError("websocket connection is closed")})
 			return
 		}
 		runErr := runWebsocketResponseStream(ctx, c.conn, send, body, c.idleTimeout, c.telemetry, connectionReused)
@@ -201,13 +202,13 @@ func (c *ResponsesWebsocketConnection) StreamRequest(ctx context.Context, reques
 			if conn != nil {
 				_ = conn.Close(websocket.StatusInternalError, "stream error")
 			}
-			send(ResponseResult{Err: runErr})
+			send(api.ResponseResult{Err: runErr})
 			return
 		}
 		c.mu.Unlock()
 	}()
 
-	return ResponseStream{Events: out, UpstreamRequestID: nil}, nil
+	return api.ResponseStream{Events: out, UpstreamRequestID: nil}, nil
 }
 
 // runWebsocketResponseStream sends the request and processes incoming text
@@ -215,12 +216,12 @@ func (c *ResponsesWebsocketConnection) StreamRequest(ctx context.Context, reques
 func runWebsocketResponseStream(
 	ctx context.Context,
 	conn *websocket.Conn,
-	send func(ResponseResult) bool,
+	send func(api.ResponseResult) bool,
 	body json.RawMessage,
 	idleTimeout time.Duration,
-	telemetry WebsocketTelemetry,
+	telemetry api.WebsocketTelemetry,
 	connectionReused bool,
-) *APIError {
+) *api.APIError {
 	var lastServerModel string
 	if err := sendWebsocketRequest(ctx, conn, body, idleTimeout, telemetry, connectionReused); err != nil {
 		return err
@@ -242,35 +243,35 @@ func runWebsocketResponseStream(
 			}
 		}
 
-		var event ResponsesStreamEvent
+		var event api.ResponsesStreamEvent
 		if json.Unmarshal([]byte(text), &event) != nil {
 			continue
 		}
 
 		modelVerifications := event.ModelVerifications()
 		if event.EventKind() == "codex.rate_limits" {
-			if snapshot := ParseRateLimitEvent(text); snapshot != nil {
-				send(ResponseResult{Event: &ResponseEvent{Kind: ResponseEventRateLimits, RateLimits: snapshot}})
+			if snapshot := api.ParseRateLimitEvent(text); snapshot != nil {
+				send(api.ResponseResult{Event: &api.ResponseEvent{Kind: api.ResponseEventRateLimits, RateLimits: snapshot}})
 			}
 			continue
 		}
 		if model := event.ResponseModel(); model != "" && model != lastServerModel {
-			send(ResponseResult{Event: &ResponseEvent{Kind: ResponseEventServerModel, Model: model}})
+			send(api.ResponseResult{Event: &api.ResponseEvent{Kind: api.ResponseEventServerModel, Model: model}})
 			lastServerModel = model
 		}
 		if len(modelVerifications) > 0 {
-			if !send(ResponseResult{Event: &ResponseEvent{Kind: ResponseEventModelVerifications, Verifications: modelVerifications}}) {
-				return NewStreamError("response event consumer dropped")
+			if !send(api.ResponseResult{Event: &api.ResponseEvent{Kind: api.ResponseEventModelVerifications, Verifications: modelVerifications}}) {
+				return api.NewStreamError("response event consumer dropped")
 			}
 		}
 
-		ev, apiErr := ProcessResponsesEvent(event)
+		ev, apiErr := api.ProcessResponsesEvent(event)
 		switch {
 		case apiErr != nil:
 			return apiErr
 		case ev != nil:
-			isCompleted := ev.Kind == ResponseEventCompleted
-			send(ResponseResult{Event: ev})
+			isCompleted := ev.Kind == api.ResponseEventCompleted
+			send(api.ResponseResult{Event: ev})
 			if isCompleted {
 				return nil
 			}
@@ -280,7 +281,7 @@ func runWebsocketResponseStream(
 
 // readWebsocketText reads the next text frame subject to the idle timeout. Binary
 // and close frames map to terminal stream errors, mirroring the Rust handling.
-func readWebsocketText(ctx context.Context, conn *websocket.Conn, idleTimeout time.Duration) (string, *APIError) {
+func readWebsocketText(ctx context.Context, conn *websocket.Conn, idleTimeout time.Duration) (string, *api.APIError) {
 	readCtx := ctx
 	var cancel context.CancelFunc
 	if idleTimeout > 0 {
@@ -290,21 +291,21 @@ func readWebsocketText(ctx context.Context, conn *websocket.Conn, idleTimeout ti
 	msgType, data, err := conn.Read(readCtx)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
-			return "", NewStreamError("idle timeout waiting for websocket")
+			return "", api.NewStreamError("idle timeout waiting for websocket")
 		}
 		var closeErr websocket.CloseError
 		if errors.As(err, &closeErr) {
-			return "", NewStreamError("websocket closed by server before response.completed")
+			return "", api.NewStreamError("websocket closed by server before response.completed")
 		}
-		return "", NewStreamError(err.Error())
+		return "", api.NewStreamError(err.Error())
 	}
 	switch msgType {
 	case websocket.MessageText:
 		return string(data), nil
 	case websocket.MessageBinary:
-		return "", NewStreamError("unexpected binary websocket event")
+		return "", api.NewStreamError("unexpected binary websocket event")
 	default:
-		return "", NewStreamError("unexpected websocket event")
+		return "", api.NewStreamError("unexpected websocket event")
 	}
 }
 
@@ -315,9 +316,9 @@ func sendWebsocketRequest(
 	conn *websocket.Conn,
 	body json.RawMessage,
 	idleTimeout time.Duration,
-	telemetry WebsocketTelemetry,
+	telemetry api.WebsocketTelemetry,
 	connectionReused bool,
-) *APIError {
+) *api.APIError {
 	writeCtx := ctx
 	var cancel context.CancelFunc
 	if idleTimeout > 0 {
@@ -326,12 +327,12 @@ func sendWebsocketRequest(
 	}
 	start := time.Now()
 	err := conn.Write(writeCtx, websocket.MessageText, body)
-	var apiErr *APIError
+	var apiErr *api.APIError
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
-			apiErr = NewStreamError("idle timeout sending websocket request")
+			apiErr = api.NewStreamError("idle timeout sending websocket request")
 		} else {
-			apiErr = NewStreamError(fmt.Sprintf("failed to send websocket request: %v", err))
+			apiErr = api.NewStreamError(fmt.Sprintf("failed to send websocket request: %v", err))
 		}
 	}
 	if telemetry != nil {
@@ -366,15 +367,15 @@ func parseWrappedWebsocketErrorEvent(payload string) *wrappedWebsocketErrorEvent
 	return &event
 }
 
-// mapWrappedWebsocketErrorEvent maps a wrapped error event to an APIError. It
+// mapWrappedWebsocketErrorEvent maps a wrapped error event to an api.APIError. It
 // mirrors the Rust `map_wrapped_websocket_error_event`.
-func mapWrappedWebsocketErrorEvent(event *wrappedWebsocketErrorEvent, originalPayload string) *APIError {
+func mapWrappedWebsocketErrorEvent(event *wrappedWebsocketErrorEvent, originalPayload string) *api.APIError {
 	if event.Error != nil && event.Error.Code != nil && *event.Error.Code == wsConnLimitReachedCode {
 		msg := wsConnLimitReachedMessage
 		if event.Error.Message != nil {
 			msg = *event.Error.Message
 		}
-		return NewRetryableError(msg, nil)
+		return api.NewRetryableError(msg, nil)
 	}
 
 	status := event.Status
@@ -388,7 +389,7 @@ func mapWrappedWebsocketErrorEvent(event *wrappedWebsocketErrorEvent, originalPa
 		return nil
 	}
 	headers := jsonHeadersToHTTPHeaders(event.Headers)
-	return NewTransportError(client.NewHTTPError(*status, "", headers, originalPayload))
+	return api.NewTransportError(client.NewHTTPError(*status, "", headers, originalPayload))
 }
 
 func jsonHeadersToHTTPHeaders(headers map[string]json.RawMessage) http.Header {
@@ -426,7 +427,10 @@ func jsonHeaderValue(raw json.RawMessage) (string, bool) {
 // override provider headers; default headers fill only absent keys. It mirrors
 // the Rust `merge_request_headers`.
 func mergeRequestHeaders(providerHeaders, extraHeaders, defaultHeaders http.Header) http.Header {
-	headers := cloneHeader(providerHeaders)
+	headers := providerHeaders.Clone()
+	if headers == nil {
+		headers = http.Header{}
+	}
 	for name, values := range extraHeaders {
 		headers.Del(name)
 		for _, v := range values {
@@ -444,14 +448,14 @@ func mergeRequestHeaders(providerHeaders, extraHeaders, defaultHeaders http.Head
 }
 
 // mapWSDialError maps a WebSocket handshake error (and its HTTP response, when
-// present) to an APIError. It mirrors the Rust `map_ws_error`.
-func mapWSDialError(err error, url string, resp *http.Response) *APIError {
+// present) to an api.APIError. It mirrors the Rust `map_ws_error`.
+func mapWSDialError(err error, url string, resp *http.Response) *api.APIError {
 	if resp != nil && (resp.StatusCode < 200 || resp.StatusCode > 299) {
-		return NewTransportError(client.NewHTTPError(resp.StatusCode, url, resp.Header.Clone(), ""))
+		return api.NewTransportError(client.NewHTTPError(resp.StatusCode, url, resp.Header.Clone(), ""))
 	}
 	var closeErr websocket.CloseError
 	if errors.As(err, &closeErr) {
-		return NewStreamError("websocket closed")
+		return api.NewStreamError("websocket closed")
 	}
-	return NewTransportError(client.NewNetworkError(err.Error()))
+	return api.NewTransportError(client.NewNetworkError(err.Error()))
 }
