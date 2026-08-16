@@ -2,7 +2,6 @@ package threadstore
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -508,23 +507,14 @@ func cloneStr(p *string) *string {
 	return &v
 }
 
-// gitInfoFromSessionMeta extracts git info from a session-meta line via a JSON
-// round-trip. The rollout package types the line's git field as the gitutils
-// GitInfo, which is outside this package's allowed dependency set; both types
-// share the same wire format (commit_hash/branch/repository_url), so the
-// conversion is faithful without importing gitutils.
+// gitInfoFromSessionMeta extracts git info from a session-meta line. An
+// all-nil marker (`"git":{}`, a git clear) yields nil, mirroring the Rust
+// `git_info_from_session_meta` which treats an empty GitInfo as absent.
 func gitInfoFromSessionMeta(metaLine rollout.SessionMetaLine) *GitInfo {
 	if metaLine.Git == nil {
 		return nil
 	}
-	encoded, err := json.Marshal(metaLine.Git)
-	if err != nil {
-		return nil
-	}
-	var info GitInfo
-	if err := json.Unmarshal(encoded, &info); err != nil {
-		return nil
-	}
+	info := *metaLine.Git
 	if info.CommitHash == nil && info.Branch == nil && info.RepositoryURL == nil {
 		return nil
 	}

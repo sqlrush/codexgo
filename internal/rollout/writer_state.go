@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+
+	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
 // rolloutWriterState is the mutable state owned by the background writer
@@ -20,15 +22,17 @@ type rolloutWriterState struct {
 	meta         *SessionMeta
 	cwd          string
 	rolloutPath  string
+	gitInfo      GitInfoCollector
 }
 
-func newRolloutWriterState(file *os.File, deferred *logFileInfo, meta *SessionMeta, cwd, rolloutPath string) *rolloutWriterState {
+func newRolloutWriterState(file *os.File, deferred *logFileInfo, meta *SessionMeta, cwd, rolloutPath string, gitInfo GitInfoCollector) *rolloutWriterState {
 	return &rolloutWriterState{
 		file:         file,
 		deferredInfo: deferred,
 		meta:         meta,
 		cwd:          cwd,
 		rolloutPath:  rolloutPath,
+		gitInfo:      gitInfo,
 	}
 }
 
@@ -122,7 +126,10 @@ func (s *rolloutWriterState) writeSessionMetaIfNeeded(ctx context.Context) error
 		return nil
 	}
 	meta := *s.meta
-	git := collectGitInfo(ctx, s.cwd)
+	var git *protocol.GitInfo
+	if s.gitInfo != nil {
+		git = s.gitInfo(ctx, s.cwd)
+	}
 	line := SessionMetaLine{Meta: meta, Git: git}
 	item := NewSessionMetaItem(line)
 	if s.file != nil {

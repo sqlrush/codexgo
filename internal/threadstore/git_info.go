@@ -1,30 +1,18 @@
 package threadstore
 
-// GitSha is a git commit SHA. It mirrors the Rust `GitSha` newtype, which is
-// `#[serde(transparent)]` over a String; on the wire it is a bare JSON string.
-//
-// The allowed dependency set for this package does not include the git-utils
-// package, so the type is reproduced here to keep the wire format identical.
-type GitSha string
+import "github.com/sqlrush/codexgo/internal/protocol"
+
+// GitSha is a git commit SHA. The canonical definition lives in the protocol
+// package (mirroring Rust `codex_protocol::protocol::GitSha`); the alias keeps
+// the historical `threadstore.GitSha` spelling working.
+type GitSha = protocol.GitSha
 
 // NewGitSha constructs a GitSha from a raw SHA string.
-func NewGitSha(sha string) GitSha { return GitSha(sha) }
+func NewGitSha(sha string) GitSha { return protocol.NewGitSha(sha) }
 
-// String returns the underlying SHA string.
-func (s GitSha) String() string { return string(s) }
-
-// GitInfo describes the git repository state captured for a thread.
-//
-// Mirrors the Rust `GitInfo` struct. Each field is omitted from JSON when nil
-// (matching `#[serde(skip_serializing_if = "Option::is_none")]`).
-type GitInfo struct {
-	// CommitHash is the current commit hash (SHA), if available.
-	CommitHash *GitSha `json:"commit_hash,omitempty"`
-	// Branch is the current branch name, if on a branch.
-	Branch *string `json:"branch,omitempty"`
-	// RepositoryURL is the URL of the origin remote, if available.
-	RepositoryURL *string `json:"repository_url,omitempty"`
-}
+// GitInfo describes the git repository state captured for a thread. See
+// protocol.GitInfo for the canonical definition and wire format.
+type GitInfo = protocol.GitInfo
 
 // gitInfoFromParts builds a GitInfo from individual parts, returning nil when all
 // parts are absent, mirroring the Rust `git_info_from_parts` helper.

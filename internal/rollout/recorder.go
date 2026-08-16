@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/gitutils"
 	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
@@ -42,6 +41,8 @@ type CreateParams struct {
 	DynamicTools     []protocol.DynamicToolSpec
 	Originator       string
 	CliVersion       string
+	// GitInfo collects git metadata for the session-meta line; nil records none.
+	GitInfo GitInfoCollector
 }
 
 // RolloutRecorder writes canonical session rollout items to a JSONL file using a
@@ -118,7 +119,7 @@ func NewRecorderForCreate(ctx context.Context, config RolloutConfigView, params 
 		MemoryMode:       memoryMode,
 	}
 
-	return spawnRecorder(ctx, nil, &info, &meta, config.Cwd(), info.path), nil
+	return spawnRecorder(ctx, nil, &info, &meta, config.Cwd(), info.path, params.GitInfo), nil
 }
 
 // NewRecorderForResume opens an existing rollout file for appending.
@@ -127,7 +128,7 @@ func NewRecorderForResume(ctx context.Context, path string) (*RolloutRecorder, e
 	if err != nil {
 		return nil, fmt.Errorf("open rollout file for resume: %w", err)
 	}
-	return spawnRecorder(ctx, file, nil, nil, "", path), nil
+	return spawnRecorder(ctx, file, nil, nil, "", path, nil), nil
 }
 
 func agentPathString(p *protocol.AgentPath) *string {
@@ -138,8 +139,8 @@ func agentPathString(p *protocol.AgentPath) *string {
 	return &s
 }
 
-func spawnRecorder(ctx context.Context, file *os.File, deferred *logFileInfo, meta *SessionMeta, cwd, rolloutPath string) *RolloutRecorder {
-	state := newRolloutWriterState(file, deferred, meta, cwd, rolloutPath)
+func spawnRecorder(ctx context.Context, file *os.File, deferred *logFileInfo, meta *SessionMeta, cwd, rolloutPath string, gitInfo GitInfoCollector) *RolloutRecorder {
+	state := newRolloutWriterState(file, deferred, meta, cwd, rolloutPath, gitInfo)
 	commands := make(chan rolloutCmd, 256)
 
 	go runRolloutWriter(ctx, commands, state)
@@ -279,14 +280,15 @@ func openLogFile(path string) (*os.File, error) {
 	return file, nil
 }
 
-// collectGitInfo gathers git info for cwd when cwd is inside a repository,
-// matching the Rust `write_session_meta` behavior.
-func collectGitInfo(ctx context.Context, cwd string) *gitutils.GitInfo {
-	if _, ok := gitutils.GetGitRepoRoot(cwd); !ok {
-		return nil
-	}
-	return gitutils.CollectGitInfo(ctx, cwd)
-}
+// GitInfoCollector gathers git info for cwd when cwd is inside a repository and
+// returns nil otherwise. It is supplied by the caller through
+// [CreateParams.GitInfo]; the rollout package deliberately does not import the
+// git backend so that consumers which only need the wire types (session meta,
+// rollout items, policy) stay free of that dependency (spec 50 D0.9 seam S3).
+// The Rust `write_session_meta` calls `collect_git_info` directly; the Go port
+// keeps that behaviour by having the local thread store pass
+// `gitutils.CollectGitInfo` here. A nil collector records no git info.
+type GitInfoCollector func(ctx context.Context, cwd string) *protocol.GitInfo
 
 // errWriterNotOpen is returned when a write is attempted with no open file.
 var errWriterNotOpen = errors.New("rollout writer is not open")

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/sqlrush/codexgo/internal/gitutils"
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/rollout"
 )
@@ -127,7 +126,7 @@ func (s *LocalThreadStore) applyThreadGitInfoToRollout(ctx context.Context, thre
 		}
 	}
 
-	line.Git = gitutilsInfoFromParts(sha, branch, originURL)
+	line.Git = rolloutGitInfoFromParts(sha, branch, originURL)
 	line.Meta.MemoryMode = memMode
 
 	if err := rollout.AppendRolloutItemToPath(rolloutPath, rollout.NewSessionMetaItem(line)); err != nil {
@@ -151,18 +150,18 @@ func readRolloutSessionMeta(rolloutPath string, threadID protocol.ThreadID, acti
 	return line, nil
 }
 
-// gitutilsInfoFromParts builds the rollout git marker from individual parts,
+// rolloutGitInfoFromParts builds the rollout git marker from individual parts,
 // returning an empty (all-nil) GitInfo when every part is absent so the appended
 // session-meta line carries `"git":{}` (a git clear), mirroring the Rust
 // `apply_thread_git_info_to_rollout` which always sets `session_meta.git =
 // Some(GitInfo { .. })`.
-func gitutilsInfoFromParts(sha, branch, originURL *string) *gitutils.GitInfo {
-	var commit *gitutils.GitSha
+func rolloutGitInfoFromParts(sha, branch, originURL *string) *protocol.GitInfo {
+	var commit *protocol.GitSha
 	if sha != nil {
-		c := gitutils.NewGitSha(*sha)
+		c := protocol.NewGitSha(*sha)
 		commit = &c
 	}
-	return &gitutils.GitInfo{
+	return &protocol.GitInfo{
 		CommitHash:    commit,
 		Branch:        branch,
 		RepositoryURL: originURL,

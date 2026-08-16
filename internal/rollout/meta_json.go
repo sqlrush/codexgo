@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/sqlrush/codexgo/internal/gitutils"
+	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
 // MarshalJSON flattens the SessionMeta fields and appends the optional `git`
@@ -50,7 +50,7 @@ func (l *SessionMetaLine) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("decode session meta: %w", err)
 	}
 	var gitWrapper struct {
-		Git *gitutils.GitInfo `json:"git"`
+		Git *protocol.GitInfo `json:"git"`
 	}
 	if err := json.Unmarshal(data, &gitWrapper); err != nil {
 		return fmt.Errorf("decode git info: %w", err)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/sqlrush/codexgo/internal/gitutils"
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/rollout"
 	"github.com/sqlrush/codexgo/internal/state"
@@ -166,6 +167,7 @@ func (s *LocalThreadStore) CreateThread(ctx context.Context, params CreateThread
 		DynamicTools:     params.DynamicTools,
 		Originator:       s.config.Originator,
 		CliVersion:       s.config.CliVersion,
+		GitInfo:          collectRolloutGitInfo,
 	})
 	if err != nil {
 		return internalError(err, "failed to initialize local thread recorder")
@@ -306,4 +308,15 @@ func (s *LocalThreadStore) ArchiveThread(ctx context.Context, params ArchiveThre
 // UnarchiveThread reverses an archive and returns the restored thread summary.
 func (s *LocalThreadStore) UnarchiveThread(ctx context.Context, params ArchiveThreadParams) (StoredThread, error) {
 	return s.unarchiveThread(ctx, params)
+}
+
+// collectRolloutGitInfo gathers git info for cwd when cwd is inside a
+// repository, matching the Rust `write_session_meta` behaviour. It is injected
+// into the rollout recorder so the rollout package itself stays free of the git
+// backend dependency.
+func collectRolloutGitInfo(ctx context.Context, cwd string) *protocol.GitInfo {
+	if _, ok := gitutils.GetGitRepoRoot(cwd); !ok {
+		return nil
+	}
+	return gitutils.CollectGitInfo(ctx, cwd)
 }

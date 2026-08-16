@@ -1,7 +1,6 @@
 package rollout
 
 import (
-	"github.com/sqlrush/codexgo/internal/gitutils"
 	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
@@ -52,5 +51,5 @@ type SessionMeta struct {
 type SessionMetaLine struct {
 	Meta SessionMeta
 	// Git carries optional repository information; omitted when nil.
-	Git *gitutils.GitInfo
+	Git *protocol.GitInfo
 }
