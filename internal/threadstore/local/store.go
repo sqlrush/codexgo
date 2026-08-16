@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/sqlrush/codexgo/internal/gitutils"
+	"github.com/sqlrush/codexgo/internal/gitutils/gitroot"
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/rollout"
 	"github.com/sqlrush/codexgo/internal/state"
@@ -316,7 +317,7 @@ func (s *LocalThreadStore) UnarchiveThread(ctx context.Context, params threadsto
 // into the rollout recorder so the rollout package itself stays free of the git
 // backend dependency.
 func collectRolloutGitInfo(ctx context.Context, cwd string) *protocol.GitInfo {
-	if _, ok := gitutils.GetGitRepoRoot(cwd); !ok {
+	if _, ok := gitroot.GetGitRepoRoot(cwd); !ok {
 		return nil
 	}
 	return gitutils.CollectGitInfo(ctx, cwd)

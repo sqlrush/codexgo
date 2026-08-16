@@ -3,10 +3,13 @@
 //
 // It is a faithful Go port of codex's keyring-store crate. The central
 // abstraction is [Store], an interface modeled on the crate's KeyringStore
-// trait. [DefaultStore] is the production implementation backed by the
-// operating system keyring (via github.com/zalando/go-keyring), while
-// [MemoryStore] is an in-memory implementation suitable for tests, mirroring
-// the crate's MockKeyringStore.
+// trait. The production implementation backed by the operating system
+// keyring (via github.com/zalando/go-keyring) lives in the subpackage
+// keyring/system so that packages which only need the abstraction (mcp,
+// secrets, login) stay free of the OS keyring dependency; [MemoryStore] is an
+// in-memory implementation suitable for tests, mirroring the crate's
+// MockKeyringStore, and [Unavailable] reports ErrNotAvailable for every
+// operation (the store hosts without a system keyring inject).
 //
 // Error mapping follows the source crate: a missing entry is not an error.
 // Load returns (nil, nil) and Delete returns (false, nil) when no secret
@@ -56,14 +59,19 @@ type StoreError struct {
 	Err error
 }
 
-// newStoreError wraps err in a *StoreError. It returns nil when err is nil so
-// it can be used directly in return statements.
-func newStoreError(err error) error {
+// NewStoreError wraps err in a *StoreError. It returns nil when err is nil so
+// it can be used directly in return statements. Backend implementations in
+// other packages (keyring/system) use it to report failures in the package's
+// error model.
+func NewStoreError(err error) error {
 	if err == nil {
 		return nil
 	}
 	return &StoreError{Err: err}
 }
+
+// newStoreError is the package-internal spelling of [NewStoreError].
+func newStoreError(err error) error { return NewStoreError(err) }
 
 // Error implements the error interface, rendering the underlying error message,
 // matching the crate's Display implementation which forwards to the inner error.
@@ -90,4 +98,24 @@ func (e *StoreError) Unwrap() error {
 		return nil
 	}
 	return e.Err
+}
+
+// Unavailable is a [Store] with no backend: every operation fails with
+// [ErrNotAvailable] (wrapped in a [StoreError]) and Load/Delete report no entry
+// only after that failure is surfaced. Hosts without a system keyring (hosted
+// runtimes, tests) inject it so callers take their documented fallback path
+// (e.g. the MCP OAuth store's file fallback under the Auto mode).
+type Unavailable struct{}
+
+// Load implements [Store]; it always reports [ErrNotAvailable].
+func (Unavailable) Load(string, string) (*string, error) {
+	return nil, NewStoreError(ErrNotAvailable)
+}
+
+// Save implements [Store]; it always reports [ErrNotAvailable].
+func (Unavailable) Save(string, string, string) error { return NewStoreError(ErrNotAvailable) }
+
+// Delete implements [Store]; it always reports [ErrNotAvailable].
+func (Unavailable) Delete(string, string) (bool, error) {
+	return false, NewStoreError(ErrNotAvailable)
 }

@@ -1,9 +1,11 @@
-package keyring
+package system
 
 import (
 	"errors"
 
 	gokeyring "github.com/zalando/go-keyring"
+
+	"github.com/sqlrush/codexgo/internal/keyring"
 )
 
 // backend is the minimal set of operations [DefaultStore] needs from a keyring
@@ -62,7 +64,7 @@ func isNotAvailable(err error) bool {
 }
 
 // normalize maps a raw backend error to the package's error model: it converts
-// the "platform unsupported" signal into [ErrNotAvailable] (wrapped) and wraps
+// the "platform unsupported" signal into [keyring.ErrNotAvailable] (wrapped) and wraps
 // any other error in a [StoreError]. Callers must have already handled the
 // "not found" case, which is not an error in this package. normalize returns
 // nil for a nil input.
@@ -71,7 +73,7 @@ func normalize(err error) error {
 		return nil
 	}
 	if isNotAvailable(err) {
-		return newStoreError(ErrNotAvailable)
+		return keyring.NewStoreError(keyring.ErrNotAvailable)
 	}
-	return newStoreError(err)
+	return keyring.NewStoreError(err)
 }

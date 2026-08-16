@@ -42,20 +42,22 @@ type OAuthStore struct {
 	codexHome string
 }
 
-// NewOAuthStore builds a store using the system keyring and the given CODEXGO_HOME
+// NewOAuthStore builds a store over the given keyring backend and CODEXGO_HOME
 // for the fallback file. When codexHome is empty it is resolved from the
-// environment on demand.
-func NewOAuthStore(codexHome string) *OAuthStore {
-	return &OAuthStore{keyring: keyring.NewDefaultStore(), codexHome: codexHome}
-}
-
-// NewOAuthStoreWith builds a store with an explicit keyring backend, primarily
-// for tests. A nil keyring uses the system keyring.
-func NewOAuthStoreWith(store keyring.Store, codexHome string) *OAuthStore {
+// environment on demand. A nil store means "no system keyring"
+// ([keyring.Unavailable]): the Auto mode then falls back to the file store and
+// the Keyring mode reports the not-available error. Hosts with an OS keyring
+// pass keyring/system.NewDefaultStore() (see ManagerOptions.Keyring).
+func NewOAuthStore(store keyring.Store, codexHome string) *OAuthStore {
 	if store == nil {
-		store = keyring.NewDefaultStore()
+		store = keyring.Unavailable{}
 	}
 	return &OAuthStore{keyring: store, codexHome: codexHome}
+}
+
+// NewOAuthStoreWith is the historical spelling of [NewOAuthStore].
+func NewOAuthStoreWith(store keyring.Store, codexHome string) *OAuthStore {
+	return NewOAuthStore(store, codexHome)
 }
 
 // Load returns the stored tokens for (serverName, url) under the given store

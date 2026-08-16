@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/sqlrush/codexgo/internal/config"
+	"github.com/sqlrush/codexgo/internal/keyring"
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/tools"
 )
@@ -69,6 +70,11 @@ type ManagerOptions struct {
 	// CodexHome locates the OAuth fallback credentials file; empty resolves it
 	// from the environment.
 	CodexHome string
+	// Keyring is the credential store the default OAuth store persists tokens
+	// to. Hosts with an OS keyring pass keyring/system.NewDefaultStore(); nil
+	// means no system keyring (Auto mode falls back to the credentials file,
+	// Keyring mode reports not-available). Ignored when Factory is set.
+	Keyring keyring.Store
 }
 
 // Manager owns the set of running MCP server connections, keyed by server name.
@@ -134,7 +140,7 @@ func NewManager(ctx context.Context, mcpServers map[string]config.McpServerConfi
 
 	factory := opts.Factory
 	if factory == nil {
-		store := NewOAuthStore(opts.CodexHome)
+		store := NewOAuthStore(opts.Keyring, opts.CodexHome)
 		factory = NewDefaultTransportFactory(store, storeMode, nil, opts.EnvLookup)
 	}
 

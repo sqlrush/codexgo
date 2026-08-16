@@ -15,6 +15,7 @@ import (
 	"github.com/sqlrush/codexgo/internal/appserverproto"
 	"github.com/sqlrush/codexgo/internal/config"
 	"github.com/sqlrush/codexgo/internal/keyring"
+	syskeyring "github.com/sqlrush/codexgo/internal/keyring/system"
 	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
@@ -401,7 +402,7 @@ func (e *ephemeralAuthStorage) delete() (bool, error) {
 // createAuthStorage builds the storage backend for the given mode using the
 // default system keyring. Mirrors create_auth_storage.
 func createAuthStorage(codexHome string, mode config.AuthCredentialsStoreMode) authStorageBackend {
-	return createAuthStorageWithKeyring(codexHome, mode, keyring.NewDefaultStore())
+	return createAuthStorageWithKeyring(codexHome, mode, syskeyring.NewDefaultStore())
 }
 
 // createAuthStorageWithKeyring builds the storage backend, injecting a keyring

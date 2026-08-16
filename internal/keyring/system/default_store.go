@@ -1,7 +1,15 @@
-package keyring
+// Package system holds the production [keyring.Store] backed by the operating
+// system keyring (github.com/zalando/go-keyring: macOS Keychain, Windows
+// Credential Manager, Secret Service on Linux/BSD). It is split from package
+// keyring so that consumers of the abstraction do not link the OS keyring
+// dependency; hosts that want the real keyring construct [NewDefaultStore] and
+// inject it (CLI mcp/secrets/login wiring).
+package system
 
-// DefaultStore is the production [Store] implementation backed by the operating
-// system keyring. It corresponds to the crate's DefaultKeyringStore.
+import "github.com/sqlrush/codexgo/internal/keyring"
+
+// DefaultStore is the production [keyring.Store] implementation backed by the
+// operating system keyring. It corresponds to the crate's DefaultKeyringStore.
 //
 // The zero value is ready to use and talks to the real system keyring. A
 // DefaultStore is safe for concurrent use; it holds no mutable state and the
@@ -16,6 +24,8 @@ type DefaultStore struct {
 func NewDefaultStore() *DefaultStore {
 	return &DefaultStore{backend: systemBackend{}}
 }
+
+var _ keyring.Store = (*DefaultStore)(nil)
 
 // store returns the configured backend, defaulting to the system backend so the
 // zero value of DefaultStore is usable.

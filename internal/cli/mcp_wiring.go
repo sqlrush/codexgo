@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/sqlrush/codexgo/internal/config"
+	syskeyring "github.com/sqlrush/codexgo/internal/keyring/system"
 	"github.com/sqlrush/codexgo/internal/mcp"
 )
 
@@ -47,6 +48,7 @@ func buildMcpManager(ctx context.Context, codexHome string, servers map[string]c
 	manager, results, err := mcp.NewManager(ctx, servers, mcp.ManagerOptions{
 		CodexHome:   codexHome,
 		FallbackCwd: resolveCwd(),
+		Keyring:     syskeyring.NewDefaultStore(),
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: MCP manager init failed, MCP tools disabled: %v\n", err)

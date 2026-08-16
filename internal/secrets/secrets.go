@@ -21,6 +21,7 @@ import (
 	"github.com/sqlrush/codexgo/internal/brand"
 	"github.com/sqlrush/codexgo/internal/gitutils"
 	"github.com/sqlrush/codexgo/internal/keyring"
+	syskeyring "github.com/sqlrush/codexgo/internal/keyring/system"
 	"github.com/sqlrush/codexgo/internal/utils/abspath"
 )
 
@@ -214,7 +215,7 @@ type Manager struct {
 // using the system keyring for passphrase storage. It mirrors codex's
 // `SecretsManager::new`.
 func NewManager(codexHome string, kind BackendKind) *Manager {
-	return NewManagerWithKeyringStore(codexHome, kind, keyring.NewDefaultStore())
+	return NewManagerWithKeyringStore(codexHome, kind, syskeyring.NewDefaultStore())
 }
 
 // NewManagerWithKeyringStore constructs a [Manager] using the supplied keyring

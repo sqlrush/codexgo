@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sqlrush/codexgo/internal/gitutils"
+	"github.com/sqlrush/codexgo/internal/gitutils/gitroot"
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/utils/abspath"
 )
@@ -52,7 +52,7 @@ func (d ProjectTrustDecision) IsUntrusted() bool {
 // `project_trust_context`. projectRootMarkers selects the project root (default
 // [".git"] when empty per the Rust default); pass the value resolved from
 // project_root_markers config. The repo root (worktree-aware) is resolved via
-// [gitutils.ResolveRootGitProjectForTrust].
+// [gitroot.ResolveRootGitProjectForTrust].
 func BuildProjectTrustContext(merged TomlValue, cwd abspath.AbsolutePathBuf, projectRootMarkers []string) ProjectTrustContext {
 	projectRoot := findProjectRootForTrust(cwd, projectRootMarkers)
 	projectsTrust := projectsTrustFromMerged(merged)
@@ -64,7 +64,7 @@ func BuildProjectTrustContext(merged TomlValue, cwd abspath.AbsolutePathBuf, pro
 	}
 
 	var repoRoot *abspath.AbsolutePathBuf
-	if root, ok := gitutils.ResolveRootGitProjectForTrust(cwd); ok {
+	if root, ok := gitroot.ResolveRootGitProjectForTrust(cwd); ok {
 		repoRoot = &root
 	}
 	var repoRootLookupKeys []string
