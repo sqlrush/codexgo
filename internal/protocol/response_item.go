@@ -3,6 +3,7 @@ package protocol
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // ResponseItemKind is the discriminator for ResponseItem. Rust:
@@ -25,6 +26,10 @@ const (
 	ResponseItemKindCompaction           ResponseItemKind = "compaction"
 	ResponseItemKindCompactionTrigger    ResponseItemKind = "compaction_trigger"
 	ResponseItemKindContextCompaction    ResponseItemKind = "context_compaction"
+	// Variants added by upstream 0.147 (spec 50 D0.6): inter-agent messages
+	// and per-request additional tool descriptors.
+	ResponseItemKindAgentMessage    ResponseItemKind = "agent_message"
+	ResponseItemKindAdditionalTools ResponseItemKind = "additional_tools"
 	// ResponseItemKindOther is the catch-all for unknown item types
 	// (`#[serde(other)]`).
 	ResponseItemKindOther ResponseItemKind = "other"
@@ -97,6 +102,16 @@ type ResponseItem struct {
 	ImageStatus   string  // required status
 	RevisedPrompt *string // omit if nil
 	Result        string  // required result
+
+	// AgentMessage variant (0.147): a message between agents. ItemID is the
+	// optional item id, serialized when present (0.147 shape).
+	ItemID              *string                    // agent_message / additional_tools, omit if nil
+	Author              string                     // agent_message
+	Recipient           string                     // agent_message
+	AgentMessageContent []AgentMessageInputContent // agent_message
+
+	// AdditionalTools variant (0.147): Role + Tools ([]json.RawMessage) reuse
+	// the Role and Tools fields above.
 
 	// Extra captures the raw payload of an unknown ("other") item for
 	// inspection. Matching Rust's lossy `#[serde(other)]`, this is NOT
@@ -199,6 +214,19 @@ func (r ResponseItem) MarshalJSON() ([]byte, error) {
 		if r.EncryptedContent != nil {
 			m["encrypted_content"] = *r.EncryptedContent
 		}
+	case ResponseItemKindAgentMessage:
+		if r.ItemID != nil {
+			m["id"] = *r.ItemID
+		}
+		m["author"] = r.Author
+		m["recipient"] = r.Recipient
+		m["content"] = r.AgentMessageContent
+	case ResponseItemKindAdditionalTools:
+		if r.ItemID != nil {
+			m["id"] = *r.ItemID
+		}
+		m["role"] = r.Role
+		m["tools"] = r.Tools
 	case ResponseItemKindOther:
 		// Rust's `#[serde(other)]` Other is a lossy unit variant: it discards
 		// the original payload and serializes as just {"type":"other"}. We match
@@ -245,6 +273,8 @@ func (r *ResponseItem) UnmarshalJSON(data []byte) error {
 		Tools            []json.RawMessage               `json:"tools"`
 		RevisedPrompt    *string                         `json:"revised_prompt"`
 		Result           string                          `json:"result"`
+		Author           string                          `json:"author"`
+		Recipient        string                          `json:"recipient"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -361,6 +391,21 @@ func (r *ResponseItem) UnmarshalJSON(data []byte) error {
 		out.Type = kind
 	case ResponseItemKindContextCompaction:
 		out.Type = kind
+	case ResponseItemKindAgentMessage:
+		out.Type = kind
+		out.ItemID = optStringFromRaw(raw.ID)
+		out.Author = raw.Author
+		out.Recipient = raw.Recipient
+		if len(raw.Content) > 0 {
+			if err := json.Unmarshal(raw.Content, &out.AgentMessageContent); err != nil {
+				return err
+			}
+		}
+	case ResponseItemKindAdditionalTools:
+		out.Type = kind
+		out.ItemID = optStringFromRaw(raw.ID)
+		out.Role = raw.Role
+		out.Tools = raw.Tools
 	default:
 		out.Type = ResponseItemKindOther
 		var extra map[string]json.RawMessage
@@ -397,4 +442,69 @@ func optStringFromRaw(raw json.RawMessage) *string {
 		return nil
 	}
 	return &s
+}
+
+// AgentMessageInputContentKind tags an [AgentMessageInputContent] part.
+type AgentMessageInputContentKind string
+
+const (
+	// AgentMessageInputContentKindInputText is plaintext.
+	AgentMessageInputContentKindInputText AgentMessageInputContentKind = "input_text"
+	// AgentMessageInputContentKindEncryptedContent is provider-encrypted text.
+	AgentMessageInputContentKindEncryptedContent AgentMessageInputContentKind = "encrypted_content"
+)
+
+// AgentMessageInputContent is one part of an inter-agent message (0.147
+// `AgentMessageInputContent`, internally tagged on `type`).
+type AgentMessageInputContent struct {
+	Type AgentMessageInputContentKind
+	// Text is set for input_text.
+	Text string
+	// EncryptedContent is set for encrypted_content.
+	EncryptedContent string
+}
+
+// MarshalJSON emits the internally-tagged part.
+func (c AgentMessageInputContent) MarshalJSON() ([]byte, error) {
+	m := map[string]any{"type": string(c.Type)}
+	switch c.Type {
+	case AgentMessageInputContentKindEncryptedContent:
+		m["encrypted_content"] = c.EncryptedContent
+	default:
+		m["text"] = c.Text
+	}
+	return json.Marshal(m)
+}
+
+// UnmarshalJSON decodes the internally-tagged part.
+func (c *AgentMessageInputContent) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Type             AgentMessageInputContentKind `json:"type"`
+		Text             string                       `json:"text"`
+		EncryptedContent string                       `json:"encrypted_content"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*c = AgentMessageInputContent{Type: raw.Type, Text: raw.Text, EncryptedContent: raw.EncryptedContent}
+	return nil
+}
+
+// PlaintextAgentMessageContent returns the locally readable text when an agent
+// message is entirely plaintext, mirroring Rust
+// `plaintext_agent_message_content`: parts are joined with "\n"; ok is false
+// when any part is encrypted or the joined text is blank.
+func PlaintextAgentMessageContent(content []AgentMessageInputContent) (text string, ok bool) {
+	parts := make([]string, 0, len(content))
+	for _, part := range content {
+		if part.Type == AgentMessageInputContentKindEncryptedContent {
+			return "", false
+		}
+		parts = append(parts, part.Text)
+	}
+	joined := strings.Join(parts, "\n")
+	if strings.TrimSpace(joined) == "" {
+		return "", false
+	}
+	return joined, true
 }

@@ -118,6 +118,12 @@ const (
 	EventMsgKindCollabCloseEnd                         EventMsgKind = "collab_close_end"
 	EventMsgKindCollabResumeBegin                      EventMsgKind = "collab_resume_begin"
 	EventMsgKindCollabResumeEnd                        EventMsgKind = "collab_resume_end"
+
+	// Variants added by upstream 0.147 (spec 50 D0.6).
+	EventMsgKindTurnModerationMetadata EventMsgKind = "turn_moderation_metadata"
+	EventMsgKindSafetyBuffering        EventMsgKind = "safety_buffering"
+	EventMsgKindRawResponseCompleted   EventMsgKind = "raw_response_completed"
+	EventMsgKindSubAgentActivity       EventMsgKind = "sub_agent_activity"
 )
 
 // v1/v2 wire aliases accepted on input for the task_*/turn_* variants.
@@ -214,6 +220,12 @@ type EventMsg struct {
 	CollabCloseEnd                         *CollabCloseEndEvent
 	CollabResumeBegin                      *CollabResumeBeginEvent
 	CollabResumeEnd                        *CollabResumeEndEvent
+
+	// Variants added by upstream 0.147 (spec 50 D0.6).
+	TurnModerationMetadata *TurnModerationMetadataEvent
+	SafetyBuffering        *SafetyBufferingEvent
+	RawResponseCompleted   *RawResponseCompletedEvent
+	SubAgentActivity       *SubAgentActivityEvent
 }
 
 // MarshalJSON emits the active variant's payload merged with the "type" tag,
@@ -372,6 +384,14 @@ func (e EventMsg) MarshalJSON() ([]byte, error) {
 		payload = e.CollabResumeBegin
 	case EventMsgKindCollabResumeEnd:
 		payload = e.CollabResumeEnd
+	case EventMsgKindTurnModerationMetadata:
+		payload = e.TurnModerationMetadata
+	case EventMsgKindSafetyBuffering:
+		payload = e.SafetyBuffering
+	case EventMsgKindRawResponseCompleted:
+		payload = e.RawResponseCompleted
+	case EventMsgKindSubAgentActivity:
+		payload = e.SubAgentActivity
 	default:
 		// Unknown variant: re-emit the retained raw object verbatim.
 		if len(e.Raw) > 0 {
@@ -626,6 +646,18 @@ func (e *EventMsg) UnmarshalJSON(data []byte) error {
 	case EventMsgKindCollabResumeEnd:
 		out.CollabResumeEnd = new(CollabResumeEndEvent)
 		err = json.Unmarshal(data, out.CollabResumeEnd)
+	case EventMsgKindTurnModerationMetadata:
+		out.TurnModerationMetadata = new(TurnModerationMetadataEvent)
+		err = json.Unmarshal(data, out.TurnModerationMetadata)
+	case EventMsgKindSafetyBuffering:
+		out.SafetyBuffering = new(SafetyBufferingEvent)
+		err = json.Unmarshal(data, out.SafetyBuffering)
+	case EventMsgKindRawResponseCompleted:
+		out.RawResponseCompleted = new(RawResponseCompletedEvent)
+		err = json.Unmarshal(data, out.RawResponseCompleted)
+	case EventMsgKindSubAgentActivity:
+		out.SubAgentActivity = new(SubAgentActivityEvent)
+		err = json.Unmarshal(data, out.SubAgentActivity)
 	default:
 		// Forward-compat: retain the raw object so it can be re-emitted.
 		out.Raw = append(json.RawMessage(nil), data...)
@@ -1801,4 +1833,58 @@ type CollabResumeEndEvent struct {
 	ReceiverAgentNickname *string     `json:"receiver_agent_nickname,omitempty"`
 	ReceiverAgentRole     *string     `json:"receiver_agent_role,omitempty"`
 	Status                AgentStatus `json:"status"`
+}
+
+// ----------------------------------------------------------------------------
+// Variants added by upstream 0.147 (spec 50 D0.6)
+// ----------------------------------------------------------------------------
+
+// TurnModerationMetadataEvent carries provider moderation metadata for the
+// turn as an opaque JSON value. Mirrors Rust `TurnModerationMetadataEvent`.
+type TurnModerationMetadataEvent struct {
+	Metadata json.RawMessage `json:"metadata"`
+}
+
+// SafetyBufferingEvent announces that the provider is buffering output for a
+// safety review of the model's response, optionally suggesting a faster model.
+// Mirrors Rust `SafetyBufferingEvent`.
+type SafetyBufferingEvent struct {
+	Model           string   `json:"model"`
+	UseCases        []string `json:"use_cases"`
+	Reasons         []string `json:"reasons"`
+	ShowBufferingUI bool     `json:"show_buffering_ui"`
+	FasterModel     *string  `json:"faster_model"`
+}
+
+// RawResponseCompletedEvent reports the provider's `response.completed` for
+// one sampling request (its response id and token usage), so consumers can
+// account usage per request rather than per turn. Mirrors Rust
+// `RawResponseCompletedEvent`.
+type RawResponseCompletedEvent struct {
+	ResponseID string      `json:"response_id"`
+	TokenUsage *TokenUsage `json:"token_usage"`
+}
+
+// SubAgentActivityKind classifies a sub-agent activity notification. Mirrors
+// Rust `SubAgentActivityKind` (`rename_all = "snake_case"`).
+type SubAgentActivityKind string
+
+const (
+	SubAgentActivityStarted     SubAgentActivityKind = "started"
+	SubAgentActivityInteracted  SubAgentActivityKind = "interacted"
+	SubAgentActivityInterrupted SubAgentActivityKind = "interrupted"
+)
+
+// SubAgentActivityEvent notifies the parent that a sub-agent started, was
+// interacted with, or was interrupted; the v2 multi-agent progress source.
+// Mirrors Rust `SubAgentActivityEvent`.
+type SubAgentActivityEvent struct {
+	EventID string `json:"event_id"`
+	// OccurredAtMS is unix millis (serde default 0 when absent).
+	OccurredAtMS int64 `json:"occurred_at_ms"`
+	// AgentThreadID is the thread id of the affected sub-agent.
+	AgentThreadID ThreadID `json:"agent_thread_id"`
+	// AgentPath is the canonical v2 path of the affected sub-agent.
+	AgentPath AgentPath            `json:"agent_path"`
+	Kind      SubAgentActivityKind `json:"kind"`
 }
