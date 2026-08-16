@@ -1,4 +1,4 @@
-package threadstore
+package local
 
 import (
 	"os"
@@ -10,6 +10,7 @@ import (
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/rollout"
 	"github.com/sqlrush/codexgo/internal/state"
+	"github.com/sqlrush/codexgo/internal/threadstore"
 )
 
 // rolloutFilenameUUIDLen is the length of a canonical UUID with hyphens.
@@ -88,7 +89,7 @@ func distinctThreadMetadataTitle(metadata *state.ThreadMetadata) *string {
 // setThreadNameFromTitle assigns a distinct title to a thread name, mirroring
 // the Rust `set_thread_name_from_title`. It skips empty titles and titles that
 // merely echo the preview.
-func setThreadNameFromTitle(thread *StoredThread, title string) {
+func setThreadNameFromTitle(thread *threadstore.StoredThread, title string) {
 	trimmed := strings.TrimSpace(title)
 	if trimmed == "" || strings.TrimSpace(thread.Preview) == trimmed {
 		return
@@ -144,6 +145,6 @@ func parseApprovalMode(value string) protocol.AskForApproval {
 	case protocol.AskForApprovalNever:
 		return protocol.AskForApproval{Kind: protocol.AskForApprovalNever}
 	default:
-		return onRequestApproval()
+		return threadstore.OnRequestApproval()
 	}
 }

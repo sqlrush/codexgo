@@ -63,13 +63,13 @@ func (e *Error) Error() string {
 // Unwrap exposes the wrapped cause for [errors.Is] and [errors.As].
 func (e *Error) Unwrap() error { return e.Cause }
 
-// threadNotFoundError builds an [ErrorKindThreadNotFound] error.
-func threadNotFoundError(threadID protocol.ThreadID) *Error {
+// NewThreadNotFoundError builds an [ErrorKindThreadNotFound] error.
+func NewThreadNotFoundError(threadID protocol.ThreadID) *Error {
 	return &Error{Kind: ErrorKindThreadNotFound, ThreadID: threadID}
 }
 
-// invalidRequestError builds an [ErrorKindInvalidRequest] error.
-func invalidRequestError(format string, args ...any) *Error {
+// NewInvalidRequestError builds an [ErrorKindInvalidRequest] error.
+func NewInvalidRequestError(format string, args ...any) *Error {
 	return &Error{Kind: ErrorKindInvalidRequest, Message: fmt.Sprintf(format, args...)}
 }
 
@@ -78,8 +78,8 @@ func unsupportedError(operation string) *Error {
 	return &Error{Kind: ErrorKindUnsupported, Operation: operation}
 }
 
-// internalError wraps cause as an [ErrorKindInternal] error.
-func internalError(cause error, format string, args ...any) *Error {
+// NewInternalError wraps cause as an [ErrorKindInternal] error.
+func NewInternalError(cause error, format string, args ...any) *Error {
 	return &Error{
 		Kind:    ErrorKindInternal,
 		Message: fmt.Sprintf(format, args...),

@@ -1,4 +1,4 @@
-package threadstore
+package local
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/rollout"
+	"github.com/sqlrush/codexgo/internal/threadstore"
 )
 
 // needsRolloutCompatibilityUpdate reports whether the patch requires rewriting
@@ -14,7 +15,7 @@ import (
 // name-index path); otherwise only memory-mode / git-info changes that are NOT
 // part of an observed-metadata sync qualify (observed syncs are reconciled from
 // the rollout transcript and must not append spurious session-meta lines).
-func needsRolloutCompatibilityUpdate(patch ThreadMetadataPatch) bool {
+func needsRolloutCompatibilityUpdate(patch threadstore.ThreadMetadataPatch) bool {
 	if patch.Name.IsSome() {
 		return true
 	}
@@ -28,7 +29,7 @@ func needsRolloutCompatibilityUpdate(patch ThreadMetadataPatch) bool {
 // observed metadata facts, mirroring the Rust `has_observed_metadata_facts`.
 // When present, the update is an observed-metadata sync and the rollout
 // session-meta lines are reconciled from the transcript instead of appended.
-func hasObservedMetadataFacts(patch ThreadMetadataPatch) bool {
+func hasObservedMetadataFacts(patch threadstore.ThreadMetadataPatch) bool {
 	return patch.RolloutPath != nil ||
 		patch.Preview != nil ||
 		patch.Title != nil ||
@@ -56,7 +57,7 @@ func hasObservedMetadataFacts(patch ThreadMetadataPatch) bool {
 // marker), and a git-info change rewrites it with the resolved git info plus the
 // current memory mode. The two are independent and both may run for a combined
 // patch. The resolved rollout path must already exist.
-func (s *LocalThreadStore) applyRolloutCompatibilityUpdate(ctx context.Context, threadID protocol.ThreadID, rolloutPath string, patch ThreadMetadataPatch) error {
+func (s *LocalThreadStore) applyRolloutCompatibilityUpdate(ctx context.Context, threadID protocol.ThreadID, rolloutPath string, patch threadstore.ThreadMetadataPatch) error {
 	if patch.MemoryMode != nil {
 		if err := applyThreadMemoryModeToRollout(rolloutPath, threadID, *patch.MemoryMode); err != nil {
 			return err
@@ -87,7 +88,7 @@ func applyThreadMemoryModeToRollout(rolloutPath string, threadID protocol.Thread
 	line.Meta.MemoryMode = &value
 
 	if err := rollout.AppendRolloutItemToPath(rolloutPath, rollout.NewSessionMetaItem(line)); err != nil {
-		return internalError(err, "failed to set thread memory mode: %v", err)
+		return threadstore.NewInternalError(err, "failed to set thread memory mode: %v", err)
 	}
 	return nil
 }
@@ -99,11 +100,11 @@ func applyThreadMemoryModeToRollout(rolloutPath string, threadID protocol.Thread
 // `apply_thread_git_info_to_rollout`.
 func (s *LocalThreadStore) applyThreadGitInfoToRollout(ctx context.Context, threadID protocol.ThreadID, rolloutPath string) error {
 	if s.stateDB == nil {
-		return internalError(fmt.Errorf("sqlite state db unavailable"), "sqlite state db unavailable for thread %s", threadID)
+		return threadstore.NewInternalError(fmt.Errorf("sqlite state db unavailable"), "sqlite state db unavailable for thread %s", threadID)
 	}
 	metadata, err := s.stateDB.GetThread(ctx, threadID)
 	if err != nil {
-		return internalError(err, "failed to read git metadata for thread %s: %v", threadID, err)
+		return threadstore.NewInternalError(err, "failed to read git metadata for thread %s: %v", threadID, err)
 	}
 
 	line, metaErr := readRolloutSessionMeta(rolloutPath, threadID, "set thread git metadata")
@@ -130,7 +131,7 @@ func (s *LocalThreadStore) applyThreadGitInfoToRollout(ctx context.Context, thre
 	line.Meta.MemoryMode = memMode
 
 	if err := rollout.AppendRolloutItemToPath(rolloutPath, rollout.NewSessionMetaItem(line)); err != nil {
-		return internalError(err, "failed to set thread git metadata: %v", err)
+		return threadstore.NewInternalError(err, "failed to set thread git metadata: %v", err)
 	}
 	return nil
 }
@@ -141,20 +142,20 @@ func (s *LocalThreadStore) applyThreadGitInfoToRollout(ctx context.Context, thre
 func readRolloutSessionMeta(rolloutPath string, threadID protocol.ThreadID, action string) (rollout.SessionMetaLine, error) {
 	line, err := rollout.ReadSessionMetaLine(rolloutPath)
 	if err != nil {
-		return rollout.SessionMetaLine{}, internalError(err, "failed to %s: %v", action, err)
+		return rollout.SessionMetaLine{}, threadstore.NewInternalError(err, "failed to %s: %v", action, err)
 	}
 	if line.Meta.ID != threadID {
 		mismatch := fmt.Errorf("rollout session metadata id mismatch: expected %s, found %s", threadID, line.Meta.ID)
-		return rollout.SessionMetaLine{}, internalError(mismatch, "failed to %s: %v", action, mismatch)
+		return rollout.SessionMetaLine{}, threadstore.NewInternalError(mismatch, "failed to %s: %v", action, mismatch)
 	}
 	return line, nil
 }
 
 // rolloutGitInfoFromParts builds the rollout git marker from individual parts,
-// returning an empty (all-nil) GitInfo when every part is absent so the appended
+// returning an empty (all-nil) threadstore.GitInfo when every part is absent so the appended
 // session-meta line carries `"git":{}` (a git clear), mirroring the Rust
 // `apply_thread_git_info_to_rollout` which always sets `session_meta.git =
-// Some(GitInfo { .. })`.
+// Some(threadstore.GitInfo { .. })`.
 func rolloutGitInfoFromParts(sha, branch, originURL *string) *protocol.GitInfo {
 	var commit *protocol.GitSha
 	if sha != nil {

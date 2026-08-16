@@ -23,12 +23,12 @@ func TestErrorRendering(t *testing.T) {
 	}{
 		{
 			name: "thread not found",
-			err:  threadNotFoundError(tid("abc")),
+			err:  NewThreadNotFoundError(tid("abc")),
 			want: "thread abc not found",
 		},
 		{
 			name: "invalid request",
-			err:  invalidRequestError("bad %s", "input"),
+			err:  NewInvalidRequestError("bad %s", "input"),
 			want: "invalid thread-store request: bad input",
 		},
 		{
@@ -43,7 +43,7 @@ func TestErrorRendering(t *testing.T) {
 		},
 		{
 			name: "internal",
-			err:  internalError(errors.New("io"), "boom %d", 1),
+			err:  NewInternalError(errors.New("io"), "boom %d", 1),
 			want: "thread-store internal error: boom 1",
 		},
 	}
@@ -59,7 +59,7 @@ func TestErrorRendering(t *testing.T) {
 // TestInternalErrorUnwrap verifies the wrapped cause is exposed for errors.Is.
 func TestInternalErrorUnwrap(t *testing.T) {
 	cause := errors.New("disk full")
-	err := internalError(cause, "failed")
+	err := NewInternalError(cause, "failed")
 	if !errors.Is(err, cause) {
 		t.Fatalf("errors.Is should find the wrapped cause")
 	}
@@ -306,11 +306,11 @@ func TestGitInfoJSONSkipsNil(t *testing.T) {
 
 // TestGitInfoFromPartsAndPatch verifies the helper constructors.
 func TestGitInfoFromPartsAndPatch(t *testing.T) {
-	if gitInfoFromParts(nil, nil, nil) != nil {
+	if GitInfoFromParts(nil, nil, nil) != nil {
 		t.Fatalf("all-nil parts should produce nil GitInfo")
 	}
 	sha := "abc"
-	info := gitInfoFromParts(&sha, nil, nil)
+	info := GitInfoFromParts(&sha, nil, nil)
 	if info == nil || info.CommitHash == nil || info.CommitHash.String() != "abc" {
 		t.Fatalf("git info from parts mismatch: %+v", info)
 	}
@@ -339,7 +339,6 @@ func TestThreadEventPersistenceModeMapping(t *testing.T) {
 
 func TestInMemoryStoreImplementsThreadStore(t *testing.T) {
 	var _ ThreadStore = NewInMemoryThreadStore()
-	var _ ThreadStore = NewLocalThreadStore(LocalThreadStoreConfig{}, nil)
 }
 
 // TestInMemoryCreateReadAppendLoad exercises the core in-memory lifecycle and
@@ -541,89 +540,5 @@ func TestInMemoryRegistrySharesByID(t *testing.T) {
 	c := InMemoryThreadStoreForID(id)
 	if c == a {
 		t.Fatalf("expected a fresh store after removal")
-	}
-}
-
-// TestLocalReadPathInvalidRequests verifies the invalid-request behavior of the
-// now-implemented read/list/metadata operations when the target thread or its
-// rollout does not exist.
-func TestLocalReadPathInvalidRequests(t *testing.T) {
-	ctx := context.Background()
-	store := NewLocalThreadStore(LocalThreadStoreConfig{CodexHome: t.TempDir()}, nil)
-
-	tests := []struct {
-		name string
-		call func() error
-	}{
-		{"load_history missing", func() error {
-			_, err := store.LoadHistory(ctx, LoadThreadHistoryParams{ThreadID: validTID()})
-			return err
-		}},
-		{"search requires term", func() error {
-			_, err := store.SearchThreads(ctx, SearchThreadsParams{})
-			return err
-		}},
-		{"update_metadata requires state db", func() error {
-			_, err := store.UpdateThreadMetadata(ctx, UpdateThreadMetadataParams{
-				ThreadID: validTID(),
-				Patch:    ThreadMetadataPatch{Preview: ptr("x")},
-			})
-			return err
-		}},
-		{"archive missing", func() error {
-			return store.ArchiveThread(ctx, ArchiveThreadParams{ThreadID: validTID()})
-		}},
-		{"unarchive missing", func() error {
-			_, err := store.UnarchiveThread(ctx, ArchiveThreadParams{ThreadID: validTID()})
-			return err
-		}},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			var storeErr *Error
-			if err := tc.call(); !errors.As(err, &storeErr) || storeErr.Kind != ErrorKindInvalidRequest {
-				t.Fatalf("expected InvalidRequest, got %v", err)
-			}
-		})
-	}
-}
-
-// TestLocalListThreadsEmptyOK verifies that listing with no sessions on disk and
-// no state DB returns an empty page rather than an error.
-func TestLocalListThreadsEmptyOK(t *testing.T) {
-	store := NewLocalThreadStore(LocalThreadStoreConfig{CodexHome: t.TempDir()}, nil)
-	page, err := store.ListThreads(context.Background(), ListThreadsParams{PageSize: 10})
-	if err != nil {
-		t.Fatalf("list empty: %v", err)
-	}
-	if len(page.Items) != 0 || page.NextCursor != nil {
-		t.Fatalf("expected empty page, got %+v", page)
-	}
-}
-
-// TestLocalCreateThreadRequiresCwd verifies the invalid-request path when no cwd
-// is supplied for live persistence.
-func TestLocalCreateThreadRequiresCwd(t *testing.T) {
-	store := NewLocalThreadStore(LocalThreadStoreConfig{CodexHome: t.TempDir()}, nil)
-	err := store.CreateThread(context.Background(), CreateThreadParams{
-		ThreadID: tid("x"),
-		Source:   rollout.DefaultSessionSource(),
-		Metadata: ThreadPersistenceMetadata{}, // Cwd is nil
-	})
-	var storeErr *Error
-	if !errors.As(err, &storeErr) || storeErr.Kind != ErrorKindInvalidRequest {
-		t.Fatalf("expected InvalidRequest for missing cwd, got %v", err)
-	}
-}
-
-// TestLocalLiveRecorderMissingThread verifies operations on an unknown live
-// thread report not found.
-func TestLocalLiveRecorderMissingThread(t *testing.T) {
-	store := NewLocalThreadStore(LocalThreadStoreConfig{CodexHome: t.TempDir()}, nil)
-	if err := store.FlushThread(context.Background(), tid("ghost")); err == nil {
-		t.Fatalf("expected error flushing unknown thread")
-	}
-	if err := store.DiscardThread(context.Background(), tid("ghost")); err == nil {
-		t.Fatalf("expected error discarding unknown thread")
 	}
 }

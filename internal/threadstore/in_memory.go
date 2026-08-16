@@ -177,7 +177,7 @@ func (s *InMemoryThreadStore) LoadHistory(_ context.Context, params LoadThreadHi
 	key := params.ThreadID.String()
 	items, ok := s.state.histories[key]
 	if !ok {
-		return StoredThreadHistory{}, threadNotFoundError(params.ThreadID)
+		return StoredThreadHistory{}, NewThreadNotFoundError(params.ThreadID)
 	}
 	return StoredThreadHistory{ThreadID: params.ThreadID, Items: cloneItems(items)}, nil
 }
@@ -197,7 +197,7 @@ func (s *InMemoryThreadStore) ReadThreadByRolloutPath(_ context.Context, params 
 	s.state.calls.ReadThreadByRolloutPath++
 	threadID, ok := s.state.rolloutPaths[params.RolloutPath]
 	if !ok {
-		return StoredThread{}, invalidRequestError("in-memory thread store does not know rollout path %s", params.RolloutPath)
+		return StoredThread{}, NewInvalidRequestError("in-memory thread store does not know rollout path %s", params.RolloutPath)
 	}
 	return s.storedThreadFromState(threadID, params.IncludeHistory)
 }
@@ -270,7 +270,7 @@ func (s *InMemoryThreadStore) storedThreadFromState(threadID protocol.ThreadID, 
 	key := threadID.String()
 	created, ok := s.state.createdThreads[key]
 	if !ok {
-		return StoredThread{}, threadNotFoundError(threadID)
+		return StoredThread{}, NewThreadNotFoundError(threadID)
 	}
 	historyItems := cloneItems(s.state.histories[key])
 	var history *StoredThreadHistory
@@ -411,7 +411,7 @@ func metaPermissionProfile(m *ThreadMetadataPatch) protocol.PermissionProfile {
 	if m != nil && m.PermissionProfile != nil {
 		return *m.PermissionProfile
 	}
-	return readOnlyPermissionProfile()
+	return ReadOnlyPermissionProfile()
 }
 
 func metaTokenUsage(m *ThreadMetadataPatch) *protocol.TokenUsage {

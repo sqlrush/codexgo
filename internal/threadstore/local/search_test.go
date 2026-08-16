@@ -1,4 +1,4 @@
-package threadstore
+package local
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/rollout"
+	"github.com/sqlrush/codexgo/internal/threadstore"
 )
 
 // createPersistedThreadWithItems creates a live thread, appends the given
@@ -22,10 +23,10 @@ func createPersistedThreadWithItems(t *testing.T, store *LocalThreadStore, n int
 	threadID := protocol.NewThreadID(uuidFor(n))
 	cwd := store.config.CodexHome
 
-	if err := store.CreateThread(ctx, CreateThreadParams{
+	if err := store.CreateThread(ctx, threadstore.CreateThreadParams{
 		ThreadID: threadID,
 		Source:   rollout.NewCliSource(),
-		Metadata: ThreadPersistenceMetadata{
+		Metadata: threadstore.ThreadPersistenceMetadata{
 			Cwd:           &cwd,
 			ModelProvider: "test-provider",
 			MemoryMode:    protocol.ThreadMemoryModeEnabled,
@@ -41,7 +42,7 @@ func createPersistedThreadWithItems(t *testing.T, store *LocalThreadStore, n int
 	}))
 	all = append(all, items...)
 
-	if err := store.AppendItems(ctx, AppendThreadItemsParams{ThreadID: threadID, Items: all}); err != nil {
+	if err := store.AppendItems(ctx, threadstore.AppendThreadItemsParams{ThreadID: threadID, Items: all}); err != nil {
 		t.Fatalf("append items %d: %v", n, err)
 	}
 	if err := store.PersistThread(ctx, threadID); err != nil {
@@ -106,7 +107,7 @@ func TestSearchThreadsMatchesAgentMessage(t *testing.T) {
 	createPersistedThreadWithItems(t, store, 101, "what is the capital of france",
 		agentMessage("The capital of France is Paris, a lovely city."))
 
-	page, err := store.SearchThreads(ctx, SearchThreadsParams{PageSize: 10, SearchTerm: "Paris"})
+	page, err := store.SearchThreads(ctx, threadstore.SearchThreadsParams{PageSize: 10, SearchTerm: "Paris"})
 	if err != nil {
 		t.Fatalf("search: %v", err)
 	}
@@ -127,7 +128,7 @@ func TestSearchThreadsMatchesAssistantResponseItem(t *testing.T) {
 	createPersistedThreadWithItems(t, store, 102, "hello there",
 		assistantResponseMessage("Here is the answer: quetzalcoatl appears here."))
 
-	page, err := store.SearchThreads(ctx, SearchThreadsParams{PageSize: 10, SearchTerm: "quetzalcoatl"})
+	page, err := store.SearchThreads(ctx, threadstore.SearchThreadsParams{PageSize: 10, SearchTerm: "quetzalcoatl"})
 	if err != nil {
 		t.Fatalf("search: %v", err)
 	}
@@ -160,7 +161,7 @@ func TestSearchThreadsMatchInNonConversationFieldYieldsNoResult(t *testing.T) {
 		t.Fatalf("raw path scan should match 1 file, got %d", len(matches))
 	}
 
-	page, err := store.SearchThreads(ctx, SearchThreadsParams{PageSize: 10, SearchTerm: "zzmagicpath"})
+	page, err := store.SearchThreads(ctx, threadstore.SearchThreadsParams{PageSize: 10, SearchTerm: "zzmagicpath"})
 	if err != nil {
 		t.Fatalf("search: %v", err)
 	}
@@ -179,7 +180,7 @@ func TestSearchThreadsCaseInsensitive(t *testing.T) {
 		agentMessage("reply body"))
 
 	for _, term := range []string{"needle", "NEEDLE", "NeEdLe"} {
-		page, err := store.SearchThreads(ctx, SearchThreadsParams{PageSize: 10, SearchTerm: term})
+		page, err := store.SearchThreads(ctx, threadstore.SearchThreadsParams{PageSize: 10, SearchTerm: term})
 		if err != nil {
 			t.Fatalf("search %q: %v", term, err)
 		}
@@ -193,9 +194,9 @@ func TestSearchThreadsCaseInsensitive(t *testing.T) {
 // InvalidRequest error, mirroring the Rust guard.
 func TestSearchThreadsEmptyTermErrors(t *testing.T) {
 	store := newScanStore(t)
-	_, err := store.SearchThreads(context.Background(), SearchThreadsParams{PageSize: 10, SearchTerm: ""})
-	var storeErr *Error
-	if !errors.As(err, &storeErr) || storeErr.Kind != ErrorKindInvalidRequest {
+	_, err := store.SearchThreads(context.Background(), threadstore.SearchThreadsParams{PageSize: 10, SearchTerm: ""})
+	var storeErr *threadstore.Error
+	if !errors.As(err, &storeErr) || storeErr.Kind != threadstore.ErrorKindInvalidRequest {
 		t.Fatalf("expected InvalidRequest, got %v", err)
 	}
 }
@@ -212,11 +213,11 @@ func TestSearchThreadsPagingAndOrdering(t *testing.T) {
 		createPersistedThreadWithItems(t, store, n, "shared sharedterm message", agentMessage("ack"))
 	}
 
-	first, err := store.SearchThreads(ctx, SearchThreadsParams{
+	first, err := store.SearchThreads(ctx, threadstore.SearchThreadsParams{
 		PageSize:      2,
 		SearchTerm:    "sharedterm",
-		SortKey:       ThreadSortKeyUpdatedAt,
-		SortDirection: SortDirectionDesc,
+		SortKey:       threadstore.ThreadSortKeyUpdatedAt,
+		SortDirection: threadstore.SortDirectionDesc,
 	})
 	if err != nil {
 		t.Fatalf("first page: %v", err)
@@ -229,19 +230,19 @@ func TestSearchThreadsPagingAndOrdering(t *testing.T) {
 	}
 	// Descending updated_at order within the page.
 	for i := 1; i < len(first.Items); i++ {
-		prev := sortTimestamp(first.Items[i-1].Thread, ThreadSortKeyUpdatedAt)
-		cur := sortTimestamp(first.Items[i].Thread, ThreadSortKeyUpdatedAt)
+		prev := sortTimestamp(first.Items[i-1].Thread, threadstore.ThreadSortKeyUpdatedAt)
+		cur := sortTimestamp(first.Items[i].Thread, threadstore.ThreadSortKeyUpdatedAt)
 		if cur.After(prev) {
 			t.Fatalf("descending order violated at %d", i)
 		}
 	}
 
-	second, err := store.SearchThreads(ctx, SearchThreadsParams{
+	second, err := store.SearchThreads(ctx, threadstore.SearchThreadsParams{
 		PageSize:      2,
 		Cursor:        first.NextCursor,
 		SearchTerm:    "sharedterm",
-		SortKey:       ThreadSortKeyUpdatedAt,
-		SortDirection: SortDirectionDesc,
+		SortKey:       threadstore.ThreadSortKeyUpdatedAt,
+		SortDirection: threadstore.SortDirectionDesc,
 	})
 	if err != nil {
 		t.Fatalf("second page: %v", err)
@@ -258,13 +259,13 @@ func TestSearchThreadsPagingAndOrdering(t *testing.T) {
 func TestSearchThreadsBadCursorErrors(t *testing.T) {
 	store := newScanStore(t)
 	bad := "not-a-cursor"
-	_, err := store.SearchThreads(context.Background(), SearchThreadsParams{
+	_, err := store.SearchThreads(context.Background(), threadstore.SearchThreadsParams{
 		PageSize:   10,
 		SearchTerm: "x",
 		Cursor:     &bad,
 	})
-	var storeErr *Error
-	if !errors.As(err, &storeErr) || storeErr.Kind != ErrorKindInvalidRequest {
+	var storeErr *threadstore.Error
+	if !errors.As(err, &storeErr) || storeErr.Kind != threadstore.ErrorKindInvalidRequest {
 		t.Fatalf("expected InvalidRequest for bad cursor, got %v", err)
 	}
 }
@@ -275,7 +276,7 @@ func TestSearchThreadsNoMatch(t *testing.T) {
 	ctx := context.Background()
 	createPersistedThreadWithItems(t, store, 121, "the quick brown fox", agentMessage("jumped over"))
 
-	page, err := store.SearchThreads(ctx, SearchThreadsParams{PageSize: 10, SearchTerm: "absenttoken"})
+	page, err := store.SearchThreads(ctx, threadstore.SearchThreadsParams{PageSize: 10, SearchTerm: "absenttoken"})
 	if err != nil {
 		t.Fatalf("search: %v", err)
 	}

@@ -1,4 +1,4 @@
-package threadstore
+package local
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/rollout"
+	"github.com/sqlrush/codexgo/internal/threadstore"
 )
 
 // ptr returns a pointer to v, for building patch fields in tests.
@@ -48,10 +49,10 @@ func createPersistedThread(t *testing.T, store *LocalThreadStore, n int, message
 	threadID := protocol.NewThreadID(uuidFor(n))
 	cwd := store.config.CodexHome
 
-	if err := store.CreateThread(ctx, CreateThreadParams{
+	if err := store.CreateThread(ctx, threadstore.CreateThreadParams{
 		ThreadID: threadID,
 		Source:   rollout.NewCliSource(),
-		Metadata: ThreadPersistenceMetadata{
+		Metadata: threadstore.ThreadPersistenceMetadata{
 			Cwd:           &cwd,
 			ModelProvider: "test-provider",
 			MemoryMode:    protocol.ThreadMemoryModeEnabled,
@@ -64,7 +65,7 @@ func createPersistedThread(t *testing.T, store *LocalThreadStore, n int, message
 		Type:        protocol.EventMsgKindUserMessage,
 		UserMessage: &protocol.UserMessageEvent{Message: message},
 	})
-	if err := store.AppendItems(ctx, AppendThreadItemsParams{
+	if err := store.AppendItems(ctx, threadstore.AppendThreadItemsParams{
 		ThreadID: threadID,
 		Items:    []rollout.RolloutItem{userMsg},
 	}); err != nil {
@@ -100,19 +101,19 @@ func TestLocalListThreadsScanOrderingAndPaging(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		params    ListThreadsParams
+		params    threadstore.ListThreadsParams
 		wantCount int
 		wantNext  bool
 	}{
 		{
 			name:      "first page of two",
-			params:    ListThreadsParams{PageSize: 2, SortKey: ThreadSortKeyUpdatedAt, SortDirection: SortDirectionDesc},
+			params:    threadstore.ListThreadsParams{PageSize: 2, SortKey: threadstore.ThreadSortKeyUpdatedAt, SortDirection: threadstore.SortDirectionDesc},
 			wantCount: 2,
 			wantNext:  true,
 		},
 		{
 			name:      "full page",
-			params:    ListThreadsParams{PageSize: 10, SortKey: ThreadSortKeyUpdatedAt, SortDirection: SortDirectionDesc},
+			params:    threadstore.ListThreadsParams{PageSize: 10, SortKey: threadstore.ThreadSortKeyUpdatedAt, SortDirection: threadstore.SortDirectionDesc},
 			wantCount: 3,
 			wantNext:  false,
 		},
@@ -141,18 +142,18 @@ func TestLocalListThreadsScanOrderingAndPaging(t *testing.T) {
 	}
 
 	// The cursor from the first page must continue to the remaining item.
-	first, err := store.ListThreads(ctx, ListThreadsParams{PageSize: 2, SortKey: ThreadSortKeyUpdatedAt, SortDirection: SortDirectionDesc})
+	first, err := store.ListThreads(ctx, threadstore.ListThreadsParams{PageSize: 2, SortKey: threadstore.ThreadSortKeyUpdatedAt, SortDirection: threadstore.SortDirectionDesc})
 	if err != nil {
 		t.Fatalf("first page: %v", err)
 	}
 	if first.NextCursor == nil {
 		t.Fatalf("expected a next cursor")
 	}
-	second, err := store.ListThreads(ctx, ListThreadsParams{
+	second, err := store.ListThreads(ctx, threadstore.ListThreadsParams{
 		PageSize:      2,
 		Cursor:        first.NextCursor,
-		SortKey:       ThreadSortKeyUpdatedAt,
-		SortDirection: SortDirectionDesc,
+		SortKey:       threadstore.ThreadSortKeyUpdatedAt,
+		SortDirection: threadstore.SortDirectionDesc,
 	})
 	if err != nil {
 		t.Fatalf("second page: %v", err)
@@ -184,10 +185,10 @@ func TestLocalSearchThreadsScan(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			page, err := store.SearchThreads(ctx, SearchThreadsParams{PageSize: 10, SearchTerm: tc.term})
+			page, err := store.SearchThreads(ctx, threadstore.SearchThreadsParams{PageSize: 10, SearchTerm: tc.term})
 			if tc.wantErr {
-				var storeErr *Error
-				if !errors.As(err, &storeErr) || storeErr.Kind != ErrorKindInvalidRequest {
+				var storeErr *threadstore.Error
+				if !errors.As(err, &storeErr) || storeErr.Kind != threadstore.ErrorKindInvalidRequest {
 					t.Fatalf("expected InvalidRequest, got %v", err)
 				}
 				return
@@ -215,7 +216,7 @@ func TestLocalArchiveUnarchiveRoundTrip(t *testing.T) {
 
 	threadID, activePath := createPersistedThread(t, store, 21, "to be archived")
 
-	if err := store.ArchiveThread(ctx, ArchiveThreadParams{ThreadID: threadID}); err != nil {
+	if err := store.ArchiveThread(ctx, threadstore.ArchiveThreadParams{ThreadID: threadID}); err != nil {
 		t.Fatalf("archive: %v", err)
 	}
 	if _, err := os.Stat(activePath); !os.IsNotExist(err) {
@@ -227,14 +228,14 @@ func TestLocalArchiveUnarchiveRoundTrip(t *testing.T) {
 	}
 
 	// The thread now appears only in the archived listing.
-	active, err := store.ListThreads(ctx, ListThreadsParams{PageSize: 10})
+	active, err := store.ListThreads(ctx, threadstore.ListThreadsParams{PageSize: 10})
 	if err != nil {
 		t.Fatalf("list active: %v", err)
 	}
 	if len(active.Items) != 0 {
 		t.Fatalf("active listing should be empty, got %d", len(active.Items))
 	}
-	archived, err := store.ListThreads(ctx, ListThreadsParams{PageSize: 10, Archived: true})
+	archived, err := store.ListThreads(ctx, threadstore.ListThreadsParams{PageSize: 10, Archived: true})
 	if err != nil {
 		t.Fatalf("list archived: %v", err)
 	}
@@ -245,7 +246,7 @@ func TestLocalArchiveUnarchiveRoundTrip(t *testing.T) {
 		t.Fatalf("archived thread should carry an archived_at timestamp")
 	}
 
-	restored, err := store.UnarchiveThread(ctx, ArchiveThreadParams{ThreadID: threadID})
+	restored, err := store.UnarchiveThread(ctx, threadstore.ArchiveThreadParams{ThreadID: threadID})
 	if err != nil {
 		t.Fatalf("unarchive: %v", err)
 	}
@@ -274,7 +275,7 @@ func TestLocalLoadHistoryScan(t *testing.T) {
 
 	threadID, _ := createPersistedThread(t, store, 31, "history please")
 
-	hist, err := store.LoadHistory(ctx, LoadThreadHistoryParams{ThreadID: threadID})
+	hist, err := store.LoadHistory(ctx, threadstore.LoadThreadHistoryParams{ThreadID: threadID})
 	if err != nil {
 		t.Fatalf("load history: %v", err)
 	}

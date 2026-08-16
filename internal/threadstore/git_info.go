@@ -14,9 +14,9 @@ func NewGitSha(sha string) GitSha { return protocol.NewGitSha(sha) }
 // protocol.GitInfo for the canonical definition and wire format.
 type GitInfo = protocol.GitInfo
 
-// gitInfoFromParts builds a GitInfo from individual parts, returning nil when all
+// GitInfoFromParts builds a GitInfo from individual parts, returning nil when all
 // parts are absent, mirroring the Rust `git_info_from_parts` helper.
-func gitInfoFromParts(sha, branch, originURL *string) *GitInfo {
+func GitInfoFromParts(sha, branch, originURL *string) *GitInfo {
 	if sha == nil && branch == nil && originURL == nil {
 		return nil
 	}
@@ -45,5 +45,5 @@ func gitInfoFromPatch(patch *GitInfoPatch) *GitInfo {
 	if sha == nil && branch == nil && originURL == nil {
 		return nil
 	}
-	return gitInfoFromParts(sha, branch, originURL)
+	return GitInfoFromParts(sha, branch, originURL)
 }

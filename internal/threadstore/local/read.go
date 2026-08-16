@@ -1,4 +1,4 @@
-package threadstore
+package local
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/rollout"
 	"github.com/sqlrush/codexgo/internal/state"
+	"github.com/sqlrush/codexgo/internal/threadstore"
 )
 
 // readSQLiteMetadata loads the state-DB row for threadID, returning nil when the
@@ -28,32 +29,32 @@ func (s *LocalThreadStore) readSQLiteMetadata(ctx context.Context, threadID prot
 // readThread loads a thread summary and optional history, mirroring the Rust
 // `read_thread`. It prefers state-DB metadata that resolves to a valid rollout
 // path, then falls back to scanning the sessions tree for the rollout file.
-func (s *LocalThreadStore) readThread(ctx context.Context, params ReadThreadParams) (StoredThread, error) {
+func (s *LocalThreadStore) readThread(ctx context.Context, params threadstore.ReadThreadParams) (threadstore.StoredThread, error) {
 	threadID := params.ThreadID
 
 	if thread, ok, err := s.readThreadFromSQLite(ctx, params); err != nil {
-		return StoredThread{}, err
+		return threadstore.StoredThread{}, err
 	} else if ok {
 		return thread, nil
 	}
 
 	path, err := s.resolveRolloutPath(ctx, threadID, params.IncludeArchived)
 	if err != nil {
-		return StoredThread{}, err
+		return threadstore.StoredThread{}, err
 	}
 	if path == "" {
-		return StoredThread{}, invalidRequestError("no rollout found for thread id %s", threadID)
+		return threadstore.StoredThread{}, threadstore.NewInvalidRequestError("no rollout found for thread id %s", threadID)
 	}
 
 	thread, err := s.readThreadFromRolloutPath(ctx, path)
 	if err != nil {
-		return StoredThread{}, err
+		return threadstore.StoredThread{}, err
 	}
 	if !params.IncludeArchived && thread.ArchivedAt != nil {
-		return StoredThread{}, invalidRequestError("thread %s is archived", thread.ThreadID)
+		return threadstore.StoredThread{}, threadstore.NewInvalidRequestError("thread %s is archived", thread.ThreadID)
 	}
 	if err := s.attachHistoryIfRequested(&thread, params.IncludeHistory); err != nil {
-		return StoredThread{}, err
+		return threadstore.StoredThread{}, err
 	}
 	return thread, nil
 }
@@ -61,19 +62,19 @@ func (s *LocalThreadStore) readThread(ctx context.Context, params ReadThreadPara
 // readThreadFromSQLite attempts to build the summary from state-DB metadata. It
 // returns ok=false when no usable metadata is present, deferring to the rollout
 // scan.
-func (s *LocalThreadStore) readThreadFromSQLite(ctx context.Context, params ReadThreadParams) (StoredThread, bool, error) {
+func (s *LocalThreadStore) readThreadFromSQLite(ctx context.Context, params threadstore.ReadThreadParams) (threadstore.StoredThread, bool, error) {
 	metadata := s.readSQLiteMetadata(ctx, params.ThreadID)
 	if metadata == nil {
-		return StoredThread{}, false, nil
+		return threadstore.StoredThread{}, false, nil
 	}
 	archivedByPath := rolloutPathIsArchived(s.config.CodexHome, metadata.RolloutPath)
 	if !params.IncludeArchived && (metadata.ArchivedAt != nil || archivedByPath) {
-		return StoredThread{}, false, nil
+		return threadstore.StoredThread{}, false, nil
 	}
 	// SQLite metadata can outlive a moved/recreated rollout path. When history is
 	// requested verify the path still resolves to this thread before trusting it.
 	if params.IncludeHistory && !s.rolloutPathLoadsThread(metadata.RolloutPath, params.ThreadID) {
-		return StoredThread{}, false, nil
+		return threadstore.StoredThread{}, false, nil
 	}
 
 	thread := s.storedThreadFromSQLiteMetadata(metadata)
@@ -95,7 +96,7 @@ func (s *LocalThreadStore) readThreadFromSQLite(ctx context.Context, params Read
 	}
 
 	if err := s.attachHistoryIfRequested(&thread, params.IncludeHistory); err != nil {
-		return StoredThread{}, false, err
+		return threadstore.StoredThread{}, false, err
 	}
 	return thread, true, nil
 }
@@ -116,23 +117,23 @@ func (s *LocalThreadStore) rolloutPathLoadsThread(path string, threadID protocol
 // readThreadByRolloutPath reads a thread summary by rollout path, mirroring the
 // Rust `read_thread_by_rollout_path`. Relative paths are resolved against the
 // Codex home.
-func (s *LocalThreadStore) readThreadByRolloutPath(ctx context.Context, params ReadThreadByRolloutPathParams) (StoredThread, error) {
+func (s *LocalThreadStore) readThreadByRolloutPath(ctx context.Context, params threadstore.ReadThreadByRolloutPathParams) (threadstore.StoredThread, error) {
 	path, err := s.resolveRequestedRolloutPath(params.RolloutPath)
 	if err != nil {
-		return StoredThread{}, err
+		return threadstore.StoredThread{}, err
 	}
 	thread, err := s.readThreadFromRolloutPath(ctx, path)
 	if err != nil {
-		return StoredThread{}, err
+		return threadstore.StoredThread{}, err
 	}
 	if !params.IncludeArchived && thread.ArchivedAt != nil {
-		return StoredThread{}, invalidRequestError("thread %s is archived", thread.ThreadID)
+		return threadstore.StoredThread{}, threadstore.NewInvalidRequestError("thread %s is archived", thread.ThreadID)
 	}
 	if metadata := s.readSQLiteMetadata(ctx, thread.ThreadID); metadata != nil {
 		thread.GitInfo = mergeGitInfo(metadata, thread.GitInfo)
 	}
 	if err := s.attachHistoryIfRequested(&thread, params.IncludeHistory); err != nil {
-		return StoredThread{}, err
+		return threadstore.StoredThread{}, err
 	}
 	return thread, nil
 }
@@ -147,28 +148,28 @@ func (s *LocalThreadStore) resolveRequestedRolloutPath(rolloutPath string) (stri
 	}
 	resolved, err := filepath.Abs(path)
 	if err != nil {
-		return "", invalidRequestError("failed to resolve rollout path %q: %v", path, err)
+		return "", threadstore.NewInvalidRequestError("failed to resolve rollout path %q: %v", path, err)
 	}
 	if _, err := os.Stat(resolved); err != nil {
-		return "", invalidRequestError("failed to resolve rollout path %q: %v", resolved, err)
+		return "", threadstore.NewInvalidRequestError("failed to resolve rollout path %q: %v", resolved, err)
 	}
 	return resolved, nil
 }
 
 // attachHistoryIfRequested loads and attaches the persisted rollout history when
 // includeHistory is set, mirroring the Rust `attach_history_if_requested`.
-func (s *LocalThreadStore) attachHistoryIfRequested(thread *StoredThread, includeHistory bool) error {
+func (s *LocalThreadStore) attachHistoryIfRequested(thread *threadstore.StoredThread, includeHistory bool) error {
 	if !includeHistory {
 		return nil
 	}
 	if thread.RolloutPath == nil {
-		return internalError(errors.New("missing rollout path"), "failed to load thread history for thread %s", thread.ThreadID)
+		return threadstore.NewInternalError(errors.New("missing rollout path"), "failed to load thread history for thread %s", thread.ThreadID)
 	}
 	items, err := loadHistoryItems(*thread.RolloutPath)
 	if err != nil {
 		return err
 	}
-	thread.History = &StoredThreadHistory{ThreadID: thread.ThreadID, Items: items}
+	thread.History = &threadstore.StoredThreadHistory{ThreadID: thread.ThreadID, Items: items}
 	return nil
 }
 
@@ -176,7 +177,7 @@ func (s *LocalThreadStore) attachHistoryIfRequested(thread *StoredThread, includ
 func loadHistoryItems(path string) ([]rollout.RolloutItem, error) {
 	items, _, _, err := rollout.LoadRolloutItems(path)
 	if err != nil {
-		return nil, internalError(err, "failed to load thread history %s", path)
+		return nil, threadstore.NewInternalError(err, "failed to load thread history %s", path)
 	}
 	return items, nil
 }
@@ -202,7 +203,7 @@ func (s *LocalThreadStore) resolveRolloutPath(ctx context.Context, threadID prot
 
 	active, err := rollout.FindThreadPathByIDStr(s.config.CodexHome, threadID.String())
 	if err != nil {
-		return "", invalidRequestError("failed to locate thread id %s: %v", threadID, err)
+		return "", threadstore.NewInvalidRequestError("failed to locate thread id %s: %v", threadID, err)
 	}
 	if active != "" {
 		return active, nil
@@ -212,14 +213,14 @@ func (s *LocalThreadStore) resolveRolloutPath(ctx context.Context, threadID prot
 	}
 	archived, err := rollout.FindArchivedThreadPathByIDStr(s.config.CodexHome, threadID.String())
 	if err != nil {
-		return "", invalidRequestError("failed to locate archived thread id %s: %v", threadID, err)
+		return "", threadstore.NewInvalidRequestError("failed to locate archived thread id %s: %v", threadID, err)
 	}
 	return archived, nil
 }
 
-// readThreadFromRolloutPath builds a StoredThread by replaying the rollout file
+// readThreadFromRolloutPath builds a threadstore.StoredThread by replaying the rollout file
 // at path, mirroring the Rust `read_thread_from_rollout_path`.
-func (s *LocalThreadStore) readThreadFromRolloutPath(_ context.Context, path string) (StoredThread, error) {
+func (s *LocalThreadStore) readThreadFromRolloutPath(_ context.Context, path string) (threadstore.StoredThread, error) {
 	items, threadID, _, err := rollout.LoadRolloutItems(path)
 	if err != nil {
 		return s.storedThreadFromSessionMeta(path)
@@ -230,7 +231,7 @@ func (s *LocalThreadStore) readThreadFromRolloutPath(_ context.Context, path str
 		}
 	}
 	if threadID == nil {
-		return StoredThread{}, internalError(errors.New("missing thread id"), "failed to read thread id from %s", path)
+		return threadstore.StoredThread{}, threadstore.NewInternalError(errors.New("missing thread id"), "failed to read thread id from %s", path)
 	}
 
 	archived := rolloutPathIsArchived(s.config.CodexHome, path)
@@ -238,7 +239,7 @@ func (s *LocalThreadStore) readThreadFromRolloutPath(_ context.Context, path str
 	return thread, nil
 }
 
-// storedThreadFromRolloutItems reconstructs a StoredThread from replayed rollout
+// storedThreadFromRolloutItems reconstructs a threadstore.StoredThread from replayed rollout
 // items by delegating field extraction to the shared state metadata extractor,
 // mirroring the Rust `stored_thread_from_rollout_item` + session-meta merge.
 func (s *LocalThreadStore) storedThreadFromRolloutItems(
@@ -246,7 +247,7 @@ func (s *LocalThreadStore) storedThreadFromRolloutItems(
 	path string,
 	items []rollout.RolloutItem,
 	archived bool,
-) StoredThread {
+) threadstore.StoredThread {
 	meta := s.metadataFromRolloutItems(threadID, path, items)
 
 	createdAt := meta.CreatedAt
@@ -272,7 +273,7 @@ func (s *LocalThreadStore) storedThreadFromRolloutItems(
 		modelProvider = s.config.DefaultModelProviderID
 	}
 
-	thread := StoredThread{
+	thread := threadstore.StoredThread{
 		ThreadID:          threadID,
 		RolloutPath:       &path,
 		ForkedFromID:      forkedFromID(items),
@@ -291,9 +292,9 @@ func (s *LocalThreadStore) storedThreadFromRolloutItems(
 		AgentNickname:     meta.AgentNickname,
 		AgentRole:         meta.AgentRole,
 		AgentPath:         meta.AgentPath,
-		GitInfo:           gitInfoFromParts(meta.GitSha, meta.GitBranch, meta.GitOriginURL),
+		GitInfo:           threadstore.GitInfoFromParts(meta.GitSha, meta.GitBranch, meta.GitOriginURL),
 		ApprovalMode:      parseApprovalMode(meta.ApprovalMode),
-		PermissionProfile: readOnlyPermissionProfile(),
+		PermissionProfile: threadstore.ReadOnlyPermissionProfile(),
 		TokenUsage:        nil,
 		FirstUserMessage:  meta.FirstUserMessage,
 		History:           nil,
@@ -322,7 +323,7 @@ func (s *LocalThreadStore) metadataFromRolloutItems(
 
 // applyStoredThreadName attaches a distinct legacy/SQLite title to the thread
 // name when one is available from the state DB.
-func (s *LocalThreadStore) applyStoredThreadName(thread *StoredThread) {
+func (s *LocalThreadStore) applyStoredThreadName(thread *threadstore.StoredThread) {
 	if s.stateDB == nil {
 		return
 	}
@@ -338,10 +339,10 @@ func (s *LocalThreadStore) applyStoredThreadName(thread *StoredThread) {
 // storedThreadFromSessionMeta builds a summary from only the session-meta line,
 // used when the rollout has no replayable items, mirroring the Rust
 // `stored_thread_from_session_meta`.
-func (s *LocalThreadStore) storedThreadFromSessionMeta(path string) (StoredThread, error) {
+func (s *LocalThreadStore) storedThreadFromSessionMeta(path string) (threadstore.StoredThread, error) {
 	metaLine, err := rollout.ReadSessionMetaLine(path)
 	if err != nil {
-		return StoredThread{}, internalError(err, "failed to read thread %s", path)
+		return threadstore.StoredThread{}, threadstore.NewInternalError(err, "failed to read thread %s", path)
 	}
 	archived := rolloutPathIsArchived(s.config.CodexHome, path)
 	meta := metaLine.Meta
@@ -365,7 +366,7 @@ func (s *LocalThreadStore) storedThreadFromSessionMeta(path string) (StoredThrea
 		modelProvider = *meta.ModelProvider
 	}
 
-	thread := StoredThread{
+	thread := threadstore.StoredThread{
 		ThreadID:          meta.ID,
 		RolloutPath:       &path,
 		ForkedFromID:      meta.ForkedFromID,
@@ -385,8 +386,8 @@ func (s *LocalThreadStore) storedThreadFromSessionMeta(path string) (StoredThrea
 		AgentRole:         meta.AgentRole,
 		AgentPath:         meta.AgentPath,
 		GitInfo:           gitInfoFromSessionMeta(metaLine),
-		ApprovalMode:      onRequestApproval(),
-		PermissionProfile: readOnlyPermissionProfile(),
+		ApprovalMode:      threadstore.OnRequestApproval(),
+		PermissionProfile: threadstore.ReadOnlyPermissionProfile(),
 		TokenUsage:        nil,
 		FirstUserMessage:  nil,
 		History:           nil,
@@ -396,7 +397,7 @@ func (s *LocalThreadStore) storedThreadFromSessionMeta(path string) (StoredThrea
 
 // storedThreadFromSQLiteMetadata builds a summary purely from state-DB metadata,
 // mirroring the Rust `stored_thread_from_sqlite_metadata`.
-func (s *LocalThreadStore) storedThreadFromSQLiteMetadata(metadata *state.ThreadMetadata) StoredThread {
+func (s *LocalThreadStore) storedThreadFromSQLiteMetadata(metadata *state.ThreadMetadata) threadstore.StoredThread {
 	var name *string
 	if title := distinctThreadMetadataTitle(metadata); title != nil {
 		name = title
@@ -420,7 +421,7 @@ func (s *LocalThreadStore) storedThreadFromSQLiteMetadata(metadata *state.Thread
 	}
 
 	rolloutPath := metadata.RolloutPath
-	return StoredThread{
+	return threadstore.StoredThread{
 		ThreadID:          metadata.ID,
 		RolloutPath:       &rolloutPath,
 		ForkedFromID:      forkedFromID,
@@ -439,9 +440,9 @@ func (s *LocalThreadStore) storedThreadFromSQLiteMetadata(metadata *state.Thread
 		AgentNickname:     cloneStr(metadata.AgentNickname),
 		AgentRole:         cloneStr(metadata.AgentRole),
 		AgentPath:         cloneStr(metadata.AgentPath),
-		GitInfo:           gitInfoFromParts(metadata.GitSha, metadata.GitBranch, metadata.GitOriginURL),
+		GitInfo:           threadstore.GitInfoFromParts(metadata.GitSha, metadata.GitBranch, metadata.GitOriginURL),
 		ApprovalMode:      parseApprovalMode(metadata.ApprovalMode),
-		PermissionProfile: readOnlyPermissionProfile(),
+		PermissionProfile: threadstore.ReadOnlyPermissionProfile(),
 		TokenUsage:        nil,
 		FirstUserMessage:  cloneStr(metadata.FirstUserMessage),
 		History:           nil,
@@ -476,7 +477,7 @@ func createdAtFromItems(items []rollout.RolloutItem) time.Time {
 
 // mergeGitInfo prefers state-DB git fields, falling back to the existing rollout
 // git info, mirroring the Rust git-info merge in read_thread_by_rollout_path.
-func mergeGitInfo(metadata *state.ThreadMetadata, existing *GitInfo) *GitInfo {
+func mergeGitInfo(metadata *state.ThreadMetadata, existing *threadstore.GitInfo) *threadstore.GitInfo {
 	var sha, branch, origin *string
 	if existing != nil {
 		if existing.CommitHash != nil {
@@ -495,7 +496,7 @@ func mergeGitInfo(metadata *state.ThreadMetadata, existing *GitInfo) *GitInfo {
 	if metadata.GitOriginURL != nil {
 		origin = cloneStr(metadata.GitOriginURL)
 	}
-	return gitInfoFromParts(sha, branch, origin)
+	return threadstore.GitInfoFromParts(sha, branch, origin)
 }
 
 // cloneStr returns a copy of a string pointer.
@@ -509,8 +510,8 @@ func cloneStr(p *string) *string {
 
 // gitInfoFromSessionMeta extracts git info from a session-meta line. An
 // all-nil marker (`"git":{}`, a git clear) yields nil, mirroring the Rust
-// `git_info_from_session_meta` which treats an empty GitInfo as absent.
-func gitInfoFromSessionMeta(metaLine rollout.SessionMetaLine) *GitInfo {
+// `git_info_from_session_meta` which treats an empty threadstore.GitInfo as absent.
+func gitInfoFromSessionMeta(metaLine rollout.SessionMetaLine) *threadstore.GitInfo {
 	if metaLine.Git == nil {
 		return nil
 	}

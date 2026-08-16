@@ -1,4 +1,4 @@
-package threadstore
+package local
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/rollout"
 	"github.com/sqlrush/codexgo/internal/state"
+	"github.com/sqlrush/codexgo/internal/threadstore"
 )
 
 // writeStateDBSessionFile writes a real rollout session file (a session_meta
@@ -113,17 +114,17 @@ func TestLocalListThreadsStateDBOrdering(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		direction SortDirection
+		direction threadstore.SortDirection
 		wantFirst protocol.ThreadID
 	}{
-		{name: "descending newest first", direction: SortDirectionDesc, wantFirst: idC},
-		{name: "ascending oldest first", direction: SortDirectionAsc, wantFirst: idA},
+		{name: "descending newest first", direction: threadstore.SortDirectionDesc, wantFirst: idC},
+		{name: "ascending oldest first", direction: threadstore.SortDirectionAsc, wantFirst: idA},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			page, err := store.ListThreads(ctx, ListThreadsParams{
+			page, err := store.ListThreads(ctx, threadstore.ListThreadsParams{
 				PageSize:      10,
-				SortKey:       ThreadSortKeyCreatedAt,
+				SortKey:       threadstore.ThreadSortKeyCreatedAt,
 				SortDirection: tc.direction,
 			})
 			if err != nil {
@@ -149,12 +150,12 @@ func TestLocalUpdateThreadMetadataStateDB(t *testing.T) {
 	createdAt := time.Date(2025, 2, 2, 9, 0, 0, 0, time.UTC)
 	threadID := seedThreadRow(t, store, runtime, 51, "first message", createdAt)
 
-	updated, err := store.UpdateThreadMetadata(ctx, UpdateThreadMetadataParams{
+	updated, err := store.UpdateThreadMetadata(ctx, threadstore.UpdateThreadMetadataParams{
 		ThreadID: threadID,
-		Patch: ThreadMetadataPatch{
-			Name:    SetClearable("A custom title"),
+		Patch: threadstore.ThreadMetadataPatch{
+			Name:    threadstore.SetClearable("A custom title"),
 			Preview: ptr("updated preview"),
-			GitInfo: &GitInfoPatch{Branch: SetClearable("feature")},
+			GitInfo: &threadstore.GitInfoPatch{Branch: threadstore.SetClearable("feature")},
 		},
 	})
 	if err != nil {
@@ -194,9 +195,9 @@ func TestUpdateThreadMetadataAppendsMemoryModeSessionMeta(t *testing.T) {
 	path := store.readSQLiteMetadata(ctx, threadID).RolloutPath
 
 	mode := protocol.ThreadMemoryModeDisabled
-	if _, err := store.UpdateThreadMetadata(ctx, UpdateThreadMetadataParams{
+	if _, err := store.UpdateThreadMetadata(ctx, threadstore.UpdateThreadMetadataParams{
 		ThreadID: threadID,
-		Patch:    ThreadMetadataPatch{MemoryMode: &mode},
+		Patch:    threadstore.ThreadMetadataPatch{MemoryMode: &mode},
 	}); err != nil {
 		t.Fatalf("update memory mode: %v", err)
 	}
@@ -238,12 +239,12 @@ func TestUpdateThreadMetadataAppendsGitInfoSessionMeta(t *testing.T) {
 	threadID := seedThreadRow(t, store, runtime, 62, "first", time.Date(2025, 2, 2, 9, 0, 0, 0, time.UTC))
 	path := store.readSQLiteMetadata(ctx, threadID).RolloutPath
 
-	if _, err := store.UpdateThreadMetadata(ctx, UpdateThreadMetadataParams{
+	if _, err := store.UpdateThreadMetadata(ctx, threadstore.UpdateThreadMetadataParams{
 		ThreadID: threadID,
-		Patch: ThreadMetadataPatch{GitInfo: &GitInfoPatch{
-			SHA:       SetClearable("abc123"),
-			Branch:    SetClearable("main"),
-			OriginURL: SetClearable("https://github.com/openai/codex"),
+		Patch: threadstore.ThreadMetadataPatch{GitInfo: &threadstore.GitInfoPatch{
+			SHA:       threadstore.SetClearable("abc123"),
+			Branch:    threadstore.SetClearable("main"),
+			OriginURL: threadstore.SetClearable("https://github.com/openai/codex"),
 		}},
 	}); err != nil {
 		t.Fatalf("update git info: %v", err)
@@ -279,11 +280,11 @@ func TestUpdateThreadMetadataCombinedAppendsBothSessionMeta(t *testing.T) {
 	path := store.readSQLiteMetadata(ctx, threadID).RolloutPath
 
 	mode := protocol.ThreadMemoryModeDisabled
-	if _, err := store.UpdateThreadMetadata(ctx, UpdateThreadMetadataParams{
+	if _, err := store.UpdateThreadMetadata(ctx, threadstore.UpdateThreadMetadataParams{
 		ThreadID: threadID,
-		Patch: ThreadMetadataPatch{
+		Patch: threadstore.ThreadMetadataPatch{
 			MemoryMode: &mode,
-			GitInfo:    &GitInfoPatch{Branch: SetClearable("combined")},
+			GitInfo:    &threadstore.GitInfoPatch{Branch: threadstore.SetClearable("combined")},
 		},
 	}); err != nil {
 		t.Fatalf("combined update: %v", err)
@@ -328,12 +329,12 @@ func TestUpdateThreadMetadataRejectsMismatchedSessionMetaID(t *testing.T) {
 	}
 
 	mode := protocol.ThreadMemoryModeEnabled
-	_, err = store.UpdateThreadMetadata(ctx, UpdateThreadMetadataParams{
+	_, err = store.UpdateThreadMetadata(ctx, threadstore.UpdateThreadMetadataParams{
 		ThreadID: threadID,
-		Patch:    ThreadMetadataPatch{MemoryMode: &mode},
+		Patch:    threadstore.ThreadMetadataPatch{MemoryMode: &mode},
 	})
-	var storeErr *Error
-	if !errors.As(err, &storeErr) || storeErr.Kind != ErrorKindInternal {
+	var storeErr *threadstore.Error
+	if !errors.As(err, &storeErr) || storeErr.Kind != threadstore.ErrorKindInternal {
 		t.Fatalf("expected internal error, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "metadata id mismatch") {
@@ -346,12 +347,12 @@ func TestUpdateThreadMetadataRejectsMismatchedSessionMetaID(t *testing.T) {
 // invalid-request error even when a state DB is present.
 func TestLocalUpdateThreadMetadataMissingThread(t *testing.T) {
 	store, _ := newStateDBStore(t)
-	_, err := store.UpdateThreadMetadata(context.Background(), UpdateThreadMetadataParams{
+	_, err := store.UpdateThreadMetadata(context.Background(), threadstore.UpdateThreadMetadataParams{
 		ThreadID: validTID(),
-		Patch:    ThreadMetadataPatch{Preview: ptr("phantom")},
+		Patch:    threadstore.ThreadMetadataPatch{Preview: ptr("phantom")},
 	})
-	var storeErr *Error
-	if !errors.As(err, &storeErr) || storeErr.Kind != ErrorKindInvalidRequest {
+	var storeErr *threadstore.Error
+	if !errors.As(err, &storeErr) || storeErr.Kind != threadstore.ErrorKindInvalidRequest {
 		t.Fatalf("expected InvalidRequest, got %v", err)
 	}
 }

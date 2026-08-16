@@ -291,10 +291,10 @@ type ArchiveThreadParams struct {
 	ThreadID protocol.ThreadID
 }
 
-// readOnlyPermissionProfile returns the managed read-only permission profile
+// ReadOnlyPermissionProfile returns the managed read-only permission profile
 // used as a default for rollout-derived threads, mirroring the Rust
 // `PermissionProfile::read_only()`.
-func readOnlyPermissionProfile() protocol.PermissionProfile {
+func ReadOnlyPermissionProfile() protocol.PermissionProfile {
 	root := protocol.NewFileSystemSpecialPath(protocol.FileSystemSpecialPath{
 		Kind: protocol.FileSystemSpecialPathKindRoot,
 	})
@@ -305,9 +305,9 @@ func readOnlyPermissionProfile() protocol.PermissionProfile {
 	return protocol.NewManagedPermissionProfile(fs, protocol.NetworkSandboxPolicyRestricted)
 }
 
-// onRequestApproval returns the default on-request approval mode used for
+// OnRequestApproval returns the default on-request approval mode used for
 // rollout-derived threads.
-func onRequestApproval() protocol.AskForApproval {
+func OnRequestApproval() protocol.AskForApproval {
 	return protocol.AskForApproval{Kind: protocol.AskForApprovalOnRequest}
 }
 

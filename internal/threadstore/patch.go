@@ -39,14 +39,18 @@ func ClearField[T any]() ClearableField[T] {
 // patch), mirroring the Rust `Option::is_some` checks in `merge`/`is_empty`.
 func (c ClearableField[T]) IsSome() bool { return c.Present }
 
-// flatten returns the inner value pointer, mirroring Rust `Option::flatten`
-// followed by `as_ref().cloned()` on a `ClearableField`.
-func flatten[T any](c ClearableField[T]) *T {
+// Flatten returns the inner value pointer (nil when the field is absent or a
+// clear request), mirroring Rust `Option::flatten` followed by
+// `as_ref().cloned()` on a `ClearableField`.
+func Flatten[T any](c ClearableField[T]) *T {
 	if !c.Present {
 		return nil
 	}
 	return c.Value
 }
+
+// flatten is the package-internal spelling of [Flatten].
+func flatten[T any](c ClearableField[T]) *T { return Flatten(c) }
 
 // GitInfoPatch is a patch for thread git metadata, mirroring the Rust
 // `GitInfoPatch`. Each field uses [ClearableField] presence semantics.

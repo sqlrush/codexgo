@@ -1,4 +1,4 @@
-package threadstore
+package local
 
 import (
 	"bufio"
@@ -11,6 +11,7 @@ import (
 
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/rollout"
+	"github.com/sqlrush/codexgo/internal/threadstore"
 )
 
 // This file ports the codex local thread-search behavior. It mirrors:
@@ -43,27 +44,27 @@ const userMessageBegin = "## My request for Codex:"
 // up to params.PageSize results in sort order, each carrying a snippet excerpted
 // around the first conversation-text match, plus a next cursor when more matches
 // remain.
-func (s *LocalThreadStore) searchThreads(ctx context.Context, params SearchThreadsParams) (ThreadSearchPage, error) {
+func (s *LocalThreadStore) searchThreads(ctx context.Context, params threadstore.SearchThreadsParams) (threadstore.ThreadSearchPage, error) {
 	term := params.SearchTerm
 	if term == "" {
-		return ThreadSearchPage{}, invalidRequestError("thread/search requires search_term")
+		return threadstore.ThreadSearchPage{}, threadstore.NewInvalidRequestError("thread/search requires search_term")
 	}
 
 	// Validate the cursor up front so a bad cursor errors before any scanning,
 	// matching the Rust parse_cursor check.
 	if params.Cursor != nil {
 		if _, ok := decodeCursor(*params.Cursor); !ok {
-			return ThreadSearchPage{}, invalidRequestError("invalid cursor: %s", *params.Cursor)
+			return threadstore.ThreadSearchPage{}, threadstore.NewInvalidRequestError("invalid cursor: %s", *params.Cursor)
 		}
 	}
 
 	// Phase 1: raw-transcript path match (mirrors search_rollout_paths).
 	matchingPaths, err := searchRolloutPaths(s.config.CodexHome, params.Archived, term)
 	if err != nil {
-		return ThreadSearchPage{}, internalError(err, "failed to search rollout contents")
+		return threadstore.ThreadSearchPage{}, threadstore.NewInternalError(err, "failed to search rollout contents")
 	}
 	if len(matchingPaths) == 0 {
-		return ThreadSearchPage{}, nil
+		return threadstore.ThreadSearchPage{}, nil
 	}
 
 	pageSize := normalizePageSize(params.PageSize)
@@ -78,13 +79,13 @@ func (s *LocalThreadStore) searchThreads(ctx context.Context, params SearchThrea
 		remaining[path] = true
 	}
 
-	results := make([]StoredThreadSearchResult, 0, pageSize+1)
+	results := make([]threadstore.StoredThreadSearchResult, 0, pageSize+1)
 	pageCursor := params.Cursor
 
 	// Phase 2: list threads in sort order and keep those whose path matched and
 	// that yield a snippet, accumulating up to pageSize+1 to detect overflow.
 	for {
-		listParams := ListThreadsParams{
+		listParams := threadstore.ListThreadsParams{
 			PageSize:       scanSize,
 			Cursor:         pageCursor,
 			SortKey:        params.SortKey,
@@ -94,7 +95,7 @@ func (s *LocalThreadStore) searchThreads(ctx context.Context, params SearchThrea
 		}
 		page, listErr := s.listThreads(ctx, listParams)
 		if listErr != nil {
-			return ThreadSearchPage{}, listErr
+			return threadstore.ThreadSearchPage{}, listErr
 		}
 
 		for i := range page.Items {
@@ -110,12 +111,12 @@ func (s *LocalThreadStore) searchThreads(ctx context.Context, params SearchThrea
 
 			snippet, ok, snerr := firstRolloutContentMatchSnippet(path, term)
 			if snerr != nil {
-				return ThreadSearchPage{}, internalError(snerr, "failed to read rollout search match")
+				return threadstore.ThreadSearchPage{}, threadstore.NewInternalError(snerr, "failed to read rollout search match")
 			}
 			if !ok {
 				continue
 			}
-			results = append(results, StoredThreadSearchResult{Thread: thread, Snippet: snippet})
+			results = append(results, threadstore.StoredThreadSearchResult{Thread: thread, Snippet: snippet})
 			if len(results) > pageSize {
 				break
 			}
@@ -139,7 +140,7 @@ func (s *LocalThreadStore) searchThreads(ctx context.Context, params SearchThrea
 		nextCursor = &cursor
 	}
 
-	return ThreadSearchPage{Items: results, NextCursor: nextCursor}, nil
+	return threadstore.ThreadSearchPage{Items: results, NextCursor: nextCursor}, nil
 }
 
 // searchRolloutPaths returns the set of rollout file paths under the active or
