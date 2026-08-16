@@ -42,14 +42,14 @@ func (e *Error) Error() string {
 // Unwrap exposes the wrapped cause for [errors.Is] and [errors.As].
 func (e *Error) Unwrap() error { return e.Cause }
 
-// invalidRequestError builds an [ErrorKindInvalidRequest] error.
-func invalidRequestError(format string, args ...any) *Error {
+// NewInvalidRequestError builds an [ErrorKindInvalidRequest] error.
+func NewInvalidRequestError(format string, args ...any) *Error {
 	return &Error{Kind: ErrorKindInvalidRequest, Message: fmt.Sprintf(format, args...)}
 }
 
-// internalError wraps cause as an [ErrorKindInternal] error, mirroring the Rust
+// NewInternalError wraps cause as an [ErrorKindInternal] error, mirroring the Rust
 // `internal_error` helper that stringifies the source.
-func internalError(cause error, format string, args ...any) *Error {
+func NewInternalError(cause error, format string, args ...any) *Error {
 	return &Error{
 		Kind:    ErrorKindInternal,
 		Message: fmt.Sprintf(format, args...),

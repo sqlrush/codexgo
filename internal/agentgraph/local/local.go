@@ -1,4 +1,4 @@
-package agentgraph
+package local
 
 import (
 	"context"
@@ -9,13 +9,14 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/sqlrush/codexgo/internal/agentgraph"
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/state"
 )
 
 const sqliteDriverName = "sqlite"
 
-// LocalAgentGraphStore is the SQLite-backed implementation of [AgentGraphStore].
+// LocalAgentGraphStore is the SQLite-backed implementation of [agentgraph.AgentGraphStore].
 //
 // It mirrors the Rust `LocalAgentGraphStore`, which wraps an already-initialized
 // state runtime. Because the state runtime owns schema creation/migration, this
@@ -29,7 +30,7 @@ type LocalAgentGraphStore struct {
 	closeOnce sync.Once
 }
 
-var _ AgentGraphStore = (*LocalAgentGraphStore)(nil)
+var _ agentgraph.AgentGraphStore = (*LocalAgentGraphStore)(nil)
 
 // NewLocalAgentGraphStore creates a local graph store from an already-initialized
 // state runtime, mirroring the Rust `LocalAgentGraphStore::new`.
@@ -39,18 +40,18 @@ var _ AgentGraphStore = (*LocalAgentGraphStore)(nil)
 // to the same database file; call [LocalAgentGraphStore.Close] to release it.
 func NewLocalAgentGraphStore(ctx context.Context, runtime *state.StateRuntime) (*LocalAgentGraphStore, error) {
 	if runtime == nil {
-		return nil, invalidRequestError("agent graph store requires an initialized state runtime")
+		return nil, agentgraph.NewInvalidRequestError("agent graph store requires an initialized state runtime")
 	}
 	codexHome := runtime.CodexHome()
 	path := state.StateDBPath(codexHome)
 	db, err := sql.Open(sqliteDriverName, stateDSN(path))
 	if err != nil {
-		return nil, internalError(err, "open state db at %q", path)
+		return nil, agentgraph.NewInternalError(err, "open state db at %q", path)
 	}
 	db.SetMaxOpenConns(5)
 	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close()
-		return nil, internalError(err, "connect state db at %q", path)
+		return nil, agentgraph.NewInternalError(err, "connect state db at %q", path)
 	}
 	return &LocalAgentGraphStore{codexHome: codexHome, pool: db}, nil
 }
@@ -87,7 +88,7 @@ func stateDSN(path string) string {
 func (s *LocalAgentGraphStore) UpsertThreadSpawnEdge(
 	ctx context.Context,
 	parentThreadID, childThreadID protocol.ThreadID,
-	status ThreadSpawnEdgeStatus,
+	status agentgraph.ThreadSpawnEdgeStatus,
 ) error {
 	const query = `
 INSERT INTO thread_spawn_edges (
@@ -100,7 +101,7 @@ ON CONFLICT(child_thread_id) DO UPDATE SET
     status = excluded.status
 `
 	if _, err := s.pool.ExecContext(ctx, query, parentThreadID.String(), childThreadID.String(), status.String()); err != nil {
-		return internalError(err, "upsert thread spawn edge for child %s", childThreadID)
+		return agentgraph.NewInternalError(err, "upsert thread spawn edge for child %s", childThreadID)
 	}
 	return nil
 }
@@ -111,11 +112,11 @@ ON CONFLICT(child_thread_id) DO UPDATE SET
 func (s *LocalAgentGraphStore) SetThreadSpawnEdgeStatus(
 	ctx context.Context,
 	childThreadID protocol.ThreadID,
-	status ThreadSpawnEdgeStatus,
+	status agentgraph.ThreadSpawnEdgeStatus,
 ) error {
 	const query = "UPDATE thread_spawn_edges SET status = ? WHERE child_thread_id = ?"
 	if _, err := s.pool.ExecContext(ctx, query, status.String(), childThreadID.String()); err != nil {
-		return internalError(err, "set thread spawn edge status for child %s", childThreadID)
+		return agentgraph.NewInternalError(err, "set thread spawn edge status for child %s", childThreadID)
 	}
 	return nil
 }
@@ -127,7 +128,7 @@ func (s *LocalAgentGraphStore) SetThreadSpawnEdgeStatus(
 func (s *LocalAgentGraphStore) ListThreadSpawnChildren(
 	ctx context.Context,
 	parentThreadID protocol.ThreadID,
-	statusFilter *ThreadSpawnEdgeStatus,
+	statusFilter *agentgraph.ThreadSpawnEdgeStatus,
 ) ([]protocol.ThreadID, error) {
 	var builder strings.Builder
 	builder.WriteString("SELECT child_thread_id FROM thread_spawn_edges WHERE parent_thread_id = ?")
@@ -147,7 +148,7 @@ func (s *LocalAgentGraphStore) ListThreadSpawnChildren(
 func (s *LocalAgentGraphStore) ListThreadSpawnDescendants(
 	ctx context.Context,
 	rootThreadID protocol.ThreadID,
-	statusFilter *ThreadSpawnEdgeStatus,
+	statusFilter *agentgraph.ThreadSpawnEdgeStatus,
 ) ([]protocol.ThreadID, error) {
 	var builder strings.Builder
 	builder.WriteString(`
@@ -188,7 +189,7 @@ ORDER BY depth ASC, child_thread_id ASC`)
 func (s *LocalAgentGraphStore) queryThreadIDs(ctx context.Context, query string, args []any, what string) ([]protocol.ThreadID, error) {
 	rows, err := s.pool.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, internalError(err, "%s", what)
+		return nil, agentgraph.NewInternalError(err, "%s", what)
 	}
 	defer rows.Close()
 
@@ -196,12 +197,12 @@ func (s *LocalAgentGraphStore) queryThreadIDs(ctx context.Context, query string,
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
-			return nil, internalError(err, "%s: scan row", what)
+			return nil, agentgraph.NewInternalError(err, "%s: scan row", what)
 		}
 		out = append(out, protocol.NewThreadID(id))
 	}
 	if err := rows.Err(); err != nil {
-		return nil, internalError(err, "%s: iterate rows", what)
+		return nil, agentgraph.NewInternalError(err, "%s: iterate rows", what)
 	}
 	return out, nil
 }
