@@ -124,12 +124,16 @@ type ThreadMetadataPatch struct {
 	ModelProvider *string
 	// Model is the latest observed model.
 	Model *string
-	// ReasoningEffort is the latest observed reasoning effort.
-	ReasoningEffort *protocol.ReasoningEffort
+	// ReasoningEffort is the latest observed reasoning effort (clearable since
+	// 0.147: a turn may drop the effort override).
+	ReasoningEffort ClearableField[protocol.ReasoningEffort]
 	// CreatedAt is the creation timestamp when known.
 	CreatedAt *time.Time
 	// UpdatedAt is the last update timestamp for this metadata observation.
 	UpdatedAt *time.Time
+	// AdvanceRecencyAt, when set, moves the thread's recency watermark forward
+	// (0.147 `advance_recency_at`); stores never move recency backwards.
+	AdvanceRecencyAt *time.Time
 	// Source is the session source.
 	Source *rollout.SessionSource
 	// ThreadSource is the optional analytics source classification (clearable).
@@ -180,7 +184,7 @@ func (p *ThreadMetadataPatch) Merge(other ThreadMetadataPatch) {
 	if other.Model != nil {
 		p.Model = other.Model
 	}
-	if other.ReasoningEffort != nil {
+	if other.ReasoningEffort.IsSome() {
 		p.ReasoningEffort = other.ReasoningEffort
 	}
 	if other.CreatedAt != nil {
@@ -188,6 +192,9 @@ func (p *ThreadMetadataPatch) Merge(other ThreadMetadataPatch) {
 	}
 	if other.UpdatedAt != nil {
 		p.UpdatedAt = other.UpdatedAt
+	}
+	if other.AdvanceRecencyAt != nil {
+		p.AdvanceRecencyAt = other.AdvanceRecencyAt
 	}
 	if other.Source != nil {
 		p.Source = other.Source
@@ -242,9 +249,10 @@ func (p ThreadMetadataPatch) IsEmpty() bool {
 		p.Title == nil &&
 		p.ModelProvider == nil &&
 		p.Model == nil &&
-		p.ReasoningEffort == nil &&
+		!p.ReasoningEffort.IsSome() &&
 		p.CreatedAt == nil &&
 		p.UpdatedAt == nil &&
+		p.AdvanceRecencyAt == nil &&
 		p.Source == nil &&
 		!p.ThreadSource.IsSome() &&
 		!p.AgentNickname.IsSome() &&
@@ -270,9 +278,10 @@ func (p ThreadMetadataPatch) MarshalJSON() ([]byte, error) {
 	putOption(m, "title", p.Title)
 	putOption(m, "model_provider", p.ModelProvider)
 	putOption(m, "model", p.Model)
-	putOption(m, "reasoning_effort", p.ReasoningEffort)
+	putClearable(m, "reasoning_effort", p.ReasoningEffort)
 	putOption(m, "created_at", p.CreatedAt)
 	putOption(m, "updated_at", p.UpdatedAt)
+	putOption(m, "advance_recency_at", p.AdvanceRecencyAt)
 	putOption(m, "source", p.Source)
 	putClearable(m, "thread_source", p.ThreadSource)
 	putClearable(m, "agent_nickname", p.AgentNickname)
@@ -314,13 +323,16 @@ func (p *ThreadMetadataPatch) UnmarshalJSON(data []byte) error {
 	if p.Model, err = decodeOption[string](raw, "model"); err != nil {
 		return err
 	}
-	if p.ReasoningEffort, err = decodeOption[protocol.ReasoningEffort](raw, "reasoning_effort"); err != nil {
+	if p.ReasoningEffort, err = decodeClearable[protocol.ReasoningEffort](raw, "reasoning_effort"); err != nil {
 		return err
 	}
 	if p.CreatedAt, err = decodeOption[time.Time](raw, "created_at"); err != nil {
 		return err
 	}
 	if p.UpdatedAt, err = decodeOption[time.Time](raw, "updated_at"); err != nil {
+		return err
+	}
+	if p.AdvanceRecencyAt, err = decodeOption[time.Time](raw, "advance_recency_at"); err != nil {
 		return err
 	}
 	if p.Source, err = decodeOption[rollout.SessionSource](raw, "source"); err != nil {

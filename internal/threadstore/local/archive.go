@@ -157,7 +157,14 @@ func (s *LocalThreadStore) updateThreadMetadata(ctx context.Context, params thre
 		return threadstore.StoredThread{}, threadstore.NewInternalError(err, "failed to read thread metadata for %s", threadID)
 	}
 	if existing == nil {
-		return threadstore.StoredThread{}, threadstore.NewInvalidRequestError("thread not found: %s", threadID)
+		// First metadata sync for a thread the state DB has not seen: build the
+		// row from the patch and the resolved rollout path, mirroring the Rust
+		// apply_metadata_update (`existing.unwrap_or_else(ThreadMetadataBuilder…)`).
+		seeded, seedErr := s.seedMetadataFromPatch(ctx, threadID, params.Patch, params.IncludeArchived)
+		if seedErr != nil {
+			return threadstore.StoredThread{}, seedErr
+		}
+		existing = &seeded
 	}
 
 	updated := applyPatchToMetadata(*existing, params.Patch)
@@ -219,9 +226,8 @@ func applyPatchToMetadata(metadata state.ThreadMetadata, patch threadstore.Threa
 	if patch.Model != nil {
 		updated.Model = cloneStr(patch.Model)
 	}
-	if patch.ReasoningEffort != nil {
-		effort := *patch.ReasoningEffort
-		updated.ReasoningEffort = &effort
+	if patch.ReasoningEffort.IsSome() {
+		updated.ReasoningEffort = cloneReasoningEffort(threadstore.Flatten(patch.ReasoningEffort))
 	}
 	if patch.CreatedAt != nil {
 		updated.CreatedAt = patch.CreatedAt.UTC()
@@ -312,4 +318,56 @@ func memoryModeAsString(mode protocol.ThreadMemoryMode) string {
 		return "disabled"
 	}
 	return "enabled"
+}
+
+// seedMetadataFromPatch builds the initial state-DB row for a thread that has
+// a rollout but no metadata row yet: created_at from the patch (or now), the
+// patch's source/provider/agent identity/cwd/cli version, and the rollout path
+// resolved from the live writer or the sessions tree (archived when the
+// rollout lives under the archived subtree). Mirrors the builder branch of the
+// Rust apply_metadata_update; a thread with no rollout at all is not found.
+func (s *LocalThreadStore) seedMetadataFromPatch(ctx context.Context, threadID protocol.ThreadID, patch threadstore.ThreadMetadataPatch, includeArchived bool) (state.ThreadMetadata, error) {
+	rolloutPath := ""
+	if patch.RolloutPath != nil {
+		rolloutPath = *patch.RolloutPath
+	} else if recorder, err := s.liveRecorder(threadID); err == nil {
+		rolloutPath = recorder.RolloutPath()
+	}
+	if rolloutPath == "" {
+		resolved, err := s.resolveRolloutPath(ctx, threadID, includeArchived)
+		if err != nil {
+			return state.ThreadMetadata{}, err
+		}
+		if resolved == "" {
+			return state.ThreadMetadata{}, threadstore.NewInvalidRequestError("thread not found: %s", threadID)
+		}
+		rolloutPath = resolved
+	}
+
+	createdAt := time.Now().UTC()
+	if patch.CreatedAt != nil {
+		createdAt = patch.CreatedAt.UTC()
+	} else if patch.UpdatedAt != nil {
+		createdAt = patch.UpdatedAt.UTC()
+	}
+	source := rollout.SessionSource{Kind: rollout.SessionSourceKindUnknown}
+	if patch.Source != nil {
+		source = *patch.Source
+	}
+	builder := state.NewThreadMetadataBuilder(threadID, rolloutPath, createdAt, source)
+	builder.ModelProvider = cloneStr(patch.ModelProvider)
+	builder.ThreadSource = threadstore.Flatten(patch.ThreadSource)
+	builder.AgentNickname = threadstore.Flatten(patch.AgentNickname)
+	builder.AgentRole = threadstore.Flatten(patch.AgentRole)
+	builder.AgentPath = threadstore.Flatten(patch.AgentPath)
+	if patch.Cwd != nil {
+		builder.Cwd = *patch.Cwd
+	}
+	builder.CliVersion = cloneStr(patch.CliVersion)
+	metadata := builder.Build(s.config.DefaultModelProviderID)
+	if rolloutPathIsArchived(s.config.CodexHome, rolloutPath) {
+		archivedAt := metadata.UpdatedAt
+		metadata.ArchivedAt = &archivedAt
+	}
+	return metadata, nil
 }

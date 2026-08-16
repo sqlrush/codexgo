@@ -148,3 +148,12 @@ func parseApprovalMode(value string) protocol.AskForApproval {
 		return threadstore.OnRequestApproval()
 	}
 }
+
+// cloneReasoningEffort returns a copy of p (nil stays nil).
+func cloneReasoningEffort(p *protocol.ReasoningEffort) *protocol.ReasoningEffort {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
+}

@@ -47,11 +47,20 @@ type ThreadPersistenceMetadata struct {
 }
 
 // CreateThreadParams holds the parameters required to create a persisted thread.
+// Field set follows the 0.147 `CreateThreadParams`; the paginated-history
+// fields (HistoryMode/HistoryBase/SubagentHistoryStartOrdinal/InitialWindowID)
+// are carried so stores whose durable contract is paginated can persist them,
+// while legacy stores ignore them.
 type CreateThreadParams struct {
+	// SessionID is the session the thread belongs to (root thread id for the
+	// root; shared by descendants). Zero means "derive from ThreadID".
+	SessionID protocol.SessionID
 	// ThreadID is the thread id generated before opening persistence.
 	ThreadID protocol.ThreadID
 	// ForkedFromID is the source thread id when this thread is created as a fork.
 	ForkedFromID *protocol.ThreadID
+	// ParentThreadID is the spawning parent for subagent threads.
+	ParentThreadID *protocol.ThreadID
 	// Source is the runtime source for the thread.
 	Source rollout.SessionSource
 	// ThreadSource is the optional analytics source classification.
@@ -60,10 +69,25 @@ type CreateThreadParams struct {
 	BaseInstructions rollout.BaseInstructions
 	// DynamicTools are available to the thread at startup.
 	DynamicTools []protocol.DynamicToolSpec
+	// Originator is the client identity recorded in session metadata.
+	Originator string
+	// HistoryMode selects the durable history layout; the zero value means the
+	// store's DefaultHistoryMode.
+	HistoryMode protocol.ThreadHistoryMode
+	// HistoryBase is the frozen prefix of another thread's paginated history this
+	// thread inherits (reference-backed forks); nil for a fresh history.
+	HistoryBase *protocol.HistoryPosition
+	// SubagentHistoryStartOrdinal is the first rollout ordinal that belongs to
+	// this subagent's projected history, when spawned into a parent's history.
+	SubagentHistoryStartOrdinal *uint64
+	// InitialWindowID is the context-window identity captured at creation
+	// (UUIDv7); empty for legacy stores that do not track windows.
+	InitialWindowID string
 	// Metadata captured for the newly created thread.
 	Metadata ThreadPersistenceMetadata
 	// EventPersistenceMode selects whether persistence includes the extended event
-	// surface.
+	// surface. codexgo keeps this on the create/resume params (upstream 0.147
+	// derives it elsewhere); see DEVIATIONS.
 	EventPersistenceMode ThreadEventPersistenceMode
 }
 
@@ -230,6 +254,8 @@ type StoredThread struct {
 	RolloutPath *string
 	// ForkedFromID is the source thread id when this thread was forked.
 	ForkedFromID *protocol.ThreadID
+	// ParentThreadID is the spawning parent for subagent threads.
+	ParentThreadID *protocol.ThreadID
 	// Preview is the best available user-facing preview.
 	Preview string
 	// Name is the optional user-facing thread name/title.
@@ -244,14 +270,25 @@ type StoredThread struct {
 	CreatedAt time.Time
 	// UpdatedAt is the thread last-update timestamp.
 	UpdatedAt time.Time
+	// RecencyAt is the recency watermark used for ordering (0.147); stores that
+	// do not track it separately report UpdatedAt.
+	RecencyAt time.Time
 	// ArchivedAt is the thread archive timestamp, if archived.
 	ArchivedAt *time.Time
+	// Section is the server-ordered section the thread belongs to, if any.
+	Section *StoredThreadSection
+	// SectionPosition orders the thread within its section.
+	SectionPosition *int64
+	// SectionEnteredAt is when the thread entered its section.
+	SectionEnteredAt *time.Time
 	// Cwd is the working directory captured for the thread.
 	Cwd string
 	// CliVersion is the CLI version captured for the thread.
 	CliVersion string
 	// Source is the runtime source for the thread.
 	Source rollout.SessionSource
+	// HistoryMode is the durable history layout of this thread.
+	HistoryMode protocol.ThreadHistoryMode
 	// ThreadSource is the optional analytics source classification.
 	ThreadSource *rollout.ThreadSource
 	// AgentNickname is the optional random nickname for thread-spawn sub-agents.

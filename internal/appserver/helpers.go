@@ -2,24 +2,16 @@ package appserver
 
 import (
 	"context"
-	"fmt"
-	"sync/atomic"
 
 	"github.com/sqlrush/codexgo/internal/core"
 	"github.com/sqlrush/codexgo/internal/modelsmanager"
 	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
-// defaultThreadIDFactory returns a [core.ThreadIDFactory] that mints unique,
-// monotonically-increasing thread ids. The Rust engine uses UUIDv7; here we use
-// a process-unique prefix plus an atomic counter so ids are unique within a
-// process. Swap for a real UUIDv7 generator when one lands in a shared util.
+// defaultThreadIDFactory returns a [core.ThreadIDFactory] that mints UUIDv7
+// thread ids, exactly like the Rust engine (`ThreadId::new()` → `Uuid::now_v7()`).
 func defaultThreadIDFactory() core.ThreadIDFactory {
-	var counter atomic.Uint64
-	return func() protocol.ThreadID {
-		n := counter.Add(1)
-		return protocol.NewThreadID(fmt.Sprintf("thread-%020d", n))
-	}
+	return protocol.NewThreadIDV7
 }
 
 // staticModelsManager is a minimal [core.ModelsManager] backed by a single

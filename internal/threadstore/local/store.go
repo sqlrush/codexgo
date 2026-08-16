@@ -56,6 +56,12 @@ type LocalThreadStoreConfig struct {
 //     it requires a state DB and reports [threadstore.ErrorKindInvalidRequest] when none is
 //     configured.
 type LocalThreadStore struct {
+	// UnimplementedStore supplies the 0.147 defaults for the operations the
+	// local store does not implement yet (sections, occurrence search, turn/item
+	// pagination, prepare_fork, delete). Interface first, implementation staged
+	// (spec 50 D0.1); the CLI paths do not call them.
+	threadstore.UnimplementedStore
+
 	config LocalThreadStoreConfig
 
 	mu            sync.Mutex
@@ -273,6 +279,17 @@ func (s *LocalThreadStore) LoadHistory(ctx context.Context, params threadstore.L
 	return s.loadHistory(ctx, params)
 }
 
+// LoadLatestModelContext returns the full persisted history: the local store
+// has no targeted suffix read yet (upstream 0.147 local/model_context.rs), which
+// the contract permits.
+func (s *LocalThreadStore) LoadLatestModelContext(ctx context.Context, params threadstore.LoadThreadHistoryParams) (threadstore.StoredModelContext, error) {
+	history, err := s.loadHistory(ctx, params)
+	if err != nil {
+		return threadstore.StoredModelContext{}, err
+	}
+	return threadstore.StoredModelContext{ThreadID: history.ThreadID, Items: history.Items}, nil
+}
+
 // ReadThread loads a stored thread summary (and optional history) by id,
 // preferring state-DB metadata and falling back to a sessions-tree scan.
 func (s *LocalThreadStore) ReadThread(ctx context.Context, params threadstore.ReadThreadParams) (threadstore.StoredThread, error) {
@@ -307,9 +324,28 @@ func (s *LocalThreadStore) ArchiveThread(ctx context.Context, params threadstore
 	return s.archiveThread(ctx, params)
 }
 
+// ArchiveThreads archives in order with the Rust default semantics.
+func (s *LocalThreadStore) ArchiveThreads(ctx context.Context, params threadstore.ArchiveThreadsParams) ([]protocol.ThreadID, error) {
+	return threadstore.ArchiveThreadsSequentially(ctx, s, params, nil)
+}
+
 // UnarchiveThread reverses an archive and returns the restored thread summary.
 func (s *LocalThreadStore) UnarchiveThread(ctx context.Context, params threadstore.ArchiveThreadParams) (threadstore.StoredThread, error) {
 	return s.unarchiveThread(ctx, params)
+}
+
+// DeleteThread is not implemented for the local rollout-file store yet
+// (upstream 0.147 local/delete_thread.rs removes the rollout file and state
+// rows); it reports Unsupported so callers fail closed rather than leave
+// partial state.
+func (s *LocalThreadStore) DeleteThread(context.Context, threadstore.DeleteThreadParams) error {
+	return threadstore.NewUnsupportedError("delete_thread")
+}
+
+// DeleteThreads deletes in order with the Rust default semantics (every member
+// reports Unsupported today, so the first call surfaces it).
+func (s *LocalThreadStore) DeleteThreads(ctx context.Context, params threadstore.DeleteThreadsParams) error {
+	return threadstore.DeleteThreadsSequentially(ctx, s, params)
 }
 
 // collectRolloutGitInfo gathers git info for cwd when cwd is inside a

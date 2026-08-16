@@ -35,7 +35,7 @@ func hasObservedMetadataFacts(patch threadstore.ThreadMetadataPatch) bool {
 		patch.Title != nil ||
 		patch.ModelProvider != nil ||
 		patch.Model != nil ||
-		patch.ReasoningEffort != nil ||
+		patch.ReasoningEffort.IsSome() ||
 		patch.CreatedAt != nil ||
 		patch.Source != nil ||
 		patch.ThreadSource.IsSome() ||

@@ -73,10 +73,14 @@ func NewInvalidRequestError(format string, args ...any) *Error {
 	return &Error{Kind: ErrorKindInvalidRequest, Message: fmt.Sprintf(format, args...)}
 }
 
-// unsupportedError builds an [ErrorKindUnsupported] error for the named operation.
-func unsupportedError(operation string) *Error {
+// NewUnsupportedError builds an [ErrorKindUnsupported] error for the named
+// operation (the Rust `ThreadStoreError::Unsupported { operation }`).
+func NewUnsupportedError(operation string) *Error {
 	return &Error{Kind: ErrorKindUnsupported, Operation: operation}
 }
+
+// unsupportedError is the package-internal spelling of [NewUnsupportedError].
+func unsupportedError(operation string) *Error { return NewUnsupportedError(operation) }
 
 // NewInternalError wraps cause as an [ErrorKindInternal] error.
 func NewInternalError(cause error, format string, args ...any) *Error {

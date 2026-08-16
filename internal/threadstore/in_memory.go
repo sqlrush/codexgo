@@ -27,11 +27,17 @@ type InMemoryThreadStoreCalls struct {
 	UpdateThreadMetadata    int
 	ArchiveThread           int
 	UnarchiveThread         int
+	LoadLatestModelContext  int
+	DeleteThread            int
 }
 
 // InMemoryThreadStore is an in-memory [ThreadStore] for tests and debug configs,
-// mirroring the Rust `InMemoryThreadStore`.
+// mirroring the Rust `InMemoryThreadStore`. Sections, occurrence search and
+// turn/item pagination take the trait defaults (Unsupported) via
+// [UnimplementedStore]; move-to-section is unsupported here as well.
 type InMemoryThreadStore struct {
+	UnimplementedStore
+
 	mu    sync.Mutex
 	state inMemoryState
 }
@@ -225,9 +231,18 @@ func (s *InMemoryThreadStore) ListThreads(_ context.Context, _ ListThreadsParams
 	return ThreadPage{Items: items, NextCursor: nil}, nil
 }
 
-// SearchThreads is unsupported by the in-memory store, mirroring the Rust default.
-func (s *InMemoryThreadStore) SearchThreads(_ context.Context, _ SearchThreadsParams) (ThreadSearchPage, error) {
-	return ThreadSearchPage{}, unsupportedError("thread/search")
+// LoadLatestModelContext returns the full stored history: the in-memory store
+// has no targeted read, which the contract allows.
+func (s *InMemoryThreadStore) LoadLatestModelContext(_ context.Context, params LoadThreadHistoryParams) (StoredModelContext, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.calls.LoadLatestModelContext++
+	key := params.ThreadID.String()
+	items, ok := s.state.histories[key]
+	if !ok {
+		return StoredModelContext{}, NewThreadNotFoundError(params.ThreadID)
+	}
+	return StoredModelContext{ThreadID: params.ThreadID, Items: cloneItems(items)}, nil
 }
 
 // UpdateThreadMetadata merges the patch into the stored metadata.
@@ -256,12 +271,45 @@ func (s *InMemoryThreadStore) ArchiveThread(_ context.Context, _ ArchiveThreadPa
 	return nil
 }
 
+// ArchiveThreads archives in order with the Rust default semantics.
+func (s *InMemoryThreadStore) ArchiveThreads(ctx context.Context, params ArchiveThreadsParams) ([]protocol.ThreadID, error) {
+	return ArchiveThreadsSequentially(ctx, s, params, nil)
+}
+
 // UnarchiveThread records an unarchive call and returns the current summary.
 func (s *InMemoryThreadStore) UnarchiveThread(_ context.Context, params ArchiveThreadParams) (StoredThread, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.state.calls.UnarchiveThread++
 	return s.storedThreadFromState(params.ThreadID, false)
+}
+
+// DeleteThread forgets everything recorded for the thread, mirroring the Rust
+// in-memory `delete_thread`; an unknown thread reports ThreadNotFound.
+func (s *InMemoryThreadStore) DeleteThread(_ context.Context, params DeleteThreadParams) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.calls.DeleteThread++
+	key := params.ThreadID.String()
+	_, existed := s.state.histories[key]
+	delete(s.state.histories, key)
+	delete(s.state.createdThreads, key)
+	delete(s.state.names, key)
+	delete(s.state.metadataUpdates, key)
+	for path, mapped := range s.state.rolloutPaths {
+		if mapped.String() == key {
+			delete(s.state.rolloutPaths, path)
+		}
+	}
+	if !existed {
+		return NewThreadNotFoundError(params.ThreadID)
+	}
+	return nil
+}
+
+// DeleteThreads deletes in order with the Rust default semantics.
+func (s *InMemoryThreadStore) DeleteThreads(ctx context.Context, params DeleteThreadsParams) error {
+	return DeleteThreadsSequentially(ctx, s, params)
 }
 
 // storedThreadFromState builds a StoredThread from the recorded state, mirroring
@@ -298,6 +346,7 @@ func (s *InMemoryThreadStore) storedThreadFromState(threadID protocol.ThreadID, 
 		ThreadID:          threadID,
 		RolloutPath:       rolloutPath,
 		ForkedFromID:      created.ForkedFromID,
+		ParentThreadID:    created.ParentThreadID,
 		Preview:           metaString(metadata, func(m *ThreadMetadataPatch) *string { return m.Preview }),
 		Name:              name,
 		ModelProvider:     metaStringOr(metadata, func(m *ThreadMetadataPatch) *string { return m.ModelProvider }, "test"),
@@ -305,10 +354,12 @@ func (s *InMemoryThreadStore) storedThreadFromState(threadID protocol.ThreadID, 
 		ReasoningEffort:   metaReasoning(metadata),
 		CreatedAt:         metaTimeOr(metadata, func(m *ThreadMetadataPatch) *time.Time { return m.CreatedAt }, now),
 		UpdatedAt:         metaTimeOr(metadata, func(m *ThreadMetadataPatch) *time.Time { return m.UpdatedAt }, now),
+		RecencyAt:         metaRecency(metadata, now),
 		ArchivedAt:        nil,
 		Cwd:               metaString(metadata, func(m *ThreadMetadataPatch) *string { return m.Cwd }),
 		CliVersion:        metaStringOr(metadata, func(m *ThreadMetadataPatch) *string { return m.CliVersion }, "test"),
 		Source:            metaSource(metadata, created.Source),
+		HistoryMode:       historyModeOrLegacy(created.HistoryMode),
 		ThreadSource:      metaThreadSource(metadata, created.ThreadSource),
 		AgentNickname:     flattenMeta(metadata, func(m *ThreadMetadataPatch) ClearableField[string] { return m.AgentNickname }),
 		AgentRole:         flattenMeta(metadata, func(m *ThreadMetadataPatch) ClearableField[string] { return m.AgentRole }),
@@ -360,7 +411,7 @@ func metaReasoning(m *ThreadMetadataPatch) *protocol.ReasoningEffort {
 	if m == nil {
 		return nil
 	}
-	return m.ReasoningEffort
+	return flatten(m.ReasoningEffort)
 }
 
 func metaTimeOr(m *ThreadMetadataPatch, get func(*ThreadMetadataPatch) *time.Time, fallback time.Time) time.Time {
@@ -419,4 +470,26 @@ func metaTokenUsage(m *ThreadMetadataPatch) *protocol.TokenUsage {
 		return nil
 	}
 	return m.TokenUsage
+}
+
+// metaRecency mirrors the Rust `recency_at` derivation: advance_recency_at
+// wins, then updated_at, then the fallback.
+func metaRecency(m *ThreadMetadataPatch, fallback time.Time) time.Time {
+	if m != nil {
+		if m.AdvanceRecencyAt != nil {
+			return *m.AdvanceRecencyAt
+		}
+		if m.UpdatedAt != nil {
+			return *m.UpdatedAt
+		}
+	}
+	return fallback
+}
+
+// historyModeOrLegacy maps the zero value to Legacy.
+func historyModeOrLegacy(mode protocol.ThreadHistoryMode) protocol.ThreadHistoryMode {
+	if mode == "" {
+		return protocol.ThreadHistoryModeLegacy
+	}
+	return mode
 }

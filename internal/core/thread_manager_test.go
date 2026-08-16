@@ -53,6 +53,8 @@ func (r *recordingRecorder) items() []rollout.RolloutItem {
 // ThreadManager exercises (ReadThreadByRolloutPath). Every other method returns
 // an unsupported error so accidental use is loud.
 type stubStore struct {
+	threadstore.UnimplementedStore
+
 	byRolloutPath map[string]threadstore.StoredThread
 	readErr       error
 	readByPath    int
@@ -118,6 +120,9 @@ func (s *stubStore) ArchiveThread(context.Context, threadstore.ArchiveThreadPara
 }
 func (s *stubStore) UnarchiveThread(context.Context, threadstore.ArchiveThreadParams) (threadstore.StoredThread, error) {
 	return threadstore.StoredThread{}, s.unsupported("unarchive")
+}
+func (s *stubStore) DeleteThread(context.Context, threadstore.DeleteThreadParams) error {
+	return s.unsupported("delete")
 }
 
 var _ threadstore.ThreadStore = (*stubStore)(nil)
