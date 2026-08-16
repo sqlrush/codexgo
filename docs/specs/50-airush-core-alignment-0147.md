@@ -73,4 +73,21 @@ guardian 实现、agent_jobs/goals 重建、本地文件形态的 thread-store �
 
 ## 实施 changelog（approve 后追加，不改上文）
 
-（待追加）
+### 2026-08-16 D0.9 缝合落地（8 个 commit：de9d73e…4db8960）
+
+实际子包名与决策点 2 的预估不同（按各包既有结构就近落位），逐项：
+
+| 缝 | 动作 | 结果 |
+|---|---|---|
+| S3 | `GitSha`/`GitInfo` 唯一定义落 `protocol`（Rust 本就在 `codex_protocol::protocol`）；`gitutils`/`threadstore` 保留别名；`rollout` 不再 import `gitutils`——`CreateParams.GitInfo`（`GitInfoCollector`）由本地 thread store 注入，nil 不记 git | rollout 闭包去掉 go-git |
+| S1 | `threadstore/local*.go`（文件 + SQLite state）→ `threadstore/local`；父包只留契约/类型/patch/错误/in-memory；导出 `NewInternalError`/`NewInvalidRequestError`/`NewThreadNotFoundError`/`OnRequestApproval`/`ReadOnlyPermissionProfile`/`GitInfoFromParts`/`Flatten` | threadstore 闭包去掉 modernc-sqlite/go-git |
+| S2 | `agentgraph/local.go`（SQLite）→ `agentgraph/local`；行为用例抽成 `agentgraph/agentgraphtest.RunSuite`（in-memory / SQLite / 外部 PG 实现共用） | agentgraph 闭包去掉 sqlite |
+| S6 | `codemode` goja 引擎 → `codemode/engine`（定义/描述/TS schema 留 `codemode`；`PublicToolName`/`WaitToolName` 移到 codemode）；新叶子包 `ptycap`（`ConPTYSupported` build-tag）供 `tools/tool_config` | tools 闭包去掉 goja/creack-pty |
+| S7 | 本地命令执行 → `core/localexec`：exec_command/write_stdin、shell_command、apply_patch、`ExecService` 契约、turn 沙箱策略解析、沙箱拒绝升级、unified-exec 后台 watcher；core 导出执行器契约（`ToolExecutor`/`ToolHandlerContext`/`NewTextToolOutput`/`TelemetryPreview`/`PayloadArguments`/`EmitTurnItem*`/`NowUnixMillis`/`TurnShellToolType`/`TurnTruncationPolicy`/`GranularAllowsSandboxApproval`/`UnsandboxedExecutionAllowed`）+ `SessionArmer`（`Spawn` 对每个注册执行器回调 `ArmSession`）；`BuiltinToolDeps` 改为 `ShellTools []ToolExecutor` + `ApplyPatch ToolExecutor`（`localexec.ShellExecutors`/`NewApplyPatchExecutor` 装配，CLI 接线已改）；删除从未被读取的 `SessionServices.ExecService`（appserver/mcpserver 配置同删）；新增 `core/coretest`（经 `core.Spawn` 造会话的测试夹具，`Session.InstallActiveTurnForTesting` 支撑审批用例） | core 闭包去掉 creack-pty/sandbox/unifiedexec/execserver/applypatch |
+| S5 | `shell` 新叶子包（`ShellType`/`DetectShellType`/`UserShell`/`DefaultUserShell`，对应 Rust codex-shell）；`shellcmd` 保留别名与 bash/heredoc/URL/升级检测（mvdan） | core 闭包去掉 mvdan-sh |
+| S8 | Responses websocket 传输 → `api/responsesws`（仓内无外部使用者）；导出 `api.ResponsesPath` | api/core 闭包去掉 coder-websocket |
+| S4 | 系统 keyring → `keyring/system`（`keyring` 留 Store/StoreError/MemoryStore + 新 `Unavailable`）；`mcp.NewOAuthStore(store, codexHome)` + `ManagerOptions.Keyring` 注入（nil=无系统 keyring：Auto 落文件、Keyring 模式报不可用；CLI 传系统 store）；`secrets`/`login` 直接构造系统 store；仓库根发现（纯文件系统）→ `gitutils/gitroot`，`config` trust 与本地 thread store 改用之 | mcp/config/hooks 闭包去掉 go-keyring(dbus)/go-git |
+
+**验收**：`go build ./...` 全绿；Mac 上 `dev-check.sh ./...` 除 7 个基线即失败的环境用例（`cli` skills 读宿主 `~/.agents/skills`、`uds` 临时路径超 unix socket 长度；在 e20c9d6 同样失败）外全过；airush `deploy/scripts/mac-codexgo-deps.sh` 对抽核目标包（core/coretest/protocol/api/client/mcp/multiagent/agentgraph(+agentgraphtest)/threadstore/rollout/config/modelproviderinfo/modelsmanager/skills/tools/msghistory/hooks/features）`go list -deps` 第三方模块 = `google/uuid`（airush 已有）+ `pelletier/go-toml/v2`、`klauspost/compress`、`rivo/uniseg`（2026-08-16 user 批准），**未审项为空**；目标包不再引用 sandbox/unifiedexec/pty/execserver/applypatch/state/secrets。
+
+**parity**：CLI 侧行为不变（接线等价：shell 家族注册顺序、apply_patch 位置、watcher 装配时机、OAuth 存储模式语义均逐位保留）；parity 差分不在本机跑（基线 codex 0.147 漂移），以单测 + Mac dev-check 兜底。
