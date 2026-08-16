@@ -1,4 +1,4 @@
-package core
+package localexec
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/sqlrush/codexgo/internal/applypatch"
-	"github.com/sqlrush/codexgo/internal/features"
+	"github.com/sqlrush/codexgo/internal/core"
 	"github.com/sqlrush/codexgo/internal/modelsmanager"
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/sandbox"
@@ -30,7 +30,7 @@ import (
 //
 // The sandbox-denial approval escalation arm of the ToolOrchestrator IS ported:
 // on a sandbox denial under a permitting approval policy, maybeEscalateUnifiedExec
-// prompts via Session.RequestCommandApproval and, on approval, retries the
+// prompts via core.Session.RequestCommandApproval and, on approval, retries the
 // command WITHOUT the sandbox (see sandbox_escalation.go). The background exec-end
 // watcher (async_watcher.rs) IS ported: unified_exec_watcher.go arms it per
 // session so a PTY session that outlives its exec_command call still streams
@@ -39,86 +39,6 @@ import (
 // STUB: deferred network approvals, per-call sandbox_permissions /
 // additional_permissions, the ApprovedForSession cache, and hook payload
 // rewriting are owned by other area agents.
-
-// ----------------------------------------------------------------------------
-// Per-turn shell tool selection
-// ----------------------------------------------------------------------------
-
-// turnFeatures resolves the effective feature set for a turn, defaulting when
-// the turn carries none. Mirrors the Rust `turn_context.features.get()`.
-func turnFeatures(tc *TurnContext) *features.Features {
-	if tc != nil && tc.Features != nil {
-		return tc.Features
-	}
-	defaults := features.NewFeaturesWithDefaults()
-	return &defaults
-}
-
-// turnModelInfo resolves the typed model metadata for a turn, falling back to
-// slug-derived metadata when the opaque ModelInfo payload is absent or not a
-// catalog entry.
-func turnModelInfo(tc *TurnContext) modelsmanager.ModelInfo {
-	if tc != nil {
-		switch v := tc.ModelInfo.(type) {
-		case modelsmanager.ModelInfo:
-			return v
-		case *modelsmanager.ModelInfo:
-			if v != nil {
-				return *v
-			}
-		}
-	}
-	slug := ""
-	if tc != nil {
-		slug = tc.ModelSlug
-	}
-	return modelsmanager.ModelInfoFromSlug(slug)
-}
-
-// turnShellToolType resolves which shell tool family the model sees this turn,
-// mirroring spec_plan's add_shell_tools selection via
-// shell_type_for_model_and_features.
-func turnShellToolType(tc *TurnContext) modelsmanager.ConfigShellToolType {
-	mi := turnModelInfo(tc)
-	return tools.ShellTypeForModelAndFeatures(&mi, turnFeatures(tc))
-}
-
-// turnWebSearchMode resolves the effective web-search mode for a turn,
-// mirroring `config.web_search_mode` with codex's default (Cached when
-// unconfigured — resolve_web_search_mode falls back to WebSearchMode::Cached).
-func turnWebSearchMode(tc *TurnContext) protocol.WebSearchMode {
-	if tc != nil && tc.WebSearchMode != "" {
-		return tc.WebSearchMode
-	}
-	return protocol.WebSearchModeCached
-}
-
-// turnRequestUserInputEnabled mirrors codex's
-// config.experimental_request_user_input_enabled, which defaults to TRUE when
-// the [tools.experimental_request_user_input] table is absent
-// (resolve_experimental_request_user_input_enabled).
-func turnRequestUserInputEnabled(tc *TurnContext) bool {
-	if tc == nil || tc.ExperimentalRequestUserInput == nil {
-		return true
-	}
-	return *tc.ExperimentalRequestUserInput
-}
-
-// turnTruncationPolicy resolves the model-output truncation policy for a turn
-// from the model's catalog metadata (the Rust `turn.truncation_policy`).
-func turnTruncationPolicy(tc *TurnContext) truncation.TruncationPolicy {
-	mi := turnModelInfo(tc)
-	switch mi.TruncationPolicy.Mode {
-	case modelsmanager.TruncationModeBytes:
-		return truncation.BytesPolicy(int(mi.TruncationPolicy.Limit))
-	case modelsmanager.TruncationModeTokens:
-		return truncation.TokensPolicy(int(mi.TruncationPolicy.Limit))
-	default:
-		// Unknown/zero policy: fall back to the unified-exec output cap so the
-		// response stays bounded.
-		return truncation.TokensPolicy(unifiedexec.UnifiedExecOutputMaxTokens)
-	}
-}
 
 // ----------------------------------------------------------------------------
 // exec_command (UnifiedExec) executor
@@ -158,7 +78,11 @@ type unifiedExecCommandExecutor struct {
 	fs applypatch.FileSystem
 }
 
-// newUnifiedExecCommandExecutor builds the exec_command (UnifiedExec) executor.
+// NewUnifiedExecCommandExecutor builds the exec_command (UnifiedExec) executor.
+func NewUnifiedExecCommandExecutor(exec *unifiedexec.Executor, fs applypatch.FileSystem) core.ToolExecutor {
+	return newUnifiedExecCommandExecutor(exec, fs)
+}
+
 func newUnifiedExecCommandExecutor(exec *unifiedexec.Executor, fs applypatch.FileSystem) unifiedExecCommandExecutor {
 	return unifiedExecCommandExecutor{exec: exec, fs: fs}
 }
@@ -167,17 +91,11 @@ func (unifiedExecCommandExecutor) Name() protocol.ToolName {
 	return protocol.PlainToolName("exec_command")
 }
 
-// unifiedExecExecutor exposes the underlying unified-exec executor so the session
-// can arm the background exit watcher against it (the unifiedExecHost seam).
-func (e unifiedExecCommandExecutor) unifiedExecExecutor() *unifiedexec.Executor {
-	return e.exec
-}
-
 // Spec advertises exec_command only when the turn's shell type resolves to
 // UnifiedExec (spec_plan::add_shell_tools). codex derives `login` from
 // config.permissions.allow_login_shell, which defaults to true.
-func (unifiedExecCommandExecutor) Spec(tc *TurnContext) (tools.ToolSpec, bool) {
-	if turnShellToolType(tc) != modelsmanager.ConfigShellToolTypeUnifiedExec {
+func (unifiedExecCommandExecutor) Spec(tc *core.TurnContext) (tools.ToolSpec, bool) {
+	if core.TurnShellToolType(tc) != modelsmanager.ConfigShellToolTypeUnifiedExec {
 		return tools.ToolSpec{}, false
 	}
 	includeEnvironmentID := tc != nil && len(tc.Environments) > 1
@@ -193,7 +111,7 @@ func (unifiedExecCommandExecutor) MatchesPayload(p tools.ToolPayload) bool {
 // Handle opens a unified-exec session for the command, intercepting apply_patch
 // heredocs, and returns the initial output snapshot (with a live session id when
 // the process is still running).
-func (e unifiedExecCommandExecutor) Handle(ctx context.Context, h *toolHandlerContext) (tools.ToolOutput, error) {
+func (e unifiedExecCommandExecutor) Handle(ctx context.Context, h *core.ToolHandlerContext) (tools.ToolOutput, error) {
 	args, err := parseUnifiedExecCommandArgs(h.Payload)
 	if err != nil {
 		return nil, err
@@ -227,7 +145,7 @@ func (e unifiedExecCommandExecutor) Handle(ctx context.Context, h *toolHandlerCo
 		return unifiedExecToolOutput{
 			rawOutput:        []byte(patchOut.text),
 			maxOutputTokens:  args.MaxOutputTokens,
-			truncationPolicy: turnTruncationPolicy(h.Turn),
+			truncationPolicy: core.TurnTruncationPolicy(h.Turn),
 		}, nil
 	}
 
@@ -273,7 +191,7 @@ func (e unifiedExecCommandExecutor) Handle(ctx context.Context, h *toolHandlerCo
 					maxOutputTokens:    args.MaxOutputTokens,
 					exitCode:           &exitCode,
 					originalTokenCount: &originalTokens,
-					truncationPolicy:   turnTruncationPolicy(h.Turn),
+					truncationPolicy:   core.TurnTruncationPolicy(h.Turn),
 				}, nil
 			}
 		} else {
@@ -290,7 +208,7 @@ func (e unifiedExecCommandExecutor) Handle(ctx context.Context, h *toolHandlerCo
 		emitExecCommandEnd(h, argv, cwd, string(out.RawOutput), *out.ExitCode)
 	}
 
-	return newUnifiedExecToolOutput(out, turnTruncationPolicy(h.Turn)), nil
+	return newUnifiedExecToolOutput(out, core.TurnTruncationPolicy(h.Turn)), nil
 }
 
 // maybeEscalateUnifiedExec consults the approval policy after a sandbox denial
@@ -303,7 +221,7 @@ func (e unifiedExecCommandExecutor) Handle(ctx context.Context, h *toolHandlerCo
 // Under danger-full-access the first attempt already runs unsandboxed, so a
 // denial cannot reach this path; under approval_policy=never the escalation is
 // skipped (wantsNoSandboxApproval is false), preserving existing behavior.
-func (e unifiedExecCommandExecutor) maybeEscalateUnifiedExec(ctx context.Context, h *toolHandlerContext, base unifiedExecRequestParams) (*unifiedexec.Output, bool) {
+func (e unifiedExecCommandExecutor) maybeEscalateUnifiedExec(ctx context.Context, h *core.ToolHandlerContext, base unifiedExecRequestParams) (*unifiedexec.Output, bool) {
 	decision := resolveSandboxEscalation(ctx, h.Session, sandboxEscalationRequest{
 		Turn:    h.Turn,
 		CallID:  h.CallID,
@@ -335,7 +253,7 @@ func (e unifiedExecCommandExecutor) maybeEscalateUnifiedExec(ctx context.Context
 type unifiedExecRequestParams struct {
 	// Turn is the read-only turn snapshot whose sandbox mode drives policy
 	// resolution. SandboxCwd defaults to the turn's cwd.
-	Turn *TurnContext
+	Turn *core.TurnContext
 	// Argv is the resolved program + arguments to spawn.
 	Argv []string
 	// HookCommand is the original shell command string echoed back in output.
@@ -383,7 +301,7 @@ func buildUnifiedExecRequest(p unifiedExecRequestParams) *unifiedexec.ExecComman
 		HookCommand:             p.HookCommand,
 		CallID:                  p.CallID,
 		TurnID:                  turnID,
-		TruncationPolicy:        turnTruncationPolicy(p.Turn),
+		TruncationPolicy:        core.TurnTruncationPolicy(p.Turn),
 		ProcessID:               p.ProcessID,
 		YieldTimeMS:             p.YieldTimeMS,
 		MaxOutputTokens:         p.MaxOutputTokens,
@@ -406,7 +324,7 @@ func buildUnifiedExecRequest(p unifiedExecRequestParams) *unifiedexec.ExecComman
 
 // parseUnifiedExecCommandArgs decodes and validates exec_command arguments.
 func parseUnifiedExecCommandArgs(p tools.ToolPayload) (unifiedExecCommandArgs, error) {
-	raw, perr := payloadArguments(p)
+	raw, perr := core.PayloadArguments(p)
 	if perr != nil {
 		return unifiedExecCommandArgs{}, perr
 	}
@@ -463,7 +381,7 @@ func execEnvironMap() map[string]string {
 
 // emitExecCommandBegin emits the exec_command_begin lifecycle event (shared
 // shape with the shell_command path so the exec JSONL mapping stays uniform).
-func emitExecCommandBegin(h *toolHandlerContext, argv []string, cwd string) {
+func emitExecCommandBegin(h *core.ToolHandlerContext, argv []string, cwd string) {
 	if h.Session == nil {
 		return
 	}
@@ -482,7 +400,7 @@ func emitExecCommandBegin(h *toolHandlerContext, argv []string, cwd string) {
 // emitExecCommandEnd emits the exec_command_end lifecycle event for a process
 // that finished within the current call. PTY output is a single merged stream,
 // so it is reported as stdout/aggregated output.
-func emitExecCommandEnd(h *toolHandlerContext, argv []string, cwd, text string, exitCode int) {
+func emitExecCommandEnd(h *core.ToolHandlerContext, argv []string, cwd, text string, exitCode int) {
 	if h.Session == nil {
 		return
 	}
@@ -527,7 +445,11 @@ type writeStdinExecutor struct {
 	exec *unifiedexec.Executor
 }
 
-// newWriteStdinExecutor builds the write_stdin executor.
+// NewWriteStdinExecutor builds the write_stdin executor.
+func NewWriteStdinExecutor(exec *unifiedexec.Executor) core.ToolExecutor {
+	return newWriteStdinExecutor(exec)
+}
+
 func newWriteStdinExecutor(exec *unifiedexec.Executor) writeStdinExecutor {
 	return writeStdinExecutor{exec: exec}
 }
@@ -537,8 +459,8 @@ func (writeStdinExecutor) Name() protocol.ToolName {
 }
 
 // Spec advertises write_stdin alongside exec_command in UnifiedExec mode only.
-func (writeStdinExecutor) Spec(tc *TurnContext) (tools.ToolSpec, bool) {
-	if turnShellToolType(tc) != modelsmanager.ConfigShellToolTypeUnifiedExec {
+func (writeStdinExecutor) Spec(tc *core.TurnContext) (tools.ToolSpec, bool) {
+	if core.TurnShellToolType(tc) != modelsmanager.ConfigShellToolTypeUnifiedExec {
 		return tools.ToolSpec{}, false
 	}
 	return tools.CreateWriteStdinTool(), true
@@ -551,8 +473,8 @@ func (writeStdinExecutor) MatchesPayload(p tools.ToolPayload) bool {
 
 // Handle writes the input to the live session (or polls when empty) and returns
 // the collected output snapshot.
-func (e writeStdinExecutor) Handle(ctx context.Context, h *toolHandlerContext) (tools.ToolOutput, error) {
-	raw, perr := payloadArguments(h.Payload)
+func (e writeStdinExecutor) Handle(ctx context.Context, h *core.ToolHandlerContext) (tools.ToolOutput, error) {
+	raw, perr := core.PayloadArguments(h.Payload)
 	if perr != nil {
 		return nil, perr
 	}
@@ -603,7 +525,7 @@ func (e writeStdinExecutor) Handle(ctx context.Context, h *toolHandlerContext) (
 		})
 	}
 
-	return newUnifiedExecToolOutput(out, turnTruncationPolicy(h.Turn)), nil
+	return newUnifiedExecToolOutput(out, core.TurnTruncationPolicy(h.Turn)), nil
 }
 
 // ----------------------------------------------------------------------------
@@ -680,7 +602,7 @@ func (o unifiedExecToolOutput) responseText() string {
 	return strings.Join(sections, "\n")
 }
 
-func (o unifiedExecToolOutput) LogPreview() string { return telemetryPreview(o.responseText()) }
+func (o unifiedExecToolOutput) LogPreview() string { return core.TelemetryPreview(o.responseText()) }
 
 // SuccessForLogging mirrors the Rust impl: unified exec responses always log
 // as success (failure is carried in the rendered exit code).

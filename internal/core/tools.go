@@ -113,7 +113,7 @@ func functionOutputText(p protocol.FunctionCallOutputPayload) string {
 // Executor contract (reduced core analogue of CoreToolRuntime)
 // ----------------------------------------------------------------------------
 
-// toolExecutor is the narrow, core-internal contract a built-in tool runtime
+// ToolExecutor is the narrow, core-internal contract a built-in tool runtime
 // implements. It is a reduced port of the Rust `CoreToolRuntime`/`ToolExecutor`
 // traits: it advertises its model-visible name and spec and handles one
 // invocation.
@@ -121,7 +121,7 @@ func functionOutputText(p protocol.FunctionCallOutputPayload) string {
 // STUB: parallel-call support, runtime-cancellation waits, pre/post hook
 // payloads, telemetry tags, and argument-diff consumers are omitted; those are
 // owned by the parallel/hooks/telemetry area agents.
-type toolExecutor interface {
+type ToolExecutor interface {
 	// Name returns the registry key (and model-visible name) for the tool.
 	Name() protocol.ToolName
 	// Spec returns the model-visible specification for the tool, or false when
@@ -132,12 +132,12 @@ type toolExecutor interface {
 	MatchesPayload(p tools.ToolPayload) bool
 	// Handle executes one invocation, returning its output or a typed
 	// [tools.FunctionCallError].
-	Handle(ctx context.Context, h *toolHandlerContext) (tools.ToolOutput, error)
+	Handle(ctx context.Context, h *ToolHandlerContext) (tools.ToolOutput, error)
 }
 
-// toolHandlerContext bundles the per-invocation inputs handed to an executor. It
+// ToolHandlerContext bundles the per-invocation inputs handed to an executor. It
 // is the reduced Go analogue of the Rust `ToolInvocation`.
-type toolHandlerContext struct {
+type ToolHandlerContext struct {
 	// Session is the owning session (for events, history, approvals).
 	Session *Session
 	// Turn is the read-only turn snapshot.
@@ -155,14 +155,14 @@ type toolHandlerContext struct {
 // ----------------------------------------------------------------------------
 
 // DefaultToolRouter is the concrete [ToolRouter] used by the turn runner. It
-// owns a registry of [toolExecutor]s keyed by tool name and resolves the
+// owns a registry of [ToolExecutor]s keyed by tool name and resolves the
 // model-visible spec set per turn. It is the Go analogue of the Rust
 // `ToolRouter` (turn-running subset).
 //
 // A router is immutable after construction; [SpecsForTurn] and [Dispatch] read
 // the registry concurrently.
 type DefaultToolRouter struct {
-	executors map[string]toolExecutor
+	executors map[string]ToolExecutor
 	// order preserves a stable insertion order so the model-visible spec list is
 	// deterministic across turns (the Rust registry uses a HashMap but the
 	// spec_plan emits a stable order; we keep insertion order here).
@@ -175,8 +175,8 @@ var _ ToolRouter = (*DefaultToolRouter)(nil)
 // names are rejected (the last registration wins after a logged conflict is not
 // possible without a logger, so the constructor errors instead, matching the
 // Rust `error_or_panic` intent at the system boundary).
-func NewDefaultToolRouter(executors ...toolExecutor) (*DefaultToolRouter, error) {
-	r := &DefaultToolRouter{executors: make(map[string]toolExecutor, len(executors))}
+func NewDefaultToolRouter(executors ...ToolExecutor) (*DefaultToolRouter, error) {
+	r := &DefaultToolRouter{executors: make(map[string]ToolExecutor, len(executors))}
 	for _, ex := range executors {
 		if ex == nil {
 			continue
@@ -273,7 +273,7 @@ func (r *DefaultToolRouter) dispatch(ctx context.Context, sess *Session, tc *Tur
 		return AnyToolResult{}, tools.FatalError(fmt.Sprintf("tool %s invoked with incompatible payload", name))
 	}
 
-	hctx := &toolHandlerContext{
+	hctx := &ToolHandlerContext{
 		Session:  sess,
 		Turn:     tc,
 		CallID:   callID,

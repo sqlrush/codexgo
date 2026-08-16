@@ -32,7 +32,7 @@
 // To stay testable and to avoid import cycles, core depends on the concrete
 // implementations of cross-cutting managers through small interfaces defined in
 // managers.go ([ModelClient], [ToolRouter], [McpManager], [SkillsManager],
-// [PluginsManager], [HooksEngine], [ModelsManager], [ExecService],
+// [PluginsManager], [HooksEngine], [ModelsManager],
 // [RolloutRecorder]). Callers (area agents, tests) inject concrete impls via
 // [CodexSpawnArgs].
 //

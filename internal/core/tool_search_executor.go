@@ -89,7 +89,7 @@ func (toolSearchExecutor) MatchesPayload(p tools.ToolPayload) bool {
 
 // Handle validates the query/limit exactly like the Rust ToolSearchHandler, then
 // runs BM25 over the turn's deferred entries and returns the coalesced matches.
-func (e toolSearchExecutor) Handle(_ context.Context, h *toolHandlerContext) (tools.ToolOutput, error) {
+func (e toolSearchExecutor) Handle(_ context.Context, h *ToolHandlerContext) (tools.ToolOutput, error) {
 	if h.Payload.Kind != tools.ToolPayloadKindToolSearch {
 		return nil, tools.FatalError(tools.ToolSearchToolName + " handler received unsupported payload")
 	}
@@ -135,9 +135,9 @@ type toolSearchOutput struct {
 func (o toolSearchOutput) LogPreview() string {
 	raw, err := json.Marshal(o.tools)
 	if err != nil {
-		return telemetryPreview("[]")
+		return TelemetryPreview("[]")
 	}
-	return telemetryPreview(string(raw))
+	return TelemetryPreview(string(raw))
 }
 
 func (toolSearchOutput) SuccessForLogging() bool { return true }

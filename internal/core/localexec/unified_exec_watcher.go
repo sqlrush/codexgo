@@ -1,10 +1,11 @@
-package core
+package localexec
 
 import (
 	"encoding/json"
 	"fmt"
 	"time"
 
+	"github.com/sqlrush/codexgo/internal/core"
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/unifiedexec"
 	"github.com/sqlrush/codexgo/internal/utils/truncation"
@@ -14,48 +15,26 @@ import (
 // (core/src/unified_exec/async_watcher.rs). The watcher logic itself lives in
 // internal/unifiedexec (which must not depend on core); this file supplies the
 // event sink that turns the watcher's OutputDelta / ExecEnd callbacks into the
-// ExecCommandOutputDelta / ExecCommandEnd events a Session emits, and arms the
+// ExecCommandOutputDelta / ExecCommandEnd events a core.Session emits, and arms the
 // watcher whenever the executor persists a live session (the Rust store_process
 // calling start_streaming_output + spawn_exit_watcher).
 
-// unifiedExecHost is implemented by tool executors that own a unified-exec
-// Executor, letting the session discover it to arm the background watcher. It is
-// the seam that lets internal/unifiedexec stay free of any core dependency while
-// the watcher still routes its events through the owning Session.
-type unifiedExecHost interface {
-	unifiedExecExecutor() *unifiedexec.Executor
-}
-
-// armSessionUnifiedExecWatcher discovers the unified-exec executor on the
-// session's tool router (when one is registered) and arms the background watcher
-// against this session. It is a no-op when the router has no unified-exec tools.
-// This is the production wiring point for async_watcher.rs: the Rust
+// ArmSession implements [core.SessionArmer]: once the session exists, the
+// exec_command executor arms the background watcher on its unified-exec
+// Executor so late output/exit events route through the owning session. This is
+// the production wiring point for async_watcher.rs: the Rust
 // UnifiedExecProcessManager lives on the Session, so its watcher already has the
-// session/turn context; codexgo builds the executor before the session, so the
-// session arms the watcher here once both exist.
-func armSessionUnifiedExecWatcher(sess *Session) {
-	if sess == nil {
-		return
-	}
-	router, ok := sess.services.ToolRouter.(*DefaultToolRouter)
-	if !ok {
-		return
-	}
-	for _, ex := range router.executors {
-		if host, ok := ex.(unifiedExecHost); ok {
-			if executor := host.unifiedExecExecutor(); executor != nil {
-				armUnifiedExecWatcher(sess, executor)
-				return
-			}
-		}
-	}
+// session/turn context; codexgo builds the executor before the session, so core
+// calls back here once both exist.
+func (e unifiedExecCommandExecutor) ArmSession(sess *core.Session) {
+	armUnifiedExecWatcher(sess, e.exec)
 }
 
 // armUnifiedExecWatcher installs the session-stored hook on the executor so that
 // every persisted unified-exec session spawns the background streaming/exit
 // watcher, emitting late output deltas and a late exec_command_end through sess.
 // Mirrors store_process arming the watcher with the session/turn context.
-func armUnifiedExecWatcher(sess *Session, executor *unifiedexec.Executor) {
+func armUnifiedExecWatcher(sess *core.Session, executor *unifiedexec.Executor) {
 	if sess == nil || executor == nil {
 		return
 	}
@@ -81,12 +60,12 @@ func armUnifiedExecWatcher(sess *Session, executor *unifiedexec.Executor) {
 	})
 }
 
-// unifiedExecWatcherSink translates the background watcher callbacks into Session
+// unifiedExecWatcherSink translates the background watcher callbacks into core.Session
 // events. It is the Go analogue of the session.send_event calls in
 // async_watcher.rs (process_chunk + emit_exec_end_for_unified_exec). It is safe
-// for concurrent use because Session.SendEvent is.
+// for concurrent use because core.Session.SendEvent is.
 type unifiedExecWatcherSink struct {
-	session *Session
+	session *core.Session
 	// turnID correlates the emitted events with the turn that opened the session
 	// (the Rust turn.sub_id captured by spawn_exit_watcher), not the active turn.
 	turnID string
@@ -160,7 +139,7 @@ func (s *unifiedExecWatcherSink) ExecEnd(info unifiedexec.ExecEndInfo) {
 			CallID:           info.CallID,
 			ProcessID:        &processID,
 			TurnID:           s.turnID,
-			CompletedAt:      nowUnixMillis(),
+			CompletedAt:      core.NowUnixMillis(),
 			Command:          info.Command,
 			Cwd:              protocol.AbsolutePath(info.Cwd),
 			Source:           protocol.ExecCommandSourceUnifiedExecStartup,

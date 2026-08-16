@@ -4,17 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/features"
 	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/pty"
 	"github.com/sqlrush/codexgo/internal/tools"
-	"github.com/sqlrush/codexgo/internal/unifiedexec"
 )
 
 // This file tests the core tool-dispatch layer ported from codex-core's
@@ -64,15 +58,19 @@ func hasEventKind(kinds []protocol.EventMsgKind, want protocol.EventMsgKind) boo
 
 // ---- mock dependencies -----------------------------------------------------
 
-type mockExecService struct {
-	res    ExecResult
-	err    error
-	gotReq ExecRequest
-}
+// namedExecutor is a dispatch-only stand-in for an externally supplied
+// executor (the shell family / apply_patch now come from core/localexec).
+type namedExecutor struct{ name string }
 
-func (m *mockExecService) Run(_ context.Context, req ExecRequest) (ExecResult, error) {
-	m.gotReq = req
-	return m.res, m.err
+func (e namedExecutor) Name() protocol.ToolName { return protocol.PlainToolName(e.name) }
+func (e namedExecutor) Spec(*TurnContext) (tools.ToolSpec, bool) {
+	return functionSpecStub(e.name, e.name), true
+}
+func (namedExecutor) MatchesPayload(p tools.ToolPayload) bool {
+	return p.Kind == tools.ToolPayloadKindFunction
+}
+func (e namedExecutor) Handle(context.Context, *ToolHandlerContext) (tools.ToolOutput, error) {
+	return NewTextToolOutput(e.name, boolPtr(true)), nil
 }
 
 type mockWebSearch struct {
@@ -320,15 +318,15 @@ func TestBuiltinToolRouterRegistration(t *testing.T) {
 		wantTools []string
 	}{
 		{
-			name: "no deps registers dependency-free + apply_patch",
+			name: "no deps registers only the dependency-free tools",
 			deps: BuiltinToolDeps{},
-			// view_image, update_plan always; apply_patch always (nil FS -> OS);
-			// the five deferred collab runtimes always (dispatch-only; advertised
-			// only via tool_search, gated per-turn); tool_search always
-			// (advertisement is gated per-turn in Spec); web_search always (hosted
-			// spec, provider-executed).
+			// view_image, update_plan always; the five deferred collab runtimes
+			// always (dispatch-only; advertised only via tool_search, gated
+			// per-turn); tool_search always (advertisement is gated per-turn in
+			// Spec); web_search always (hosted spec, provider-executed). The shell
+			// family and apply_patch are supplied by core/localexec, so a host that
+			// does not wire them (airush) registers none of them.
 			wantTools: []string{
-				"apply_patch",
 				"multi_agent_v1close_agent", "multi_agent_v1resume_agent",
 				"multi_agent_v1send_input", "multi_agent_v1spawn_agent",
 				"multi_agent_v1wait_agent",
@@ -336,32 +334,24 @@ func TestBuiltinToolRouterRegistration(t *testing.T) {
 			},
 		},
 		{
-			name: "exec dep adds shell_command",
-			deps: BuiltinToolDeps{Exec: &mockExecService{}},
-			wantTools: []string{
-				"apply_patch",
-				"multi_agent_v1close_agent", "multi_agent_v1resume_agent",
-				"multi_agent_v1send_input", "multi_agent_v1spawn_agent",
-				"multi_agent_v1wait_agent",
-				"shell_command", "tool_search", "update_plan", "view_image", "web_search",
+			name: "shell tools register first, apply_patch after update_plan",
+			deps: BuiltinToolDeps{
+				ShellTools: []ToolExecutor{namedExecutor{"exec_command"}, namedExecutor{"write_stdin"}, namedExecutor{"shell_command"}},
+				ApplyPatch: namedExecutor{"apply_patch"},
 			},
-		},
-		{
-			name: "unified-exec dep adds the PTY pair",
-			deps: BuiltinToolDeps{UnifiedExec: unifiedexec.NewExecutor(nil)},
 			wantTools: []string{
 				"apply_patch", "exec_command",
 				"multi_agent_v1close_agent", "multi_agent_v1resume_agent",
 				"multi_agent_v1send_input", "multi_agent_v1spawn_agent",
 				"multi_agent_v1wait_agent",
-				"tool_search", "update_plan", "view_image", "web_search", "write_stdin",
+				"shell_command", "tool_search", "update_plan", "view_image", "web_search", "write_stdin",
 			},
 		},
 		{
 			name: "all deps register everything",
 			deps: BuiltinToolDeps{
-				Exec:        &mockExecService{},
-				UnifiedExec: unifiedexec.NewExecutor(nil),
+				ShellTools:  []ToolExecutor{namedExecutor{"exec_command"}, namedExecutor{"write_stdin"}, namedExecutor{"shell_command"}},
+				ApplyPatch:  namedExecutor{"apply_patch"},
 				WebSearch:   &mockWebSearch{},
 				UserInput:   &mockUserInput{},
 				Permissions: &mockPermissions{},
@@ -396,68 +386,6 @@ func TestBuiltinToolRouterRegistration(t *testing.T) {
 			got := r.registeredToolNames()
 			if strings.Join(got, ",") != strings.Join(tt.wantTools, ",") {
 				t.Errorf("registered = %v, want %v", got, tt.wantTools)
-			}
-		})
-	}
-}
-
-// TestSpecsForTurn asserts the per-turn shell-type selection: UnifiedExec mode
-// advertises the exec_command/write_stdin pair (shell_command stays registered
-// dispatch-only), shell mode advertises shell_command. The advertised ORDER
-// must match codex's spec_plan order.
-func TestSpecsForTurn(t *testing.T) {
-	t.Parallel()
-	r, err := BuiltinToolRouter(BuiltinToolDeps{
-		Exec:        &mockExecService{},
-		UnifiedExec: unifiedexec.NewExecutor(nil),
-	})
-	if err != nil {
-		t.Fatalf("BuiltinToolRouter: %v", err)
-	}
-
-	tests := []struct {
-		name        string
-		unifiedExec bool
-		wantOrder   []string
-	}{
-		{
-			name:        "unified-exec mode advertises the PTY pair in spec_plan order",
-			unifiedExec: true,
-			wantOrder:   []string{"exec_command", "write_stdin", "update_plan", "apply_patch", "view_image", "web_search"},
-		},
-		{
-			name:        "shell mode advertises shell_command in spec_plan order",
-			unifiedExec: false,
-			wantOrder:   []string{"shell_command", "update_plan", "apply_patch", "view_image", "web_search"},
-		},
-	}
-
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			tc := newTestTurn("/tmp")
-			f := features.NewFeaturesWithDefaults()
-			if tt.unifiedExec {
-				if !pty.ConPTYSupported() {
-					t.Skip("no PTY support on this platform")
-				}
-				f.Enable(features.FeatureUnifiedExec)
-			} else {
-				f.Disable(features.FeatureUnifiedExec)
-			}
-			tc.Features = &f
-
-			specs, err := r.SpecsForTurn(context.Background(), tc)
-			if err != nil {
-				t.Fatalf("SpecsForTurn: %v", err)
-			}
-			got := make([]string, 0, len(specs))
-			for _, s := range specs {
-				got = append(got, s.Name())
-			}
-			if strings.Join(got, ",") != strings.Join(tt.wantOrder, ",") {
-				t.Errorf("advertised = %v, want %v", got, tt.wantOrder)
 			}
 		})
 	}
@@ -586,7 +514,7 @@ func TestViewImageExecutor(t *testing.T) {
 			t.Parallel()
 			sess, events := newTestSession(t)
 			ex := viewImageExecutor{}
-			out, err := ex.Handle(context.Background(), &toolHandlerContext{
+			out, err := ex.Handle(context.Background(), &ToolHandlerContext{
 				Session: sess, Turn: newTestTurn("/tmp"), CallID: "c1",
 				ToolName: ex.Name(), Payload: tools.FunctionPayload(tt.args),
 			})
@@ -616,7 +544,7 @@ func TestPlanExecutorPlanModeGuard(t *testing.T) {
 	turn := newTestTurn("/tmp")
 	turn.CollaborationMode = protocol.CollaborationMode{Mode: protocol.ModeKindPlan}
 
-	_, err := ex.Handle(context.Background(), &toolHandlerContext{
+	_, err := ex.Handle(context.Background(), &ToolHandlerContext{
 		Session: sess, Turn: turn, CallID: "c1",
 		ToolName: ex.Name(), Payload: tools.FunctionPayload(`{"plan":[]}`),
 	})
@@ -636,7 +564,7 @@ func TestPlanExecutorSuccess(t *testing.T) {
 	t.Parallel()
 	sess, events := newTestSession(t)
 	ex := planExecutor{}
-	out, err := ex.Handle(context.Background(), &toolHandlerContext{
+	out, err := ex.Handle(context.Background(), &ToolHandlerContext{
 		Session: sess, Turn: newTestTurn("/tmp"), CallID: "c1",
 		ToolName: ex.Name(), Payload: tools.FunctionPayload(`{"plan":[]}`),
 	})
@@ -648,228 +576,6 @@ func TestPlanExecutorSuccess(t *testing.T) {
 	}
 	if kinds := drainEventKinds(events); !hasEventKind(kinds, protocol.EventMsgKindPlanUpdate) {
 		t.Errorf("missing plan_update event, got %v", kinds)
-	}
-}
-
-// TestShellCommandExecutor exercises the shell_command tool: it wraps the
-// `command` STRING in the user's shell, runs it through the ExecService, and
-// emits the exec_command_begin/end events. (The exec_command tool is the
-// UnifiedExec PTY executor, covered in unified_exec_executor_test.go.)
-func TestShellCommandExecutor(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name        string
-		toolName    string
-		args        string
-		exec        *mockExecService
-		wantErr     bool
-		wantCommand string // the command STRING that must be the last argv token
-		wantCwd     string
-	}{
-		{
-			name:        "shell_command runs command with explicit workdir",
-			toolName:    "shell_command",
-			args:        `{"command":"echo hi","workdir":"/work"}`,
-			exec:        &mockExecService{res: ExecResult{ExitCode: 0, Stdout: "hi\n"}},
-			wantCommand: "echo hi",
-			wantCwd:     "/work",
-		},
-		{
-			name:        "shell_command defaults workdir to turn cwd",
-			toolName:    "shell_command",
-			args:        `{"command":"pwd"}`,
-			exec:        &mockExecService{res: ExecResult{ExitCode: 0, Stdout: "/tmp\n"}},
-			wantCommand: "pwd",
-			wantCwd:     "/tmp",
-		},
-		{
-			name:     "empty command errors",
-			toolName: "shell_command",
-			args:     `{"command":""}`,
-			exec:     &mockExecService{},
-			wantErr:  true,
-		},
-		{
-			name:     "missing command key errors",
-			toolName: "shell_command",
-			args:     `{}`,
-			exec:     &mockExecService{},
-			wantErr:  true,
-		},
-		{
-			name:     "exec error surfaces to model",
-			toolName: "shell_command",
-			args:     `{"command":"x"}`,
-			exec:     &mockExecService{err: errors.New("boom")},
-			wantErr:  true,
-		},
-		{
-			name:     "malformed json errors",
-			toolName: "shell_command",
-			args:     `{`,
-			exec:     &mockExecService{},
-			wantErr:  true,
-		},
-	}
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			sess, events := newTestSession(t)
-			ex := newShellCommandExecutor(tt.exec, nil)
-			out, err := ex.Handle(context.Background(), &toolHandlerContext{
-				Session: sess, Turn: newTestTurn("/tmp"), CallID: "c1",
-				ToolName: ex.Name(), Payload: tools.FunctionPayload(tt.args),
-			})
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("want error, got nil")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if out == nil {
-				t.Fatal("want output, got nil")
-			}
-			gotArgv := tt.exec.gotReq.Command
-			if len(gotArgv) == 0 || gotArgv[len(gotArgv)-1] != tt.wantCommand {
-				t.Errorf("exec argv = %v, want last token %q", gotArgv, tt.wantCommand)
-			}
-			if tt.exec.gotReq.Cwd != tt.wantCwd {
-				t.Errorf("exec cwd = %q, want %q", tt.exec.gotReq.Cwd, tt.wantCwd)
-			}
-			kinds := drainEventKinds(events)
-			if !hasEventKind(kinds, protocol.EventMsgKindExecCommandBegin) {
-				t.Errorf("missing exec_command_begin, got %v", kinds)
-			}
-			if !hasEventKind(kinds, protocol.EventMsgKindExecCommandEnd) {
-				t.Errorf("missing exec_command_end, got %v", kinds)
-			}
-		})
-	}
-}
-
-func TestApplyPatchExecutorAddFile(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	ex := applyPatchExecutor{} // nil FS -> real OS filesystem
-	patch := "*** Begin Patch\n*** Add File: new.txt\n+hello\n+world\n*** End Patch"
-
-	tests := []struct {
-		name    string
-		payload tools.ToolPayload
-	}{
-		{name: "custom payload (raw patch)", payload: tools.CustomPayload(patch)},
-		{name: "function payload (json input)", payload: tools.FunctionPayload(mustMarshal(t, map[string]string{"input": patch}))},
-	}
-	for i, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			subdir := filepath.Join(dir, fmt.Sprintf("case-%d", i))
-			if err := os.MkdirAll(subdir, 0o755); err != nil {
-				t.Fatalf("mkdir: %v", err)
-			}
-			sess, _ := newTestSession(t)
-			out, err := ex.Handle(context.Background(), &toolHandlerContext{
-				Session: sess, Turn: newTestTurn(subdir), CallID: "c1",
-				ToolName: ex.Name(), Payload: tt.payload,
-			})
-			if err != nil {
-				t.Fatalf("Handle: %v", err)
-			}
-			if out == nil {
-				t.Fatal("want output, got nil")
-			}
-			got, rerr := os.ReadFile(filepath.Join(subdir, "new.txt"))
-			if rerr != nil {
-				t.Fatalf("read applied file: %v", rerr)
-			}
-			if string(got) != "hello\nworld\n" {
-				t.Errorf("applied content = %q, want %q", string(got), "hello\nworld\n")
-			}
-		})
-	}
-}
-
-func TestApplyPatchExecutorErrors(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	ex := applyPatchExecutor{}
-	tests := []struct {
-		name    string
-		payload tools.ToolPayload
-	}{
-		{name: "empty patch", payload: tools.CustomPayload("   ")},
-		{name: "garbage patch", payload: tools.CustomPayload("not a patch")},
-	}
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			sess, _ := newTestSession(t)
-			_, err := ex.Handle(context.Background(), &toolHandlerContext{
-				Session: sess, Turn: newTestTurn(dir), CallID: "c1",
-				ToolName: ex.Name(), Payload: tt.payload,
-			})
-			if err == nil {
-				t.Fatal("want error, got nil")
-			}
-			var fce *tools.FunctionCallError
-			if !errors.As(err, &fce) {
-				t.Fatalf("want FunctionCallError, got %v", err)
-			}
-		})
-	}
-}
-
-// TestShellCommandApplyPatchHeredoc exercises the apply_patch heredoc
-// interception: a shell_command whose `command` is `apply_patch <<'EOF' ... EOF`
-// is routed to the patch applier (writing the file) and emits the file_change
-// item lifecycle (item_started + item_completed) rather than running the shell.
-func TestShellCommandApplyPatchHeredoc(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	patch := "*** Begin Patch\n*** Add File: created.txt\n+hello heredoc\n*** End Patch"
-	heredoc := "apply_patch <<'EOF'\n" + patch + "\nEOF\n"
-	args := mustMarshal(t, map[string]string{"command": heredoc})
-
-	// A non-nil exec service that would fail the test if the heredoc were run as a
-	// shell command instead of intercepted.
-	exec := &mockExecService{err: errors.New("apply_patch must be intercepted, not executed")}
-	ex := newShellCommandExecutor(exec, nil)
-
-	sess, events := newTestSession(t)
-	out, err := ex.Handle(context.Background(), &toolHandlerContext{
-		Session: sess, Turn: newTestTurn(dir), CallID: "c1",
-		ToolName: ex.Name(), Payload: tools.FunctionPayload(args),
-	})
-	if err != nil {
-		t.Fatalf("Handle: %v", err)
-	}
-	if out == nil {
-		t.Fatal("want output, got nil")
-	}
-
-	got, rerr := os.ReadFile(filepath.Join(dir, "created.txt"))
-	if rerr != nil {
-		t.Fatalf("read patched file: %v", rerr)
-	}
-	if string(got) != "hello heredoc\n" {
-		t.Errorf("applied content = %q, want %q", string(got), "hello heredoc\n")
-	}
-
-	kinds := drainEventKinds(events)
-	if !hasEventKind(kinds, protocol.EventMsgKindItemStarted) {
-		t.Errorf("missing item_started (file_change begin), got %v", kinds)
-	}
-	if !hasEventKind(kinds, protocol.EventMsgKindItemCompleted) {
-		t.Errorf("missing item_completed (file_change end), got %v", kinds)
-	}
-	// The heredoc must NOT reach the exec service.
-	if exec.gotReq.Command != nil {
-		t.Errorf("exec service was invoked with %v; the heredoc should be intercepted", exec.gotReq.Command)
 	}
 }
 
@@ -907,7 +613,7 @@ func TestRequestUserInputExecutor(t *testing.T) {
 			t.Parallel()
 			sess, _ := newTestSession(t)
 			ex := requestUserInputExecutor{req: tt.req}
-			out, err := ex.Handle(context.Background(), &toolHandlerContext{
+			out, err := ex.Handle(context.Background(), &ToolHandlerContext{
 				Session: sess, Turn: newTestTurn("/tmp"), CallID: "c1",
 				ToolName: ex.Name(), Payload: tools.FunctionPayload(tt.args),
 			})
@@ -944,7 +650,7 @@ func TestRequestPermissionsExecutor(t *testing.T) {
 			t.Parallel()
 			sess, _ := newTestSession(t)
 			ex := requestPermissionsExecutor{req: tt.req}
-			_, err := ex.Handle(context.Background(), &toolHandlerContext{
+			_, err := ex.Handle(context.Background(), &ToolHandlerContext{
 				Session: sess, Turn: newTestTurn("/tmp"), CallID: "c1",
 				ToolName: ex.Name(), Payload: tools.FunctionPayload(`{"permissions":{}}`),
 			})
@@ -992,7 +698,7 @@ func TestWebSearchExecutor(t *testing.T) {
 			t.Parallel()
 			sess, events := newTestSession(t)
 			ex := webSearchExecutor{runner: tt.runner}
-			_, err := ex.Handle(context.Background(), &toolHandlerContext{
+			_, err := ex.Handle(context.Background(), &ToolHandlerContext{
 				Session: sess, Turn: newTestTurn("/tmp"), CallID: "c1",
 				ToolName: ex.Name(), Payload: tools.FunctionPayload(tt.args),
 			})
@@ -1046,7 +752,7 @@ func TestMcpExecutor(t *testing.T) {
 				spec:   functionSpecStub("srv__tool", "an mcp tool"),
 				name:   protocol.PlainToolName("srv__tool"),
 			}
-			out, err := ex.Handle(context.Background(), &toolHandlerContext{
+			out, err := ex.Handle(context.Background(), &ToolHandlerContext{
 				Session: sess, Turn: newTestTurn("/tmp"), CallID: "c1",
 				ToolName: ex.Name(), Payload: tools.FunctionPayload(`{"q":1}`),
 			})
@@ -1115,14 +821,14 @@ func TestAnyToolResultIntoResponse(t *testing.T) {
 		{
 			name:     "function text output",
 			payload:  tools.FunctionPayload("{}"),
-			output:   newTextToolOutput("done", boolPtr(true)),
+			output:   NewTextToolOutput("done", boolPtr(true)),
 			wantKind: tools.ResponseInputItemKindFunctionCallOutput,
 			wantText: "done",
 		},
 		{
 			name:     "custom text output",
 			payload:  tools.CustomPayload("x"),
-			output:   newTextToolOutput("custom-done", boolPtr(true)),
+			output:   NewTextToolOutput("custom-done", boolPtr(true)),
 			wantKind: tools.ResponseInputItemKindCustomToolCallOutput,
 			wantText: "custom-done",
 		},
@@ -1158,9 +864,9 @@ func TestAnyToolResultToToolResultSuccess(t *testing.T) {
 		output      tools.ToolOutput
 		wantSuccess bool
 	}{
-		{name: "explicit success", output: newTextToolOutput("ok", boolPtr(true)), wantSuccess: true},
-		{name: "explicit failure", output: newTextToolOutput("bad", boolPtr(false)), wantSuccess: false},
-		{name: "nil defaults success", output: newTextToolOutput("ok", nil), wantSuccess: true},
+		{name: "explicit success", output: NewTextToolOutput("ok", boolPtr(true)), wantSuccess: true},
+		{name: "explicit failure", output: NewTextToolOutput("bad", boolPtr(false)), wantSuccess: false},
+		{name: "nil defaults success", output: NewTextToolOutput("ok", nil), wantSuccess: true},
 	}
 	for _, tt := range tests {
 		tt := tt
@@ -1173,46 +879,6 @@ func TestAnyToolResultToToolResultSuccess(t *testing.T) {
 		})
 	}
 }
-
-// TestDispatchEndToEnd routes a parsed function call through the router and folds
-// the result back into a response item, exercising the full turn-running path.
-func TestDispatchEndToEnd(t *testing.T) {
-	t.Parallel()
-	sess, _ := newTestSession(t)
-	exec := &mockExecService{res: ExecResult{ExitCode: 0, Stdout: "out\n"}}
-	r, err := BuiltinToolRouter(BuiltinToolDeps{Exec: exec})
-	if err != nil {
-		t.Fatalf("BuiltinToolRouter: %v", err)
-	}
-	call := ParsedToolCall{
-		ToolName: protocol.PlainToolName("shell_command"),
-		CallID:   "c1",
-		Payload:  tools.FunctionPayload(`{"command":"echo hi"}`),
-	}
-	res, err := r.DispatchParsed(context.Background(), sess, newTestTurn("/tmp"), call)
-	if err != nil {
-		t.Fatalf("DispatchParsed: %v", err)
-	}
-	item := res.IntoResponse()
-	if item.Kind != tools.ResponseInputItemKindFunctionCallOutput {
-		t.Fatalf("kind = %v, want FunctionCallOutput", item.Kind)
-	}
-	if item.CallID != "c1" {
-		t.Errorf("call id = %q, want c1", item.CallID)
-	}
-	tr := res.ToToolResult()
-	if !tr.Success {
-		t.Errorf("Success = false, want true")
-	}
-	if !strings.Contains(tr.Output, "Exit code: 0") {
-		t.Errorf("output = %q, want exit-code header", tr.Output)
-	}
-}
-
-// ----------------------------------------------------------------------------
-// helpers
-// ----------------------------------------------------------------------------
-
 func strPtr(s string) *string { return &s }
 
 func kindPtr(k tools.FunctionCallErrorKind) *tools.FunctionCallErrorKind { return &k }

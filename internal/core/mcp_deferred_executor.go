@@ -62,7 +62,7 @@ func (deferredMcpExecutor) MatchesPayload(p tools.ToolPayload) bool {
 
 // Handle routes a direct invocation through the underlying MCP caller, the same
 // path the eager [mcpExecutor] uses.
-func (e deferredMcpExecutor) Handle(ctx context.Context, h *toolHandlerContext) (tools.ToolOutput, error) {
+func (e deferredMcpExecutor) Handle(ctx context.Context, h *ToolHandlerContext) (tools.ToolOutput, error) {
 	return e.inner.Handle(ctx, h)
 }
 

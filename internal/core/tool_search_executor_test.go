@@ -24,7 +24,7 @@ func newSearchToolTurn(t *testing.T) *TurnContext {
 // TestToolSearchAdvertisedBeforeHostedSpecs asserts tool_search appears after
 // the runtime tools and before the hosted web_search spec, like codex.
 func TestToolSearchAdvertisedBeforeHostedSpecs(t *testing.T) {
-	router, err := BuiltinToolRouter(BuiltinToolDeps{Exec: &mockExecService{}})
+	router, err := BuiltinToolRouter(BuiltinToolDeps{ShellTools: []ToolExecutor{namedExecutor{"shell_command"}}})
 	if err != nil {
 		t.Fatalf("build router: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestProviderCapabilitiesGateHostedTools(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			router, err := BuiltinToolRouter(BuiltinToolDeps{Exec: &mockExecService{}})
+			router, err := BuiltinToolRouter(BuiltinToolDeps{ShellTools: []ToolExecutor{namedExecutor{"shell_command"}}})
 			if err != nil {
 				t.Fatalf("build router: %v", err)
 			}
@@ -135,7 +135,7 @@ func TestToolSearchGating(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			router, err := BuiltinToolRouter(BuiltinToolDeps{Exec: &mockExecService{}})
+			router, err := BuiltinToolRouter(BuiltinToolDeps{ShellTools: []ToolExecutor{namedExecutor{"shell_command"}}})
 			if err != nil {
 				t.Fatalf("build router: %v", err)
 			}

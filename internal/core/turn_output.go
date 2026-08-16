@@ -81,7 +81,7 @@ func handleOutputItemDone(ctx context.Context, sess *Session, tc *TurnContext, i
 		// reasoning item in exec --json, in addition to the streaming AgentReasoning
 		// events). exec's item mapping drops an empty reasoning summary, matching
 		// codex, so emitting unconditionally is safe.
-		emitTurnItemCompleted(sess, tc, parseReasoningTurnItem(item))
+		EmitTurnItemCompleted(sess, tc, parseReasoningTurnItem(item))
 		return nil
 
 	case protocol.ResponseItemKindFunctionCall:

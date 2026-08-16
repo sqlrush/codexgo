@@ -230,7 +230,7 @@ func runCompactTaskImpl(
 ) (string, error) {
 	// 1. Synthetic ContextCompaction turn item: emit ItemStarted up front.
 	compactionItem := newContextCompactionTurnItem()
-	emitTurnItemStarted(sess, tc, compactionItem)
+	EmitTurnItemStarted(sess, tc, compactionItem)
 
 	// 2. Build the compaction request on a CLONE of history so a failed/aborted
 	//    compaction does not corrupt the live conversation. The prompt is recorded
@@ -277,7 +277,7 @@ func runCompactTaskImpl(
 	sess.replaceCompactedHistory(ctx, newHistory, referenceContextItem, compacted)
 	sess.recomputeTokenUsage(tc)
 
-	emitTurnItemCompleted(sess, tc, compactionItem)
+	EmitTurnItemCompleted(sess, tc, compactionItem)
 	sess.SendEvent(tc.SubID, protocol.EventMsg{
 		Type:             protocol.EventMsgKindContextCompacted,
 		ContextCompacted: &protocol.ContextCompactedEvent{},

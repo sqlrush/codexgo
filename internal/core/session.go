@@ -23,7 +23,6 @@ type SessionServices struct {
 	PluginsManager  PluginsManager
 	HooksEngine     HooksEngine
 	ModelsManager   ModelsManager
-	ExecService     ExecService
 	RolloutRecorder RolloutRecorder
 }
 

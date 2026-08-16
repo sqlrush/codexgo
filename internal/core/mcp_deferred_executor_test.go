@@ -52,7 +52,6 @@ func calendarMcpToolInfo() tools.McpToolInfo {
 func deferredMcpRouter(t *testing.T) *DefaultToolRouter {
 	t.Helper()
 	router, err := BuiltinToolRouter(BuiltinToolDeps{
-		Exec:             &mockExecService{},
 		Mcp:              &mockMcpCaller{},
 		DeferredMcpTools: []tools.McpToolInfo{calendarMcpToolInfo()},
 	})
@@ -171,7 +170,6 @@ func TestDeferredMcpSourceDedup(t *testing.T) {
 	second.Tool.Name = "deleteEvent"
 
 	router, err := BuiltinToolRouter(BuiltinToolDeps{
-		Exec:             &mockExecService{},
 		Mcp:              &mockMcpCaller{},
 		DeferredMcpTools: []tools.McpToolInfo{first, second},
 	})
@@ -201,7 +199,6 @@ func TestDeferredMcpToolDispatchesThroughCaller(t *testing.T) {
 		Content: []json.RawMessage{json.RawMessage(`{"type":"text","text":"ok"}`)},
 	}}
 	router, err := BuiltinToolRouter(BuiltinToolDeps{
-		Exec:             &mockExecService{},
 		Mcp:              caller,
 		DeferredMcpTools: []tools.McpToolInfo{calendarMcpToolInfo()},
 	})

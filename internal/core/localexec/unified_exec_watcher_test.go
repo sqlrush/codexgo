@@ -1,4 +1,4 @@
-package core
+package localexec
 
 import (
 	"context"
@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sqlrush/codexgo/internal/core"
+	"github.com/sqlrush/codexgo/internal/core/coretest"
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/tools"
 	"github.com/sqlrush/codexgo/internal/unifiedexec"
@@ -50,7 +52,7 @@ func TestUnifiedExecLateExecEnd(t *testing.T) {
 	execEx := newUnifiedExecCommandExecutor(executor, nil)
 	tc := turnWithShellFeatures(t.TempDir(), true)
 
-	out, err := execEx.Handle(context.Background(), &toolHandlerContext{
+	out, err := execEx.Handle(context.Background(), &core.ToolHandlerContext{
 		Session: sess, Turn: tc, CallID: "orig-call", ToolName: execEx.Name(),
 		Payload: tools.FunctionPayload(`{"cmd":"cat","tty":true,"yield_time_ms":300}`),
 	})
@@ -166,27 +168,21 @@ func TestWatcherLateEndFailureTruncatesFormattedOutput(t *testing.T) {
 }
 
 // TestArmSessionUnifiedExecWatcherDiscoversExecutor asserts the production wiring
-// seam: armSessionUnifiedExecWatcher finds the unified-exec executor on the
-// session's DefaultToolRouter and arms the watcher so a late end is emitted.
+// seam: core.Spawn calls ArmSession on the exec_command executor registered in
+// its router (core.SessionArmer), which arms the watcher so a late end is
+// emitted through the owning session.
 func TestArmSessionUnifiedExecWatcherDiscoversExecutor(t *testing.T) {
 	requirePTY(t)
 
-	sess, events := newTestSession(t)
-
 	executor := unifiedexec.NewExecutor(nil)
 	t.Cleanup(executor.Shutdown)
-	router, err := BuiltinToolRouter(BuiltinToolDeps{UnifiedExec: executor})
-	if err != nil {
-		t.Fatalf("BuiltinToolRouter: %v", err)
-	}
-	sess.services.ToolRouter = router
+	shell := ShellExecutors(Deps{UnifiedExec: executor})
+	fixture := coretest.NewSession(t, shell...)
+	sess, events := fixture.Session, fixture.Events
 
-	// Discover-and-arm through the same seam Spawn uses in production.
-	armSessionUnifiedExecWatcher(sess)
-
-	execEx := newUnifiedExecCommandExecutor(executor, nil)
+	execEx := shell[0].(unifiedExecCommandExecutor)
 	tc := turnWithShellFeatures(t.TempDir(), true)
-	out, err := execEx.Handle(context.Background(), &toolHandlerContext{
+	out, err := execEx.Handle(context.Background(), &core.ToolHandlerContext{
 		Session: sess, Turn: tc, CallID: "seam-call", ToolName: execEx.Name(),
 		Payload: tools.FunctionPayload(`{"cmd":"cat","tty":true,"yield_time_ms":300}`),
 	})

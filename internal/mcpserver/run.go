@@ -48,7 +48,6 @@ type RunConfig struct {
 	SkillsManager   core.SkillsManager
 	PluginsManager  core.PluginsManager
 	HooksEngine     core.HooksEngine
-	ExecService     core.ExecService
 	RolloutRecorder core.RolloutRecorder
 }
 
@@ -75,7 +74,6 @@ func Run(ctx context.Context, cfg RunConfig) error {
 		SkillsManager:      cfg.SkillsManager,
 		PluginsManager:     cfg.PluginsManager,
 		HooksEngine:        cfg.HooksEngine,
-		ExecService:        cfg.ExecService,
 		RolloutRecorder:    cfg.RolloutRecorder,
 	})
 	if err != nil {

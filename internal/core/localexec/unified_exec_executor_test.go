@@ -1,4 +1,4 @@
-package core
+package localexec
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sqlrush/codexgo/internal/core"
 	"github.com/sqlrush/codexgo/internal/features"
 	"github.com/sqlrush/codexgo/internal/modelsmanager"
 	"github.com/sqlrush/codexgo/internal/protocol"
@@ -18,7 +19,7 @@ import (
 
 // turnWithShellFeatures builds a test turn whose feature set pins the shell
 // selection deterministically (platform-independent).
-func turnWithShellFeatures(cwd string, unifiedExec bool) *TurnContext {
+func turnWithShellFeatures(cwd string, unifiedExec bool) *core.TurnContext {
 	tc := newTestTurn(cwd)
 	f := features.NewFeaturesWithDefaults()
 	if unifiedExec {
@@ -83,7 +84,7 @@ func TestUnifiedExecSpecVisibility(t *testing.T) {
 	}
 }
 
-func specVisible(ex toolExecutor, tc *TurnContext) bool {
+func specVisible(ex core.ToolExecutor, tc *core.TurnContext) bool {
 	_, ok := ex.Spec(tc)
 	return ok
 }
@@ -120,7 +121,7 @@ func TestUnifiedExecArgValidation(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		exec    toolExecutor
+		exec    core.ToolExecutor
 		args    string
 		wantSub string
 	}{
@@ -133,7 +134,7 @@ func TestUnifiedExecArgValidation(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := tt.exec.Handle(context.Background(), &toolHandlerContext{
+			_, err := tt.exec.Handle(context.Background(), &core.ToolHandlerContext{
 				Turn: turnWithShellFeatures("/tmp", true), CallID: "c1",
 				ToolName: tt.exec.Name(), Payload: tools.FunctionPayload(tt.args),
 			})
@@ -186,7 +187,7 @@ func TestUnifiedExecCommandRoundTrip(t *testing.T) {
 
 	// `cat` keeps running on a PTY until stdin delivers EOF, so the session
 	// must survive the first call and report a session id.
-	out, err := execEx.Handle(context.Background(), &toolHandlerContext{
+	out, err := execEx.Handle(context.Background(), &core.ToolHandlerContext{
 		Turn: tc, CallID: "c1", ToolName: execEx.Name(),
 		Payload: tools.FunctionPayload(`{"cmd":"cat","tty":true,"yield_time_ms":300}`),
 	})
@@ -210,7 +211,7 @@ func TestUnifiedExecCommandRoundTrip(t *testing.T) {
 
 	// Write through the live session; cat echoes the input back.
 	sessionID := *first.processID
-	out, err = stdinEx.Handle(context.Background(), &toolHandlerContext{
+	out, err = stdinEx.Handle(context.Background(), &core.ToolHandlerContext{
 		Turn: tc, CallID: "c2", ToolName: stdinEx.Name(),
 		Payload: tools.FunctionPayload(
 			`{"session_id":` + strconv.Itoa(sessionID) + `,"chars":"hello\n","yield_time_ms":400}`),
@@ -236,7 +237,7 @@ func TestUnifiedExecShortLivedCommand(t *testing.T) {
 	t.Cleanup(executor.Shutdown)
 	execEx := newUnifiedExecCommandExecutor(executor, nil)
 
-	out, err := execEx.Handle(context.Background(), &toolHandlerContext{
+	out, err := execEx.Handle(context.Background(), &core.ToolHandlerContext{
 		Turn: turnWithShellFeatures(t.TempDir(), true), CallID: "c1",
 		ToolName: execEx.Name(),
 		Payload:  tools.FunctionPayload(`{"cmd":"echo unified-bridge","yield_time_ms":3000}`),
@@ -307,15 +308,15 @@ func TestTurnShellToolTypeModelInfoFallbacks(t *testing.T) {
 	mi := modelsmanager.ModelInfoFromSlug("gpt-5.5")
 
 	tc.ModelInfo = mi
-	if got := turnShellToolType(tc); got != modelsmanager.ConfigShellToolTypeUnifiedExec {
+	if got := core.TurnShellToolType(tc); got != modelsmanager.ConfigShellToolTypeUnifiedExec {
 		t.Errorf("value ModelInfo: shell type = %q", got)
 	}
 	tc.ModelInfo = &mi
-	if got := turnShellToolType(tc); got != modelsmanager.ConfigShellToolTypeUnifiedExec {
+	if got := core.TurnShellToolType(tc); got != modelsmanager.ConfigShellToolTypeUnifiedExec {
 		t.Errorf("pointer ModelInfo: shell type = %q", got)
 	}
 	tc.ModelInfo = nil
-	if got := turnShellToolType(tc); got != modelsmanager.ConfigShellToolTypeUnifiedExec {
+	if got := core.TurnShellToolType(tc); got != modelsmanager.ConfigShellToolTypeUnifiedExec {
 		t.Errorf("absent ModelInfo: shell type = %q", got)
 	}
 }

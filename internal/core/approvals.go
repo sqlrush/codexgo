@@ -56,9 +56,9 @@ type ElicitationResponse struct {
 	Meta []byte
 }
 
-// nowUnixMillis returns the current Unix time in milliseconds, used to stamp
+// NowUnixMillis returns the current Unix time in milliseconds, used to stamp
 // request events (Rust `now_unix_timestamp_ms`).
-func nowUnixMillis() int64 { return time.Now().UnixMilli() }
+func NowUnixMillis() int64 { return time.Now().UnixMilli() }
 
 // emptyPermissionsResponse is the deny/abort fallback permissions response: an
 // empty profile granted only for the current turn. Mirrors the Rust default
@@ -151,7 +151,7 @@ func (s *Session) RequestCommandApproval(ctx context.Context, tc *TurnContext, r
 		CallID:                      req.CallID,
 		ApprovalID:                  req.ApprovalID,
 		TurnID:                      tc.SubID,
-		StartedAtMs:                 nowUnixMillis(),
+		StartedAtMs:                 NowUnixMillis(),
 		Command:                     req.Command,
 		Cwd:                         req.Cwd,
 		Reason:                      req.Reason,
@@ -194,7 +194,7 @@ func (s *Session) RequestPatchApproval(
 	event := protocol.ApplyPatchApprovalRequestEvent{
 		CallID:      callID,
 		TurnID:      tc.SubID,
-		StartedAtMs: nowUnixMillis(),
+		StartedAtMs: NowUnixMillis(),
 		Changes:     changes,
 		Reason:      reason,
 		GrantRoot:   grantRoot,
@@ -298,7 +298,7 @@ func (s *Session) RequestPermissionsForCwd(
 	event := protocol.RequestPermissionsEvent{
 		CallID:      callID,
 		TurnID:      tc.SubID,
-		StartedAtMs: nowUnixMillis(),
+		StartedAtMs: NowUnixMillis(),
 		Reason:      args.Reason,
 		Permissions: args.Permissions,
 		Cwd:         &cwdPtr,

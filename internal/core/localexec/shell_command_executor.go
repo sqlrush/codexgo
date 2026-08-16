@@ -1,4 +1,4 @@
-package core
+package localexec
 
 import (
 	"bytes"
@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/sqlrush/codexgo/internal/applypatch"
+	"github.com/sqlrush/codexgo/internal/core"
 	"github.com/sqlrush/codexgo/internal/modelsmanager"
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/sandbox"
@@ -43,7 +44,11 @@ type shellCommandExecutor struct {
 	argKey string
 }
 
-// newShellCommandExecutor builds the shell_command executor.
+// NewShellCommandExecutor builds the shell_command executor.
+func NewShellCommandExecutor(exec ExecService, fs applypatch.FileSystem) core.ToolExecutor {
+	return newShellCommandExecutor(exec, fs)
+}
+
 func newShellCommandExecutor(exec ExecService, fs applypatch.FileSystem) shellCommandExecutor {
 	return shellCommandExecutor{exec: exec, fs: fs, toolName: "shell_command", argKey: "command"}
 }
@@ -56,8 +61,8 @@ func (e shellCommandExecutor) Name() protocol.ToolName { return protocol.PlainTo
 // model-visible (spec_plan::add_shell_tools, add_dispatch_only). codex derives
 // the `login` parameter from config.permissions.allow_login_shell, which
 // defaults to true (config/mod.rs).
-func (e shellCommandExecutor) Spec(tc *TurnContext) (tools.ToolSpec, bool) {
-	switch turnShellToolType(tc) {
+func (e shellCommandExecutor) Spec(tc *core.TurnContext) (tools.ToolSpec, bool) {
+	switch core.TurnShellToolType(tc) {
 	case modelsmanager.ConfigShellToolTypeUnifiedExec, modelsmanager.ConfigShellToolTypeDisabled:
 		return tools.ToolSpec{}, false
 	default:
@@ -71,7 +76,7 @@ func (shellCommandExecutor) MatchesPayload(p tools.ToolPayload) bool {
 
 // Handle parses the command string, intercepts apply_patch heredocs, and
 // otherwise runs the command through the user's shell.
-func (e shellCommandExecutor) Handle(ctx context.Context, h *toolHandlerContext) (tools.ToolOutput, error) {
+func (e shellCommandExecutor) Handle(ctx context.Context, h *core.ToolHandlerContext) (tools.ToolOutput, error) {
 	command, workdirArg, useLoginShell, err := e.parseArgs(h.Payload)
 	if err != nil {
 		return nil, err
@@ -105,7 +110,7 @@ func (e shellCommandExecutor) Handle(ctx context.Context, h *toolHandlerContext)
 // defaults to true (login shell semantics), matching codex's resolve_use_login_shell
 // when login shells are allowed.
 func (e shellCommandExecutor) parseArgs(p tools.ToolPayload) (command, workdir string, useLoginShell bool, err error) {
-	raw, perr := payloadArguments(p)
+	raw, perr := core.PayloadArguments(p)
 	if perr != nil {
 		return "", "", false, perr
 	}
@@ -149,7 +154,7 @@ func (e shellCommandExecutor) parseArgs(p tools.ToolPayload) (command, workdir s
 // ordering: the begin event is emitted ONCE, then the sandboxed attempt runs and
 // (on a sandbox denial under a permitting policy) escalates to an unsandboxed
 // retry, and the end event is emitted ONCE with the FINAL attempt's result.
-func (e shellCommandExecutor) runShellCommand(ctx context.Context, h *toolHandlerContext, argv []string, cwd string) (tools.ToolOutput, error) {
+func (e shellCommandExecutor) runShellCommand(ctx context.Context, h *core.ToolHandlerContext, argv []string, cwd string) (tools.ToolOutput, error) {
 	if h.Session != nil {
 		h.Session.SendEvent(h.Turn.SubID, protocol.EventMsg{
 			Type: protocol.EventMsgKindExecCommandBegin,
@@ -192,7 +197,7 @@ func (e shellCommandExecutor) runShellCommand(ctx context.Context, h *toolHandle
 		})
 	}
 
-	return newTextToolOutput(formatShellToolOutput(res), boolPtr(res.ExitCode == 0)), nil
+	return core.NewTextToolOutput(formatShellToolOutput(res), boolPtr(res.ExitCode == 0)), nil
 }
 
 // runShellWithEscalation runs the command under the turn's resolved sandbox
@@ -206,7 +211,7 @@ func (e shellCommandExecutor) runShellCommand(ctx context.Context, h *toolHandle
 // the danger-full-access differentials byte-identical. Under approval_policy=never
 // the escalation surfaces the denial unchanged (wantsNoSandboxApproval is false),
 // also preserving the existing never-policy behavior.
-func (e shellCommandExecutor) runShellWithEscalation(ctx context.Context, h *toolHandlerContext, argv []string, cwd string) (ExecResult, error) {
+func (e shellCommandExecutor) runShellWithEscalation(ctx context.Context, h *core.ToolHandlerContext, argv []string, cwd string) (ExecResult, error) {
 	// Resolve and apply the turn's REAL sandbox policy (mirrors codex's
 	// ToolOrchestrator): read-only / workspace-write spawn under the platform
 	// sandbox; danger-full-access keeps the none backend.
@@ -259,7 +264,7 @@ func (e shellCommandExecutor) runShellWithEscalation(ctx context.Context, h *too
 // item.completed) so the JSONL stream matches codex's intercept_apply_patch
 // path. It is shared by the shell_command and exec_command (UnifiedExec)
 // executors, both of which intercept the heredoc form.
-func applyHeredocPatch(h *toolHandlerContext, fsys applypatch.FileSystem, cwd string, hd shellcmd.ApplyPatchHeredoc) (applyPatchToolOutput, error) {
+func applyHeredocPatch(h *core.ToolHandlerContext, fsys applypatch.FileSystem, cwd string, hd shellcmd.ApplyPatchHeredoc) (applyPatchToolOutput, error) {
 	effectiveCwd := cwd
 	if hd.Workdir != "" {
 		effectiveCwd = resolveWorkdir(cwd, hd.Workdir)
@@ -289,7 +294,7 @@ func applyHeredocPatch(h *toolHandlerContext, fsys applypatch.FileSystem, cwd st
 	// (`status.map(...).unwrap_or(InProgress)`). The completed item carries the
 	// final status.
 	if h.Session != nil {
-		emitTurnItemStarted(h.Session, h.Turn, fileChangeTurnItem(itemID, changes, nil))
+		core.EmitTurnItemStarted(h.Session, h.Turn, fileChangeTurnItem(itemID, changes, nil))
 	}
 
 	var stdout, stderr bytes.Buffer
@@ -297,7 +302,7 @@ func applyHeredocPatch(h *toolHandlerContext, fsys applypatch.FileSystem, cwd st
 	if applyErr != nil {
 		if h.Session != nil {
 			failed := protocol.PatchApplyStatusFailed
-			emitTurnItemCompleted(h.Session, h.Turn, fileChangeTurnItem(itemID, changes, &failed))
+			core.EmitTurnItemCompleted(h.Session, h.Turn, fileChangeTurnItem(itemID, changes, &failed))
 		}
 		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {
@@ -308,7 +313,7 @@ func applyHeredocPatch(h *toolHandlerContext, fsys applypatch.FileSystem, cwd st
 
 	if h.Session != nil {
 		completed := protocol.PatchApplyStatusCompleted
-		emitTurnItemCompleted(h.Session, h.Turn, fileChangeTurnItem(itemID, changes, &completed))
+		core.EmitTurnItemCompleted(h.Session, h.Turn, fileChangeTurnItem(itemID, changes, &completed))
 	}
 
 	out := strings.TrimSpace(stdout.String())

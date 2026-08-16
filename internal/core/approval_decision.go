@@ -180,7 +180,7 @@ func DefaultExecApprovalRequirement(policy protocol.AskForApproval, fs Filesyste
 		needsApproval = false
 	}
 
-	if needsApproval && policy.Kind == protocol.AskForApprovalGranular && !granularAllowsSandboxApproval(policy.Granular) {
+	if needsApproval && policy.Kind == protocol.AskForApprovalGranular && !GranularAllowsSandboxApproval(policy.Granular) {
 		reason := "approval policy disallowed sandbox approval prompt"
 		return ExecApprovalRequirement{Kind: ExecApprovalForbidden, Reason: &reason}
 	}
@@ -214,7 +214,7 @@ func SandboxOverrideForFirstAttempt(
 	requirement ExecApprovalRequirement,
 	fs FilesystemSandboxState,
 ) SandboxOverride {
-	if !unsandboxedExecutionAllowed(fs) {
+	if !UnsandboxedExecutionAllowed(fs) {
 		return SandboxNoOverride
 	}
 	if requirement.Kind == ExecApprovalSkip && requirement.BypassSandbox {
@@ -226,16 +226,16 @@ func SandboxOverrideForFirstAttempt(
 	return SandboxNoOverride
 }
 
-// unsandboxedExecutionAllowed reports whether the active filesystem policy can be
+// UnsandboxedExecutionAllowed reports whether the active filesystem policy can be
 // represented by running without a sandbox (Rust `unsandboxed_execution_allowed`).
-func unsandboxedExecutionAllowed(fs FilesystemSandboxState) bool {
+func UnsandboxedExecutionAllowed(fs FilesystemSandboxState) bool {
 	return !fs.DeniedReadRestrictions
 }
 
-// granularAllowsSandboxApproval reports whether a granular config permits
+// GranularAllowsSandboxApproval reports whether a granular config permits
 // sandbox-approval prompts (Rust `GranularApprovalConfig::allows_sandbox_approval`).
 // A nil config is treated as all-disabled.
-func granularAllowsSandboxApproval(cfg *protocol.GranularApprovalConfig) bool {
+func GranularAllowsSandboxApproval(cfg *protocol.GranularApprovalConfig) bool {
 	return cfg != nil && cfg.SandboxApproval
 }
 

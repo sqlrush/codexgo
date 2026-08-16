@@ -81,7 +81,7 @@ func (collabExecutor) MatchesPayload(p tools.ToolPayload) bool {
 // the injected [CollabControl]. When no control plane is wired the runtime
 // rejects the call with a model-facing error (deferred-but-unavailable), so a
 // run without the multi-agent area assembled still answers cleanly.
-func (e collabExecutor) Handle(ctx context.Context, h *toolHandlerContext) (tools.ToolOutput, error) {
+func (e collabExecutor) Handle(ctx context.Context, h *ToolHandlerContext) (tools.ToolOutput, error) {
 	if e.control == nil {
 		return nil, tools.RespondToModelError("collab manager unavailable")
 	}

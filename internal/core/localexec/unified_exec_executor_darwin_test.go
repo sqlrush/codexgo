@@ -1,6 +1,6 @@
 //go:build darwin
 
-package core
+package localexec
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sqlrush/codexgo/internal/core"
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/sandbox"
 	"github.com/sqlrush/codexgo/internal/tools"
@@ -59,7 +60,7 @@ func TestUnifiedExecSeatbeltEnforcesReadOnly(t *testing.T) {
 			target := filepath.Join(outsideResolved, tt.name+".txt")
 			_ = os.Remove(target)
 
-			_, herr := execEx.Handle(context.Background(), &toolHandlerContext{
+			_, herr := execEx.Handle(context.Background(), &core.ToolHandlerContext{
 				Turn: tc, CallID: "c1", ToolName: execEx.Name(),
 				Payload: tools.FunctionPayload(
 					`{"cmd":": > ` + escapeForJSON(target) + `","yield_time_ms":3000}`),

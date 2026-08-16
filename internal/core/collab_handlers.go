@@ -303,7 +303,7 @@ func (a *spawnAgentArgs) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func handleSpawnAgent(ctx context.Context, control CollabControl, h *toolHandlerContext) (tools.ToolOutput, error) {
+func handleSpawnAgent(ctx context.Context, control CollabControl, h *ToolHandlerContext) (tools.ToolOutput, error) {
 	arguments, err := collabFunctionArguments(h.Payload)
 	if err != nil {
 		return nil, err
@@ -340,7 +340,7 @@ func handleSpawnAgent(ctx context.Context, control CollabControl, h *toolHandler
 		Type: protocol.EventMsgKindCollabAgentSpawnBegin,
 		CollabAgentSpawnBegin: &protocol.CollabAgentSpawnBeginEvent{
 			CallID:          h.CallID,
-			StartedAt:       nowUnixMillis(),
+			StartedAt:       NowUnixMillis(),
 			SenderThreadID:  senderThreadID(h),
 			Prompt:          prompt,
 			Model:           model,
@@ -410,7 +410,7 @@ func handleSpawnAgent(ctx context.Context, control CollabControl, h *toolHandler
 		Type: protocol.EventMsgKindCollabAgentSpawnEnd,
 		CollabAgentSpawnEnd: &protocol.CollabAgentSpawnEndEvent{
 			CallID:           h.CallID,
-			CompletedAt:      nowUnixMillis(),
+			CompletedAt:      NowUnixMillis(),
 			SenderThreadID:   senderThreadID(h),
 			NewThreadID:      newThreadID,
 			NewAgentNickname: cloneStringPtr(newNickname),
@@ -483,7 +483,7 @@ func (a *sendInputArgs) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func handleSendInput(ctx context.Context, control CollabControl, h *toolHandlerContext) (tools.ToolOutput, error) {
+func handleSendInput(ctx context.Context, control CollabControl, h *ToolHandlerContext) (tools.ToolOutput, error) {
 	arguments, err := collabFunctionArguments(h.Payload)
 	if err != nil {
 		return nil, err
@@ -513,7 +513,7 @@ func handleSendInput(ctx context.Context, control CollabControl, h *toolHandlerC
 		Type: protocol.EventMsgKindCollabAgentInteractionBegin,
 		CollabAgentInteractionBegin: &protocol.CollabAgentInteractionBeginEvent{
 			CallID:           h.CallID,
-			StartedAt:        nowUnixMillis(),
+			StartedAt:        NowUnixMillis(),
 			SenderThreadID:   senderThreadID(h),
 			ReceiverThreadID: receiver,
 			Prompt:           prompt,
@@ -527,7 +527,7 @@ func handleSendInput(ctx context.Context, control CollabControl, h *toolHandlerC
 		Type: protocol.EventMsgKindCollabAgentInteractionEnd,
 		CollabAgentInteractionEnd: &protocol.CollabAgentInteractionEndEvent{
 			CallID:                h.CallID,
-			CompletedAt:           nowUnixMillis(),
+			CompletedAt:           NowUnixMillis(),
 			SenderThreadID:        senderThreadID(h),
 			ReceiverThreadID:      receiver,
 			ReceiverAgentNickname: cloneStringPtr(receiverAgent.AgentNickname),
@@ -555,7 +555,7 @@ type resumeAgentArgs struct {
 	ID string `json:"id"`
 }
 
-func handleResumeAgent(ctx context.Context, control CollabControl, h *toolHandlerContext) (tools.ToolOutput, error) {
+func handleResumeAgent(ctx context.Context, control CollabControl, h *ToolHandlerContext) (tools.ToolOutput, error) {
 	arguments, err := collabFunctionArguments(h.Payload)
 	if err != nil {
 		return nil, err
@@ -580,7 +580,7 @@ func handleResumeAgent(ctx context.Context, control CollabControl, h *toolHandle
 		Type: protocol.EventMsgKindCollabResumeBegin,
 		CollabResumeBegin: &protocol.CollabResumeBeginEvent{
 			CallID:                h.CallID,
-			StartedAt:             nowUnixMillis(),
+			StartedAt:             NowUnixMillis(),
 			SenderThreadID:        senderThreadID(h),
 			ReceiverThreadID:      receiver,
 			ReceiverAgentNickname: cloneStringPtr(receiverAgent.AgentNickname),
@@ -613,7 +613,7 @@ func handleResumeAgent(ctx context.Context, control CollabControl, h *toolHandle
 		Type: protocol.EventMsgKindCollabResumeEnd,
 		CollabResumeEnd: &protocol.CollabResumeEndEvent{
 			CallID:                h.CallID,
-			CompletedAt:           nowUnixMillis(),
+			CompletedAt:           NowUnixMillis(),
 			SenderThreadID:        senderThreadID(h),
 			ReceiverThreadID:      receiver,
 			ReceiverAgentNickname: cloneStringPtr(receiverAgent.AgentNickname),
@@ -640,7 +640,7 @@ type closeAgentArgs struct {
 	Target string `json:"target"`
 }
 
-func handleCloseAgent(ctx context.Context, control CollabControl, h *toolHandlerContext) (tools.ToolOutput, error) {
+func handleCloseAgent(ctx context.Context, control CollabControl, h *ToolHandlerContext) (tools.ToolOutput, error) {
 	arguments, err := collabFunctionArguments(h.Payload)
 	if err != nil {
 		return nil, err
@@ -660,7 +660,7 @@ func handleCloseAgent(ctx context.Context, control CollabControl, h *toolHandler
 		Type: protocol.EventMsgKindCollabCloseBegin,
 		CollabCloseBegin: &protocol.CollabCloseBeginEvent{
 			CallID:           h.CallID,
-			StartedAt:        nowUnixMillis(),
+			StartedAt:        NowUnixMillis(),
 			SenderThreadID:   senderThreadID(h),
 			ReceiverThreadID: agentID,
 		},
@@ -683,7 +683,7 @@ func handleCloseAgent(ctx context.Context, control CollabControl, h *toolHandler
 			Type: protocol.EventMsgKindCollabCloseEnd,
 			CollabCloseEnd: &protocol.CollabCloseEndEvent{
 				CallID:                h.CallID,
-				CompletedAt:           nowUnixMillis(),
+				CompletedAt:           NowUnixMillis(),
 				SenderThreadID:        senderThreadID(h),
 				ReceiverThreadID:      agentID,
 				ReceiverAgentNickname: cloneStringPtr(receiverAgent.AgentNickname),
@@ -700,7 +700,7 @@ func handleCloseAgent(ctx context.Context, control CollabControl, h *toolHandler
 		Type: protocol.EventMsgKindCollabCloseEnd,
 		CollabCloseEnd: &protocol.CollabCloseEndEvent{
 			CallID:                h.CallID,
-			CompletedAt:           nowUnixMillis(),
+			CompletedAt:           NowUnixMillis(),
 			SenderThreadID:        senderThreadID(h),
 			ReceiverThreadID:      agentID,
 			ReceiverAgentNickname: cloneStringPtr(receiverAgent.AgentNickname),
@@ -728,7 +728,7 @@ type waitArgs struct {
 	TimeoutMS *int64   `json:"timeout_ms"`
 }
 
-func handleWaitAgent(ctx context.Context, control CollabControl, h *toolHandlerContext) (tools.ToolOutput, error) {
+func handleWaitAgent(ctx context.Context, control CollabControl, h *ToolHandlerContext) (tools.ToolOutput, error) {
 	arguments, err := collabFunctionArguments(h.Payload)
 	if err != nil {
 		return nil, err
@@ -770,7 +770,7 @@ func handleWaitAgent(ctx context.Context, control CollabControl, h *toolHandlerC
 	emitCollabEvent(h, protocol.EventMsg{
 		Type: protocol.EventMsgKindCollabWaitingBegin,
 		CollabWaitingBegin: &protocol.CollabWaitingBeginEvent{
-			StartedAt:         nowUnixMillis(),
+			StartedAt:         NowUnixMillis(),
 			SenderThreadID:    senderThreadID(h),
 			ReceiverThreadIDs: append([]protocol.ThreadID(nil), receivers...),
 			ReceiverAgents:    receiverAgents,
@@ -798,7 +798,7 @@ func handleWaitAgent(ctx context.Context, control CollabControl, h *toolHandlerC
 		CollabWaitingEnd: &protocol.CollabWaitingEndEvent{
 			SenderThreadID: senderThreadID(h),
 			CallID:         h.CallID,
-			CompletedAt:    nowUnixMillis(),
+			CompletedAt:    NowUnixMillis(),
 			AgentStatuses:  buildWaitAgentStatuses(statusesByID, receiverAgents),
 			Statuses:       statusesByID,
 		},
@@ -832,7 +832,7 @@ type waitSubscription struct {
 func collectWaitStatuses(
 	ctx context.Context,
 	control CollabControl,
-	h *toolHandlerContext,
+	h *ToolHandlerContext,
 	receivers []protocol.ThreadID,
 	receiverAgents []protocol.CollabAgentRef,
 	timeoutMS int64,
@@ -866,7 +866,7 @@ func collectWaitStatuses(
 				CollabWaitingEnd: &protocol.CollabWaitingEndEvent{
 					SenderThreadID: senderThreadID(h),
 					CallID:         h.CallID,
-					CompletedAt:    nowUnixMillis(),
+					CompletedAt:    NowUnixMillis(),
 					AgentStatuses:  buildWaitAgentStatuses(statuses, receiverAgents),
 					Statuses:       statuses,
 				},
@@ -1046,7 +1046,7 @@ func collabJSONOutput(value any, toolName string) tools.ToolOutput {
 	if err != nil {
 		raw = []byte(fmt.Sprintf("%q", fmt.Sprintf("failed to serialize %s result: %v", toolName, err)))
 	}
-	return newTextToolOutput(string(raw), boolPtr(true))
+	return NewTextToolOutput(string(raw), boolPtr(true))
 }
 
 // collabSpawnError maps a control-plane spawn error onto a model-facing error,
@@ -1083,7 +1083,7 @@ func collabAgentError(agentID protocol.ThreadID, err error) error {
 
 // senderThreadID returns the sender (current) thread id for a collab event. It
 // is the session's thread id, mirroring the Rust `session.conversation_id`.
-func senderThreadID(h *toolHandlerContext) protocol.ThreadID {
+func senderThreadID(h *ToolHandlerContext) protocol.ThreadID {
 	if h != nil && h.Session != nil {
 		return h.Session.ThreadID()
 	}
@@ -1094,7 +1094,7 @@ func senderThreadID(h *toolHandlerContext) protocol.ThreadID {
 // filesystem-backed, or nil. It is threaded into a forked spawn so the control
 // plane can read the parent's stored history, mirroring the Rust fork path that
 // snapshots the parent thread's persisted rollout.
-func parentRolloutPath(h *toolHandlerContext) *string {
+func parentRolloutPath(h *ToolHandlerContext) *string {
 	if h == nil || h.Session == nil {
 		return nil
 	}
@@ -1103,7 +1103,7 @@ func parentRolloutPath(h *toolHandlerContext) *string {
 
 // emitCollabEvent sends a collab event correlated with the turn's sub id,
 // mirroring the Rust `session.send_event(&turn, ..)`.
-func emitCollabEvent(h *toolHandlerContext, msg protocol.EventMsg) {
+func emitCollabEvent(h *ToolHandlerContext, msg protocol.EventMsg) {
 	if h == nil || h.Session == nil {
 		return
 	}

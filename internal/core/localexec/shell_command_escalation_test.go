@@ -1,10 +1,11 @@
-package core
+package localexec
 
 import (
 	"context"
 	"testing"
 	"time"
 
+	"github.com/sqlrush/codexgo/internal/core"
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/sandbox"
 	"github.com/sqlrush/codexgo/internal/tools"
@@ -35,9 +36,9 @@ func (s *scriptedEscalationExec) Run(_ context.Context, req ExecRequest) (ExecRe
 
 // shellEscalationHandlerContext builds a handler context for a shell_command
 // call under the given approval policy + read-only sandbox.
-func shellEscalationHandlerContext(t *testing.T, sess *Session, policy protocol.AskForApprovalKind) *toolHandlerContext {
+func shellEscalationHandlerContext(t *testing.T, sess *core.Session, policy protocol.AskForApprovalKind) *core.ToolHandlerContext {
 	t.Helper()
-	return &toolHandlerContext{
+	return &core.ToolHandlerContext{
 		Session:  sess,
 		Turn:     readOnlyTurn(policy),
 		CallID:   "call-shell-esc",

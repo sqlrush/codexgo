@@ -1,21 +1,17 @@
 package core
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 
-	"github.com/sqlrush/codexgo/internal/applypatch"
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/tools"
-	"github.com/sqlrush/codexgo/internal/unifiedexec"
-	"github.com/sqlrush/codexgo/internal/utils/abspath"
 )
 
 // This file ports the core tool-dispatch handlers from codex-core's
-// tools/handlers/*. Each built-in tool is a small [toolExecutor] that parses its
+// tools/handlers/*. Each built-in tool is a small [ToolExecutor] that parses its
 // arguments, performs its effect through an injected dependency, and returns a
 // model-facing [tools.ToolOutput]. Approval/sandbox escalation, streaming output
 // deltas, and parallel execution are deferred to area agents (noted as STUB).
@@ -65,14 +61,19 @@ type PermissionsRequester interface {
 }
 
 // BuiltinToolDeps bundles the injected dependencies the built-in executors need.
-// Nil fields disable the corresponding tool: e.g. a nil Exec omits shell_command.
+// Nil fields disable the corresponding tool: e.g. no ShellTools omits the shell
+// family.
 type BuiltinToolDeps struct {
-	// Exec runs sandboxed shell commands (shell_command / apply_patch fallback).
-	Exec ExecService
-	// UnifiedExec drives the exec_command/write_stdin PTY session pair. A nil
-	// value omits the UnifiedExec tools (the turn then falls back to
-	// shell_command regardless of the feature-resolved shell type).
-	UnifiedExec *unifiedexec.Executor
+	// ShellTools are the shell-family executors (exec_command / write_stdin /
+	// shell_command), registered first so they lead the model-visible spec order
+	// exactly like spec_plan::add_shell_tools. They are built by core/localexec
+	// (localexec.ShellExecutors); an empty slice runs the session without any
+	// local command execution, which is the shape a hosted, non-shell deployment
+	// (airush) uses.
+	ShellTools []ToolExecutor
+	// ApplyPatch is the standalone apply_patch executor (localexec.NewApplyPatchExecutor);
+	// nil omits the tool.
+	ApplyPatch ToolExecutor
 	// Mcp invokes MCP tools.
 	Mcp McpToolCaller
 	// McpTools are the eager (directly-advertised) MCP tools for this turn. Each
@@ -105,8 +106,6 @@ type BuiltinToolDeps struct {
 	UserInput UserInputRequester
 	// Permissions routes request_permissions.
 	Permissions PermissionsRequester
-	// PatchFS is the filesystem apply_patch writes to; nil uses the real OS FS.
-	PatchFS applypatch.FileSystem
 }
 
 // builtinExecutors assembles the executor list for the configured dependencies,
@@ -114,22 +113,15 @@ type BuiltinToolDeps struct {
 // order): shell tools, core utility tools (update_plan, request_user_input,
 // request_permissions, apply_patch, view_image), MCP runtime tools, then the
 // hosted specs (web_search) last.
-func builtinExecutors(deps BuiltinToolDeps) []toolExecutor {
-	var execs []toolExecutor
+func builtinExecutors(deps BuiltinToolDeps) []ToolExecutor {
+	var execs []ToolExecutor
 
 	// Shell family (spec_plan::add_shell_tools). All shell executors register;
 	// the per-turn shell type (shell_type_for_model_and_features) decides which
 	// of them advertises a spec — in UnifiedExec mode shell_command stays
-	// registered dispatch-only, matching codex's add_dispatch_only.
-	if deps.UnifiedExec != nil {
-		execs = append(execs, newUnifiedExecCommandExecutor(deps.UnifiedExec, deps.PatchFS))
-		execs = append(execs, newWriteStdinExecutor(deps.UnifiedExec))
-	}
-	if deps.Exec != nil {
-		// shell_command takes a `command` STRING, wraps it in the user's shell,
-		// and intercepts apply_patch heredocs.
-		execs = append(execs, newShellCommandExecutor(deps.Exec, deps.PatchFS))
-	}
+	// registered dispatch-only, matching codex's add_dispatch_only. The
+	// executors themselves are supplied by core/localexec.
+	execs = append(execs, deps.ShellTools...)
 
 	// Core utility tools (spec_plan::add_core_utility_tools order).
 	execs = append(execs, planExecutor{})
@@ -146,7 +138,9 @@ func builtinExecutors(deps BuiltinToolDeps) []toolExecutor {
 	}
 	// apply_patch remains available as a standalone tool for the direct
 	// (non-shell) invocation form some models use.
-	execs = append(execs, applyPatchExecutor{fs: deps.PatchFS})
+	if deps.ApplyPatch != nil {
+		execs = append(execs, deps.ApplyPatch)
+	}
 	execs = append(execs, viewImageExecutor{})
 
 	// Deferred search sources are collected in spec_plan's add_tool_sources
@@ -210,28 +204,28 @@ func builtinExecutors(deps BuiltinToolDeps) []toolExecutor {
 // Shared tool outputs
 // ----------------------------------------------------------------------------
 
-// textToolOutput is a plain-text tool output, the Go analogue of the Rust
+// TextToolOutput is a plain-text tool output, the Go analogue of the Rust
 // `FunctionToolOutput::from_text`. A nil success defaults to true for logging.
-type textToolOutput struct {
+type TextToolOutput struct {
 	tools.DefaultToolOutput
 	text    string
 	success *bool
 }
 
-func newTextToolOutput(text string, success *bool) textToolOutput {
-	return textToolOutput{text: text, success: success}
+func NewTextToolOutput(text string, success *bool) TextToolOutput {
+	return TextToolOutput{text: text, success: success}
 }
 
-func (o textToolOutput) LogPreview() string { return telemetryPreview(o.text) }
+func (o TextToolOutput) LogPreview() string { return TelemetryPreview(o.text) }
 
-func (o textToolOutput) SuccessForLogging() bool {
+func (o TextToolOutput) SuccessForLogging() bool {
 	if o.success == nil {
 		return true
 	}
 	return *o.success
 }
 
-func (o textToolOutput) ToResponseItem(callID string, payload tools.ToolPayload) tools.ResponseInputItem {
+func (o TextToolOutput) ToResponseItem(callID string, payload tools.ToolPayload) tools.ResponseInputItem {
 	out := protocol.FunctionCallOutputPayload{Text: &o.text, Success: o.success}
 	if payload.Kind == tools.ToolPayloadKindCustom {
 		return tools.CustomToolCallOutputInput(callID, nil, out)
@@ -239,7 +233,7 @@ func (o textToolOutput) ToResponseItem(callID string, payload tools.ToolPayload)
 	return tools.FunctionCallOutputInput(callID, out)
 }
 
-func (o textToolOutput) CodeModeResult(tools.ToolPayload) json.RawMessage {
+func (o TextToolOutput) CodeModeResult(tools.ToolPayload) json.RawMessage {
 	return mustJSON(map[string]any{})
 }
 
@@ -254,9 +248,9 @@ type mcpToolOutput struct {
 func (o mcpToolOutput) LogPreview() string {
 	raw, err := json.Marshal(o.result.Content)
 	if err != nil {
-		return telemetryPreview(fmt.Sprintf("failed to serialize mcp result: %v", err))
+		return TelemetryPreview(fmt.Sprintf("failed to serialize mcp result: %v", err))
 	}
-	return telemetryPreview(string(raw))
+	return TelemetryPreview(string(raw))
 }
 
 func (o mcpToolOutput) SuccessForLogging() bool {
@@ -294,7 +288,7 @@ func (viewImageExecutor) MatchesPayload(p tools.ToolPayload) bool {
 	return p.Kind == tools.ToolPayloadKindFunction
 }
 
-func (viewImageExecutor) Handle(_ context.Context, h *toolHandlerContext) (tools.ToolOutput, error) {
+func (viewImageExecutor) Handle(_ context.Context, h *ToolHandlerContext) (tools.ToolOutput, error) {
 	args, err := functionPayloadArguments(h.ToolName, h.Payload)
 	if err != nil {
 		return nil, err
@@ -320,7 +314,7 @@ func (viewImageExecutor) Handle(_ context.Context, h *toolHandlerContext) (tools
 	}
 	// STUB: the real handler loads + attaches the image bytes as an input image
 	// content item; here we acknowledge the attachment to the model.
-	return newTextToolOutput("attached local image at "+parsed.Path, boolPtr(true)), nil
+	return NewTextToolOutput("attached local image at "+parsed.Path, boolPtr(true)), nil
 }
 
 // ----------------------------------------------------------------------------
@@ -341,7 +335,7 @@ func (planExecutor) MatchesPayload(p tools.ToolPayload) bool {
 	return p.Kind == tools.ToolPayloadKindFunction
 }
 
-func (planExecutor) Handle(_ context.Context, h *toolHandlerContext) (tools.ToolOutput, error) {
+func (planExecutor) Handle(_ context.Context, h *ToolHandlerContext) (tools.ToolOutput, error) {
 	args, err := functionPayloadArguments(h.ToolName, h.Payload)
 	if err != nil {
 		return nil, err
@@ -359,125 +353,7 @@ func (planExecutor) Handle(_ context.Context, h *toolHandlerContext) (tools.Tool
 			PlanUpdate: &parsed,
 		})
 	}
-	return newTextToolOutput(planUpdatedMessage, boolPtr(true)), nil
-}
-
-// ----------------------------------------------------------------------------
-// exec_command / shell_command (shell)
-//
-// The shell tool executors live in shell_command_executor.go. The gpt-5.5
-// `shell_command` tool (a `command` STRING) and the PTY-oriented `exec_command`
-// tool (a `cmd` STRING) both wrap their command string in the user's shell, run
-// it through the ExecService, and intercept apply_patch heredocs.
-// ----------------------------------------------------------------------------
-
-// ----------------------------------------------------------------------------
-// apply_patch
-// ----------------------------------------------------------------------------
-
-type applyPatchExecutor struct {
-	fs applypatch.FileSystem
-}
-
-func (applyPatchExecutor) Name() protocol.ToolName { return protocol.PlainToolName("apply_patch") }
-
-func (applyPatchExecutor) Spec(*TurnContext) (tools.ToolSpec, bool) {
-	// codex advertises apply_patch as a FREEFORM (custom) grammar tool, not a
-	// function (create_apply_patch_freeform_tool). The handler already accepts the
-	// custom raw-text payload via extractPatch.
-	return tools.CreateApplyPatchFreeformTool(), true
-}
-
-func (applyPatchExecutor) MatchesPayload(p tools.ToolPayload) bool {
-	return p.Kind == tools.ToolPayloadKindFunction || p.Kind == tools.ToolPayloadKindCustom
-}
-
-// applyPatchArgs is the apply_patch argument shape: the patch text under "input".
-type applyPatchArgs struct {
-	Input string `json:"input"`
-}
-
-func (a applyPatchExecutor) Handle(_ context.Context, h *toolHandlerContext) (tools.ToolOutput, error) {
-	patch, err := a.extractPatch(h.Payload)
-	if err != nil {
-		return nil, err
-	}
-	if strings.TrimSpace(patch) == "" {
-		return nil, tools.RespondToModelError("apply_patch requires a non-empty patch")
-	}
-
-	cwd, cerr := abspath.FromAbsolutePath(h.Turn.Cwd)
-	if cerr != nil {
-		return nil, tools.RespondToModelError(fmt.Sprintf("invalid cwd for apply_patch: %v", cerr))
-	}
-	fs := a.fs
-	if fs == nil {
-		fs = applypatch.OSFileSystem{}
-	}
-
-	var stdout, stderr bytes.Buffer
-	_, applyErr := applypatch.ApplyPatch(patch, cwd, &stdout, &stderr, fs)
-	if applyErr != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			msg = applyErr.Error()
-		}
-		// STUB: approval escalation on sandbox-denied writes is deferred; a
-		// failed apply is surfaced to the model verbatim.
-		return nil, tools.RespondToModelError(msg)
-	}
-	out := strings.TrimSpace(stdout.String())
-	if out == "" {
-		out = "Patch applied."
-	}
-	return applyPatchToolOutput{text: out}, nil
-}
-
-// extractPatch resolves the patch text from a Function (JSON {"input": ...}) or
-// Custom (raw input) payload.
-func (applyPatchExecutor) extractPatch(p tools.ToolPayload) (string, error) {
-	switch p.Kind {
-	case tools.ToolPayloadKindCustom:
-		return p.Input, nil
-	case tools.ToolPayloadKindFunction:
-		var parsed applyPatchArgs
-		if err := json.Unmarshal([]byte(p.Arguments), &parsed); err != nil {
-			// Tolerate a bare-string argument payload.
-			var bare string
-			if jerr := json.Unmarshal([]byte(p.Arguments), &bare); jerr == nil {
-				return bare, nil
-			}
-			return "", tools.RespondToModelError(fmt.Sprintf("failed to parse apply_patch arguments: %v", err))
-		}
-		return parsed.Input, nil
-	default:
-		return "", tools.FatalError("apply_patch invoked with incompatible payload")
-	}
-}
-
-// applyPatchToolOutput is the Go analogue of the Rust `ApplyPatchToolOutput`.
-type applyPatchToolOutput struct {
-	tools.DefaultToolOutput
-	text string
-}
-
-func (o applyPatchToolOutput) LogPreview() string      { return telemetryPreview(o.text) }
-func (o applyPatchToolOutput) SuccessForLogging() bool { return true }
-
-func (o applyPatchToolOutput) ToResponseItem(callID string, payload tools.ToolPayload) tools.ResponseInputItem {
-	out := protocol.FunctionCallOutputPayload{Text: &o.text, Success: boolPtr(true)}
-	if payload.Kind == tools.ToolPayloadKindCustom {
-		return tools.CustomToolCallOutputInput(callID, nil, out)
-	}
-	return tools.FunctionCallOutputInput(callID, out)
-}
-
-func (o applyPatchToolOutput) PostToolUseResponse(string, tools.ToolPayload) (json.RawMessage, bool) {
-	return mustJSON(o.text), true
-}
-
-func (o applyPatchToolOutput) CodeModeResult(tools.ToolPayload) json.RawMessage {
-	return mustJSON(map[string]any{})
+	return NewTextToolOutput(planUpdatedMessage, boolPtr(true)), nil
 }
 
 // ----------------------------------------------------------------------------
@@ -508,7 +384,7 @@ func (requestUserInputExecutor) MatchesPayload(p tools.ToolPayload) bool {
 	return p.Kind == tools.ToolPayloadKindFunction
 }
 
-func (e requestUserInputExecutor) Handle(ctx context.Context, h *toolHandlerContext) (tools.ToolOutput, error) {
+func (e requestUserInputExecutor) Handle(ctx context.Context, h *ToolHandlerContext) (tools.ToolOutput, error) {
 	args, err := functionPayloadArguments(h.ToolName, h.Payload)
 	if err != nil {
 		return nil, err
@@ -525,7 +401,7 @@ func (e requestUserInputExecutor) Handle(ctx context.Context, h *toolHandlerCont
 	if merr != nil {
 		return nil, tools.FatalError(fmt.Sprintf("failed to serialize request_user_input response: %v", merr))
 	}
-	return newTextToolOutput(string(content), boolPtr(true)), nil
+	return NewTextToolOutput(string(content), boolPtr(true)), nil
 }
 
 // ----------------------------------------------------------------------------
@@ -548,7 +424,7 @@ func (requestPermissionsExecutor) MatchesPayload(p tools.ToolPayload) bool {
 	return p.Kind == tools.ToolPayloadKindFunction
 }
 
-func (e requestPermissionsExecutor) Handle(ctx context.Context, h *toolHandlerContext) (tools.ToolOutput, error) {
+func (e requestPermissionsExecutor) Handle(ctx context.Context, h *ToolHandlerContext) (tools.ToolOutput, error) {
 	args, err := functionPayloadArguments(h.ToolName, h.Payload)
 	if err != nil {
 		return nil, err
@@ -567,7 +443,7 @@ func (e requestPermissionsExecutor) Handle(ctx context.Context, h *toolHandlerCo
 	if merr != nil {
 		return nil, tools.FatalError(fmt.Sprintf("failed to serialize request_permissions response: %v", merr))
 	}
-	return newTextToolOutput(string(content), boolPtr(true)), nil
+	return NewTextToolOutput(string(content), boolPtr(true)), nil
 }
 
 // ----------------------------------------------------------------------------
@@ -604,7 +480,7 @@ func (webSearchExecutor) MatchesPayload(p tools.ToolPayload) bool {
 	return p.Kind == tools.ToolPayloadKindFunction
 }
 
-func (e webSearchExecutor) Handle(ctx context.Context, h *toolHandlerContext) (tools.ToolOutput, error) {
+func (e webSearchExecutor) Handle(ctx context.Context, h *ToolHandlerContext) (tools.ToolOutput, error) {
 	// web_search is a hosted tool: the model provider executes it server-side
 	// and no function call should reach the local registry. The runner-backed
 	// path below serves clients that wire a local searcher (tests, OSS providers).
@@ -685,7 +561,7 @@ func (mcpExecutor) MatchesPayload(p tools.ToolPayload) bool {
 	return p.Kind == tools.ToolPayloadKindFunction
 }
 
-func (e mcpExecutor) Handle(ctx context.Context, h *toolHandlerContext) (tools.ToolOutput, error) {
+func (e mcpExecutor) Handle(ctx context.Context, h *ToolHandlerContext) (tools.ToolOutput, error) {
 	args, err := functionPayloadArguments(h.ToolName, h.Payload)
 	if err != nil {
 		return nil, err
@@ -787,10 +663,10 @@ func emptyObjectSchema() tools.JsonSchema {
 	}
 }
 
-// telemetryPreview returns a short preview of content for log output. It mirrors
+// TelemetryPreview returns a short preview of content for log output. It mirrors
 // the byte/line-bounded preview the tools package applies internally (which is
 // unexported), keeping core's outputs log-friendly.
-func telemetryPreview(content string) string {
+func TelemetryPreview(content string) string {
 	const maxBytes = 2 * 1024
 	if len(content) <= maxBytes {
 		return content
@@ -808,9 +684,9 @@ func functionPayloadArguments(name protocol.ToolName, p tools.ToolPayload) (stri
 	return "", tools.FatalError(fmt.Sprintf("tool %s invoked with incompatible payload", name))
 }
 
-// payloadArguments returns the raw argument string for a Function or Custom
+// PayloadArguments returns the raw argument string for a Function or Custom
 // payload, erroring for other shapes.
-func payloadArguments(p tools.ToolPayload) (string, error) {
+func PayloadArguments(p tools.ToolPayload) (string, error) {
 	switch p.Kind {
 	case tools.ToolPayloadKindFunction:
 		return p.Arguments, nil

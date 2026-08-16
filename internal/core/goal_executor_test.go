@@ -47,7 +47,6 @@ func specNames(t *testing.T, router *DefaultToolRouter, tc *TurnContext) []strin
 // after update_plan in spec_plan registration order under default features.
 func TestGoalToolsAdvertisedInPlanOrder(t *testing.T) {
 	router, err := BuiltinToolRouter(BuiltinToolDeps{
-		Exec:      &mockExecService{},
 		GoalTools: newTestGoalExecutors(t),
 	})
 	if err != nil {
@@ -107,7 +106,6 @@ func TestGoalToolsGating(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			router, err := BuiltinToolRouter(BuiltinToolDeps{
-				Exec:      &mockExecService{},
 				GoalTools: tc.goalTools,
 			})
 			if err != nil {
@@ -127,7 +125,6 @@ func TestGoalToolsGating(t *testing.T) {
 // TestGoalToolDispatch drives create_goal then get_goal through the router.
 func TestGoalToolDispatch(t *testing.T) {
 	router, err := BuiltinToolRouter(BuiltinToolDeps{
-		Exec:      &mockExecService{},
 		GoalTools: newTestGoalExecutors(t),
 	})
 	if err != nil {

@@ -1,9 +1,10 @@
-package core
+package localexec
 
 import (
 	"context"
 	"strings"
 
+	"github.com/sqlrush/codexgo/internal/core"
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/sandbox"
 )
@@ -11,7 +12,7 @@ import (
 // This file ports the sandbox-denial approval escalation from codex-core's
 // tools::orchestrator (ToolOrchestrator::run) + tools::sandboxing. When a
 // sandboxed command fails with a SandboxErr::Denied and the approval policy
-// permits, codex emits a request_command_approval (ExecApprovalRequest) and, on
+// permits, codex emits a request_command_approval (core.ExecApprovalRequest) and, on
 // approval, retries the command WITHOUT the sandbox (escalated). The shell and
 // unified-exec exec paths drive this loop after their first (sandboxed)
 // attempt.
@@ -56,7 +57,7 @@ const (
 type sandboxEscalationRequest struct {
 	// Turn is the read-only turn snapshot whose approval policy + sandbox mode
 	// drive the decision.
-	Turn *TurnContext
+	Turn *core.TurnContext
 	// CallID correlates the (retry) approval request with its response.
 	CallID string
 	// Command is the argv proposed for execution (echoed in the approval event).
@@ -80,13 +81,13 @@ type sandboxEscalationRequest struct {
 //     approval, retry unsandboxed; on deny/abort/timeout, surface the denial.
 //
 // A nil session (no client to prompt) resolves the prompt as a deny via the
-// pre-closed-waiter fallback in Session.RequestCommandApproval, mirroring the
+// pre-closed-waiter fallback in core.Session.RequestCommandApproval, mirroring the
 // headless request_user_input resolution.
-func resolveSandboxEscalation(ctx context.Context, sess *Session, req sandboxEscalationRequest) sandboxEscalationDecision {
+func resolveSandboxEscalation(ctx context.Context, sess *core.Session, req sandboxEscalationRequest) sandboxEscalationDecision {
 	policy := turnApprovalPolicy(req.Turn)
 	fsState := turnFilesystemSandboxState(req.Turn)
 
-	unsandboxedAllowed := unsandboxedExecutionAllowed(fsState)
+	unsandboxedAllowed := core.UnsandboxedExecutionAllowed(fsState)
 
 	// Under Never / OnRequest, do not retry without the sandbox; surface the
 	// denial preserving the original output (wants_no_sandbox_approval gate). The
@@ -110,7 +111,7 @@ func resolveSandboxEscalation(ctx context.Context, sess *Session, req sandboxEsc
 	}
 
 	retryReason := sandboxDenialReason
-	decision := sess.RequestCommandApproval(ctx, req.Turn, ExecApprovalRequest{
+	decision := sess.RequestCommandApproval(ctx, req.Turn, core.ExecApprovalRequest{
 		CallID:  req.CallID,
 		Command: req.Command,
 		Cwd:     protocol.AbsolutePath(req.Cwd),
@@ -134,7 +135,7 @@ func wantsNoSandboxApproval(policy protocol.AskForApproval) bool {
 	case protocol.AskForApprovalNever, protocol.AskForApprovalOnRequest:
 		return false
 	case protocol.AskForApprovalGranular:
-		return granularAllowsSandboxApproval(policy.Granular)
+		return core.GranularAllowsSandboxApproval(policy.Granular)
 	default:
 		return false
 	}
@@ -165,7 +166,7 @@ func reviewDecisionApproves(decision protocol.ReviewDecision) bool {
 
 // turnApprovalPolicy resolves the effective approval policy for a turn,
 // defaulting to OnRequest (codex's config default) for the zero value.
-func turnApprovalPolicy(tc *TurnContext) protocol.AskForApproval {
+func turnApprovalPolicy(tc *core.TurnContext) protocol.AskForApproval {
 	if tc != nil && tc.ApprovalPolicy.Kind != "" {
 		return tc.ApprovalPolicy
 	}
@@ -173,13 +174,13 @@ func turnApprovalPolicy(tc *TurnContext) protocol.AskForApproval {
 }
 
 // turnFilesystemSandboxState projects the turn's resolved filesystem policy onto
-// the reduced FilesystemSandboxState the escalation decision consumes (Restricted
+// the reduced core.FilesystemSandboxState the escalation decision consumes (Restricted
 // + DeniedReadRestrictions). Mirrors turn_context.file_system_sandbox_policy()
 // reduced to the two booleans unsandboxed_execution_allowed needs.
-func turnFilesystemSandboxState(tc *TurnContext) FilesystemSandboxState {
+func turnFilesystemSandboxState(tc *core.TurnContext) core.FilesystemSandboxState {
 	pol := resolveTurnSandboxPolicy(tc)
 	fs := pol.FileSystemSandboxPolicy
-	return FilesystemSandboxState{
+	return core.FilesystemSandboxState{
 		Restricted:             fs.Kind == protocol.FileSystemSandboxKindRestricted,
 		DeniedReadRestrictions: fileSystemPolicyHasDeniedReads(fs),
 	}

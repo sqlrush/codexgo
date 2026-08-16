@@ -190,7 +190,7 @@ func TestCollabSpawnAgentHandleSpawnsAndReturnsID(t *testing.T) {
 
 	deps := BuiltinToolDeps{Collab: fake}
 	ex := findCollabExecutor(t, deps, "spawn_agent")
-	out, err := ex.Handle(context.Background(), &toolHandlerContext{
+	out, err := ex.Handle(context.Background(), &ToolHandlerContext{
 		Session:  sess,
 		Turn:     collabTurn(t),
 		CallID:   "call-1",
@@ -237,7 +237,7 @@ func TestCollabSpawnAgentThreadsParentRolloutPathForFork(t *testing.T) {
 
 	deps := BuiltinToolDeps{Collab: fake}
 	ex := findCollabExecutor(t, deps, "spawn_agent")
-	if _, err := ex.Handle(context.Background(), &toolHandlerContext{
+	if _, err := ex.Handle(context.Background(), &ToolHandlerContext{
 		Session:  sess,
 		Turn:     collabTurn(t),
 		CallID:   "call-fork",
@@ -259,7 +259,7 @@ func TestCollabSpawnAgentRejectsBothMessageAndItems(t *testing.T) {
 	fake := newFakeCollabControl()
 	deps := BuiltinToolDeps{Collab: fake}
 	ex := findCollabExecutor(t, deps, "spawn_agent")
-	_, err := ex.Handle(context.Background(), &toolHandlerContext{
+	_, err := ex.Handle(context.Background(), &ToolHandlerContext{
 		Session: sess, Turn: collabTurn(t), CallID: "c", ToolName: ex.Name(),
 		Payload: collabPayload(`{"message":"x","items":[{"type":"text","text":"y"}]}`),
 	})
@@ -280,7 +280,7 @@ func TestCollabSendInputRoutesAndReturnsSubmissionID(t *testing.T) {
 
 	deps := BuiltinToolDeps{Collab: fake}
 	ex := findCollabExecutor(t, deps, "send_input")
-	out, err := ex.Handle(context.Background(), &toolHandlerContext{
+	out, err := ex.Handle(context.Background(), &ToolHandlerContext{
 		Session: sess, Turn: collabTurn(t), CallID: "c", ToolName: ex.Name(),
 		Payload: collabPayload(`{"target":"` + target.String() + `","message":"hello"}`),
 	})
@@ -315,7 +315,7 @@ func TestCollabSendInputInterruptsWhenRequested(t *testing.T) {
 
 	deps := BuiltinToolDeps{Collab: fake}
 	ex := findCollabExecutor(t, deps, "send_input")
-	_, err := ex.Handle(context.Background(), &toolHandlerContext{
+	_, err := ex.Handle(context.Background(), &ToolHandlerContext{
 		Session: sess, Turn: collabTurn(t), CallID: "c", ToolName: ex.Name(),
 		Payload: collabPayload(`{"target":"` + target.String() + `","message":"stop","interrupt":true}`),
 	})
@@ -343,7 +343,7 @@ func TestCollabWaitAgentReturnsFinalStatusKeyedByTarget(t *testing.T) {
 
 	deps := BuiltinToolDeps{Collab: fake}
 	ex := findCollabExecutor(t, deps, "wait_agent")
-	out, err := ex.Handle(context.Background(), &toolHandlerContext{
+	out, err := ex.Handle(context.Background(), &ToolHandlerContext{
 		Session: sess, Turn: collabTurn(t), CallID: "c", ToolName: ex.Name(),
 		Payload: collabPayload(`{"targets":["` + target.String() + `"],"timeout_ms":10000}`),
 	})
@@ -380,7 +380,7 @@ func TestCollabWaitAgentRejectsEmptyTargets(t *testing.T) {
 	fake := newFakeCollabControl()
 	deps := BuiltinToolDeps{Collab: fake}
 	ex := findCollabExecutor(t, deps, "wait_agent")
-	_, err := ex.Handle(context.Background(), &toolHandlerContext{
+	_, err := ex.Handle(context.Background(), &ToolHandlerContext{
 		Session: sess, Turn: collabTurn(t), CallID: "c", ToolName: ex.Name(),
 		Payload: collabPayload(`{"targets":[]}`),
 	})
@@ -398,7 +398,7 @@ func TestCollabCloseAgentReportsPreviousStatus(t *testing.T) {
 
 	deps := BuiltinToolDeps{Collab: fake}
 	ex := findCollabExecutor(t, deps, "close_agent")
-	out, err := ex.Handle(context.Background(), &toolHandlerContext{
+	out, err := ex.Handle(context.Background(), &ToolHandlerContext{
 		Session: sess, Turn: collabTurn(t), CallID: "c", ToolName: ex.Name(),
 		Payload: collabPayload(`{"target":"` + target.String() + `"}`),
 	})
@@ -440,7 +440,7 @@ func TestCollabResumeAgentReopensClosedAgent(t *testing.T) {
 
 	deps := BuiltinToolDeps{Collab: &resumingFakeControl{fakeCollabControl: fake, postResume: postResume}}
 	ex := findCollabExecutor(t, deps, "resume_agent")
-	out, err := ex.Handle(context.Background(), &toolHandlerContext{
+	out, err := ex.Handle(context.Background(), &ToolHandlerContext{
 		Session: sess, Turn: collabTurn(t), CallID: "c", ToolName: ex.Name(),
 		Payload: collabPayload(`{"id":"` + target.String() + `"}`),
 	})

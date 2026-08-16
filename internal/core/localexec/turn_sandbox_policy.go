@@ -1,6 +1,7 @@
-package core
+package localexec
 
 import (
+	"github.com/sqlrush/codexgo/internal/core"
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/sandbox"
 )
@@ -10,7 +11,7 @@ import (
 // PermissionProfile; the orchestrator reads turn_context.file_system_sandbox_policy()
 // / network_sandbox_policy() (PermissionProfile::{file_system,network}_sandbox_policy)
 // and SandboxManager::select_initial(Auto) picks the platform backend. Core's
-// reduced TurnContext carries the projected SandboxMode + NetworkAccessEnabled
+// reduced core.TurnContext carries the projected SandboxMode + NetworkAccessEnabled
 // instead of the full opaque PermissionProfile, so this resolver reconstructs the
 // same (SandboxType, FileSystemSandboxPolicy, NetworkSandboxPolicy) triple from
 // those fields.
@@ -50,7 +51,7 @@ type turnSandboxPolicy struct {
 // approval flow into the attempt. Those are owned by the approvals area and are
 // not threaded here; this resolver applies the ambient turn policy unchanged,
 // which is the first-attempt default for every call.
-func resolveTurnSandboxPolicy(tc *TurnContext) turnSandboxPolicy {
+func resolveTurnSandboxPolicy(tc *core.TurnContext) turnSandboxPolicy {
 	mode := protocol.SandboxModeReadOnly
 	networkEnabled := false
 	windowsLevel := protocol.WindowsSandboxLevelDisabled

@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/core"
+	"github.com/sqlrush/codexgo/internal/core/localexec"
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/sandbox"
 )
@@ -80,7 +80,7 @@ func TestLocalExecServiceSeatbeltEnforcesReadOnly(t *testing.T) {
 			target := filepath.Join(outsideResolved, tt.name+".txt")
 			_ = os.Remove(target)
 
-			res, runErr := svc.Run(context.Background(), core.ExecRequest{
+			res, runErr := svc.Run(context.Background(), localexec.ExecRequest{
 				Command:                 []string{shell, "-c", ": > " + target},
 				Cwd:                     resolved,
 				SandboxType:             tt.sandbox,

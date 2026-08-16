@@ -66,7 +66,7 @@ func turnIsReviewSubAgent(tc *TurnContext) bool {
 		source.SubAgent.Kind == rollout.SubAgentSourceKindReview
 }
 
-// goalExecutor adapts one ext/goal tool executor onto the core [toolExecutor]
+// goalExecutor adapts one ext/goal tool executor onto the core [ToolExecutor]
 // contract, applying the per-turn advertisement gate.
 type goalExecutor struct {
 	inner goalToolBridge
@@ -87,7 +87,7 @@ func (e goalExecutor) MatchesPayload(p tools.ToolPayload) bool {
 }
 
 // Handle forwards the invocation to the ext/goal executor.
-func (e goalExecutor) Handle(ctx context.Context, h *toolHandlerContext) (tools.ToolOutput, error) {
+func (e goalExecutor) Handle(ctx context.Context, h *ToolHandlerContext) (tools.ToolOutput, error) {
 	turnID := ""
 	if h.Turn != nil {
 		turnID = h.Turn.SubID

@@ -52,7 +52,6 @@ func TestRunSamplingRequestCreateGoalEmitsThreadGoalUpdated(t *testing.T) {
 		nil,
 	)
 	router, err := BuiltinToolRouter(BuiltinToolDeps{
-		Exec:      &mockExecService{},
 		GoalTools: goalTools,
 	})
 	if err != nil {

@@ -1,10 +1,11 @@
-package core
+package localexec
 
 import (
 	"context"
 	"testing"
 	"time"
 
+	"github.com/sqlrush/codexgo/internal/core"
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/sandbox"
 )
@@ -13,11 +14,11 @@ import (
 // (sandbox_escalation.go): the SandboxErr::Denied arm of ToolOrchestrator::run
 // for the non-network FS denial path the shell + unified-exec exec calls hit.
 
-// readOnlyTurn builds a TurnContext with the given approval policy under the
+// readOnlyTurn builds a core.TurnContext with the given approval policy under the
 // read-only sandbox (a restricted FS policy with no denied-read entries, so
 // unsandboxed_execution_allowed is true).
-func readOnlyTurn(policy protocol.AskForApprovalKind) *TurnContext {
-	return &TurnContext{
+func readOnlyTurn(policy protocol.AskForApprovalKind) *core.TurnContext {
+	return &core.TurnContext{
 		SubID:          "turn-esc",
 		Cwd:            "/work",
 		ApprovalPolicy: protocol.AskForApproval{Kind: policy},
@@ -35,7 +36,7 @@ func TestResolveSandboxEscalation(t *testing.T) {
 		policy protocol.AskForApprovalKind
 		// respond, when set, is the decision the scripted approver delivers.
 		respond *protocol.ReviewDecision
-		// wantPrompt is whether an ExecApprovalRequest event must be emitted.
+		// wantPrompt is whether an core.ExecApprovalRequest event must be emitted.
 		wantPrompt bool
 		// want is the expected escalation decision.
 		want sandboxEscalationDecision
@@ -135,7 +136,7 @@ func TestResolveSandboxEscalation(t *testing.T) {
 // the sandbox), mirroring unsandboxed_execution_allowed == false.
 func TestResolveSandboxEscalationDeniedReadsForbidRetry(t *testing.T) {
 	s, events := newTestSession(t)
-	turn := &TurnContext{
+	turn := &core.TurnContext{
 		SubID:          "turn-esc",
 		Cwd:            "/work",
 		ApprovalPolicy: protocol.AskForApproval{Kind: protocol.AskForApprovalOnFailure},
@@ -154,7 +155,7 @@ func TestResolveSandboxEscalationDeniedReadsForbidRetry(t *testing.T) {
 	if !fileSystemPolicyHasDeniedReads(deniedPolicy) {
 		t.Fatal("expected denied-read policy to report denied reads")
 	}
-	if unsandboxedExecutionAllowed(FilesystemSandboxState{Restricted: true, DeniedReadRestrictions: true}) {
+	if core.UnsandboxedExecutionAllowed(core.FilesystemSandboxState{Restricted: true, DeniedReadRestrictions: true}) {
 		t.Fatal("expected unsandboxed execution to be disallowed with denied reads")
 	}
 

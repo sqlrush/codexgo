@@ -24,11 +24,11 @@ func newContextCompactionTurnItem() protocol.TurnItem {
 	}
 }
 
-// emitTurnItemStarted emits an ItemStarted event for an already-built turn item.
+// EmitTurnItemStarted emits an ItemStarted event for an already-built turn item.
 // Unlike the streamed-item helper in turn_events.go, this emits whatever turn
 // item it is given (used for the synthetic compaction item). Mirrors the Rust
 // `Session::emit_turn_item_started`.
-func emitTurnItemStarted(sess *Session, tc *TurnContext, item protocol.TurnItem) {
+func EmitTurnItemStarted(sess *Session, tc *TurnContext, item protocol.TurnItem) {
 	sess.SendEvent(tc.SubID, protocol.EventMsg{
 		Type: protocol.EventMsgKindItemStarted,
 		ItemStarted: &protocol.ItemStartedEvent{
@@ -40,9 +40,9 @@ func emitTurnItemStarted(sess *Session, tc *TurnContext, item protocol.TurnItem)
 	})
 }
 
-// emitTurnItemCompleted emits an ItemCompleted event for an already-built turn
+// EmitTurnItemCompleted emits an ItemCompleted event for an already-built turn
 // item. Mirrors the Rust `Session::emit_turn_item_completed`.
-func emitTurnItemCompleted(sess *Session, tc *TurnContext, item protocol.TurnItem) {
+func EmitTurnItemCompleted(sess *Session, tc *TurnContext, item protocol.TurnItem) {
 	sess.SendEvent(tc.SubID, protocol.EventMsg{
 		Type: protocol.EventMsgKindItemCompleted,
 		ItemCompleted: &protocol.ItemCompletedEvent{

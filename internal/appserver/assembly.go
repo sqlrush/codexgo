@@ -72,7 +72,6 @@ type AssemblyConfig struct {
 	SkillsManager   core.SkillsManager
 	PluginsManager  core.PluginsManager
 	HooksEngine     core.HooksEngine
-	ExecService     core.ExecService
 	RolloutRecorder core.RolloutRecorder
 
 	// McpGateway, when set, exposes the connected MCP tools for the deterministic
@@ -165,7 +164,6 @@ func Assemble(cfg AssemblyConfig) (*Assembly, error) {
 			PluginsManager:  cfg.PluginsManager,
 			HooksEngine:     cfg.HooksEngine,
 			ModelsManager:   models,
-			ExecService:     cfg.ExecService,
 			RolloutRecorder: cfg.RolloutRecorder,
 		}, nil
 	}

@@ -10,6 +10,7 @@ import (
 	"github.com/sqlrush/codexgo/internal/appserver"
 	"github.com/sqlrush/codexgo/internal/config"
 	"github.com/sqlrush/codexgo/internal/core"
+	"github.com/sqlrush/codexgo/internal/core/localexec"
 	"github.com/sqlrush/codexgo/internal/ext/goal"
 	"github.com/sqlrush/codexgo/internal/modelproviderinfo"
 	"github.com/sqlrush/codexgo/internal/modelsmanager"
@@ -300,8 +301,11 @@ func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultMode
 		// exec_command/write_stdin PTY pair that codex advertises by default.
 		ToolRouterFactory: func(threadID protocol.ThreadID) (core.ToolRouter, error) {
 			deps := core.BuiltinToolDeps{
-				Exec:        newLocalExecService(),
-				UnifiedExec: unifiedexec.NewExecutor(nil),
+				ShellTools: localexec.ShellExecutors(localexec.Deps{
+					Exec:        newLocalExecService(),
+					UnifiedExec: unifiedexec.NewExecutor(nil),
+				}),
+				ApplyPatch: localexec.NewApplyPatchExecutor(nil),
 				// request_user_input is advertised by default (codex's
 				// experimental_request_user_input_enabled). Headless exec has no
 				// interactive client, so calls resolve as cancelled; the TUI /
