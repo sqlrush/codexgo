@@ -73,7 +73,7 @@ guardian 实现、agent_jobs/goals 重建、本地文件形态的 thread-store �
 
 ## 实施 changelog（approve 后追加，不改上文）
 
-### 2026-08-16 D0.9 缝合落地（8 个 commit：de9d73e…4db8960）
+### 2026-08-16 D0.9 缝合落地（8 个 commit：8f0527a…bffb7cc）
 
 实际子包名与决策点 2 的预估不同（按各包既有结构就近落位），逐项：
 

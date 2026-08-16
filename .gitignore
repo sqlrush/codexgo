@@ -31,3 +31,6 @@ go.work.sum
 prd/
 /codex
 reference-codex-0147/
+
+# parity reference binaries (downloaded locally, never committed)
+/.parity-bin/
