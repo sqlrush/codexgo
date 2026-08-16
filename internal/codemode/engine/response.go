@@ -5,7 +5,7 @@
 // The reference implementation embeds a V8 isolate. This port uses the pure-Go
 // goja engine instead. JavaScript-feature differences between goja and V8 are
 // documented in deviations.go.
-package codemode
+package engine
 
 import (
 	"encoding/json"

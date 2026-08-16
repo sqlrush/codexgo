@@ -1,4 +1,4 @@
-package codemode
+package engine
 
 // This file documents the JavaScript-feature and runtime-architecture
 // differences between this Go port (which embeds the pure-Go goja engine) and

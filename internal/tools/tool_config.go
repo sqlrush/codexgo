@@ -4,7 +4,7 @@ import (
 	"github.com/sqlrush/codexgo/internal/features"
 	"github.com/sqlrush/codexgo/internal/modelsmanager"
 	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/pty"
+	"github.com/sqlrush/codexgo/internal/ptycap"
 )
 
 // This file ports the shell-tool selection helpers from codex's
@@ -86,7 +86,7 @@ func ShellTypeForModelAndFeatures(modelInfo *modelsmanager.ModelInfo, f *feature
 	case f.Enabled(features.FeatureShellZshFork):
 		return modelsmanager.ConfigShellToolTypeShellCommand
 	case unifiedExecEnabled:
-		if pty.ConPTYSupported() {
+		if ptycap.ConPTYSupported() {
 			return modelsmanager.ConfigShellToolTypeUnifiedExec
 		}
 		return modelsmanager.ConfigShellToolTypeShellCommand

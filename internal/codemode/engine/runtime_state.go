@@ -1,4 +1,4 @@
-package codemode
+package engine
 
 import (
 	"fmt"
@@ -6,6 +6,8 @@ import (
 	"sync"
 
 	"github.com/dop251/goja"
+
+	"github.com/sqlrush/codexgo/internal/codemode"
 )
 
 // runtimeState mirrors codex's `RuntimeState`. It owns the per-cell mutable
@@ -26,7 +28,7 @@ type runtimeState struct {
 	storedValues      map[string]any
 	storedValueWrites map[string]any
 
-	enabledTools []EnabledToolMetadata
+	enabledTools []codemode.EnabledToolMetadata
 
 	nextToolCallID uint64
 	nextTimeoutID  uint64
@@ -67,7 +69,7 @@ func newRuntimeState(
 	eventCh chan<- runtimeEvent,
 	timeoutFired chan<- runtimeCommand,
 	storedValues map[string]any,
-	enabledTools []EnabledToolMetadata,
+	enabledTools []codemode.EnabledToolMetadata,
 	toolCallID string,
 ) *runtimeState {
 	clone := make(map[string]any, len(storedValues))

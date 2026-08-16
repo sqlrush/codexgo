@@ -1,15 +1,17 @@
-package codemode
+package engine
 
 import (
+	"github.com/sqlrush/codexgo/internal/codemode"
 	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
-// Public tool names and runtime defaults, mirroring codex.
+// Public tool names live in the codemode package (shared with the tool
+// description builders); runtime defaults mirror codex.
 const (
 	// PublicToolName is the name of the exec tool.
-	PublicToolName = "exec"
+	PublicToolName = codemode.PublicToolName
 	// WaitToolName is the name of the wait tool.
-	WaitToolName = "wait"
+	WaitToolName = codemode.WaitToolName
 
 	// DefaultExecYieldTimeMS is the default exec yield window.
 	DefaultExecYieldTimeMS uint64 = 10_000
@@ -25,7 +27,7 @@ const exitSentinel = "__codex_code_mode_exit__"
 // ExecuteRequest mirrors codex's `ExecuteRequest`.
 type ExecuteRequest struct {
 	ToolCallID      string
-	EnabledTools    []ToolDefinition
+	EnabledTools    []codemode.ToolDefinition
 	Source          string
 	YieldTimeMS     *uint64
 	MaxOutputTokens *int
@@ -140,7 +142,7 @@ type CodeModeNestedToolCall struct {
 	CellID            CellID
 	RuntimeToolCallID string
 	ToolName          protocol.ToolName
-	ToolKind          CodeModeToolKind
+	ToolKind          codemode.CodeModeToolKind
 	// Input is the decoded JSON argument, or nil when the JS caller passed none.
 	Input any
 }

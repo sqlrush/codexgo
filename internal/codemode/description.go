@@ -16,6 +16,14 @@ const maxJSSafeInteger uint64 = (uint64(1) << 53) - 1
 // CodeModePragmaPrefix is the first-line pragma marker for exec source.
 const CodeModePragmaPrefix = "// @exec:"
 
+// Public tool names, mirroring codex.
+const (
+	// PublicToolName is the name of the exec tool.
+	PublicToolName = "exec"
+	// WaitToolName is the name of the wait tool.
+	WaitToolName = "wait"
+)
+
 const deferredNestedToolsGuidance = `Some nested MCP/app tools may be omitted from this description. They are still available on the global ` + "`tools`" + ` object and listed in ` + "`ALL_TOOLS`" + `.
 To find one, filter ` + "`ALL_TOOLS`" + ` by ` + "`name`" + ` and ` + "`description`" + `.`
 

@@ -1,9 +1,11 @@
-package codemode
+package engine
 
 import (
 	"fmt"
 
 	"github.com/dop251/goja"
+
+	"github.com/sqlrush/codexgo/internal/codemode"
 )
 
 // runtimeHandle is the host-facing channel bundle returned by spawnRuntime,
@@ -19,7 +21,7 @@ type runtimeHandle struct {
 // runtimeConfig mirrors codex's `RuntimeConfig`.
 type runtimeConfig struct {
 	toolCallID   string
-	enabledTools []EnabledToolMetadata
+	enabledTools []codemode.EnabledToolMetadata
 	source       string
 	storedValues map[string]any
 }
@@ -42,9 +44,9 @@ func spawnRuntime(
 	commandCh := make(chan runtimeCommand, 1024)
 	controlCh := make(chan runtimeControlCommand, 16)
 
-	enabled := make([]EnabledToolMetadata, 0, len(request.EnabledTools))
+	enabled := make([]codemode.EnabledToolMetadata, 0, len(request.EnabledTools))
 	for _, tool := range request.EnabledTools {
-		enabled = append(enabled, EnabledToolMetadataOf(tool))
+		enabled = append(enabled, codemode.EnabledToolMetadataOf(tool))
 	}
 	config := runtimeConfig{
 		toolCallID:   request.ToolCallID,

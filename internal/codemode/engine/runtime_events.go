@@ -1,6 +1,7 @@
-package codemode
+package engine
 
 import (
+	"github.com/sqlrush/codexgo/internal/codemode"
 	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
@@ -77,7 +78,7 @@ type runtimeEvent struct {
 	// ToolCall payload (ToolCall).
 	ID       string
 	ToolName protocol.ToolName
-	ToolKind CodeModeToolKind
+	ToolKind codemode.CodeModeToolKind
 	Input    any
 	// Notify payload (Notify).
 	CallID string

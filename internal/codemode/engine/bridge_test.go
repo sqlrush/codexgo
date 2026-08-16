@@ -1,10 +1,11 @@
-package codemode
+package engine
 
 import (
 	"fmt"
 	"testing"
 
 	"github.com/dop251/goja"
+	"github.com/sqlrush/codexgo/internal/codemode"
 	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
@@ -32,7 +33,7 @@ func (f *fakeToolInvoker) invoke(rt *goja.Runtime, toolName string, arg goja.Val
 	f.calls = append(f.calls, CodeModeNestedToolCall{
 		RuntimeToolCallID: fmt.Sprintf("call-%d", len(f.calls)),
 		ToolName:          protocol.PlainToolName(toolName),
-		ToolKind:          CodeModeToolKindFunction,
+		ToolKind:          codemode.CodeModeToolKindFunction,
 		Input:             decoded,
 	})
 	if msg, ok := f.errors[toolName]; ok {
@@ -63,7 +64,7 @@ func installTools(t *testing.T, rt *goja.Runtime, invoker *fakeToolInvoker, tool
 			}
 			return result
 		}
-		if err := tools.Set(NormalizeCodeModeIdentifier(name), fn); err != nil {
+		if err := tools.Set(codemode.NormalizeCodeModeIdentifier(name), fn); err != nil {
 			t.Fatalf("set tool %q: %v", name, err)
 		}
 	}

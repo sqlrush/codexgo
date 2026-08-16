@@ -9,11 +9,12 @@ import (
 	"sync"
 
 	creackpty "github.com/creack/pty"
+
+	"github.com/sqlrush/codexgo/internal/ptycap"
 )
 
-// ConPTYSupported reports whether a console PTY is available. On Unix this is
-// always true. Mirrors conpty_supported.
-func ConPTYSupported() bool { return true }
+// ConPTYSupported reports whether a console PTY is available; see ptycap.
+func ConPTYSupported() bool { return ptycap.ConPTYSupported() }
 
 // SpawnPTY spawns a process attached to a pseudo-terminal, returning a handle
 // for stdin, combined output (delivered on Stdout; Stderr is closed empty since

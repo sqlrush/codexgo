@@ -1,9 +1,11 @@
-package codemode
+package engine
 
 import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/sqlrush/codexgo/internal/codemode"
 )
 
 // TestNestedToolCallEndToEnd drives the full exec -> nested tool -> response ->
@@ -18,7 +20,7 @@ func TestNestedToolCallEndToEnd(t *testing.T) {
 
 	req := ExecuteRequest{
 		ToolCallID:   "call_1",
-		EnabledTools: []ToolDefinition{plainTool("get_profile")},
+		EnabledTools: []codemode.ToolDefinition{plainTool("get_profile")},
 		Source: `
 const profile = await tools.get_profile({ userId: 42 });
 text(profile.name + ":" + profile.id);
@@ -62,7 +64,7 @@ func TestNestedToolCallError(t *testing.T) {
 
 	req := ExecuteRequest{
 		ToolCallID:   "call_1",
-		EnabledTools: []ToolDefinition{plainTool("explode")},
+		EnabledTools: []codemode.ToolDefinition{plainTool("explode")},
 		Source: `
 let caught = "none";
 try { await tools.explode({}); } catch (e) { caught = String(e); }
@@ -84,7 +86,7 @@ func TestNestedToolCallsChained(t *testing.T) {
 
 	req := ExecuteRequest{
 		ToolCallID:   "call_1",
-		EnabledTools: []ToolDefinition{plainTool("step")},
+		EnabledTools: []codemode.ToolDefinition{plainTool("step")},
 		Source: `
 let total = 0;
 for (let i = 0; i < 3; i++) {
@@ -123,7 +125,7 @@ func TestNestedToolCallsParallel(t *testing.T) {
 
 	req := ExecuteRequest{
 		ToolCallID:   "call_1",
-		EnabledTools: []ToolDefinition{plainTool("echo")},
+		EnabledTools: []codemode.ToolDefinition{plainTool("echo")},
 		Source: `
 const results = await Promise.all([
   tools.echo({ n: 1 }),
@@ -186,7 +188,7 @@ func TestNoopDelegateNestedToolCellTerminates(t *testing.T) {
 
 	req := ExecuteRequest{
 		ToolCallID:   "call_1",
-		EnabledTools: []ToolDefinition{plainTool("anything")},
+		EnabledTools: []codemode.ToolDefinition{plainTool("anything")},
 		Source:       `await tools.anything({});`,
 		YieldTimeMS:  u64(20),
 	}

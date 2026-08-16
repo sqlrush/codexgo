@@ -5,11 +5,12 @@ package pty
 import (
 	"context"
 	"fmt"
+
+	"github.com/sqlrush/codexgo/internal/ptycap"
 )
 
-// ConPTYSupported reports whether a console PTY is available. On platforms
-// without PTY support in this build it returns false.
-func ConPTYSupported() bool { return false }
+// ConPTYSupported reports whether a console PTY is available; see ptycap.
+func ConPTYSupported() bool { return ptycap.ConPTYSupported() }
 
 // SpawnPTY is unsupported on non-Unix platforms in this build. Mirrors the
 // platform split in the Rust crate (which uses ConPTY on Windows); codexgo only

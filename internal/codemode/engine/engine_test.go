@@ -1,4 +1,4 @@
-package codemode
+package engine
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sqlrush/codexgo/internal/codemode"
 	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
@@ -362,10 +363,10 @@ func derefStr(s *string) string {
 }
 
 // plainTool is a small constructor for a function-kind nested tool definition.
-func plainTool(name string) ToolDefinition {
-	return ToolDefinition{
+func plainTool(name string) codemode.ToolDefinition {
+	return codemode.ToolDefinition{
 		Name:     name,
 		ToolName: protocol.PlainToolName(name),
-		Kind:     CodeModeToolKindFunction,
+		Kind:     codemode.CodeModeToolKindFunction,
 	}
 }
