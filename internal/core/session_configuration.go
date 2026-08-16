@@ -32,6 +32,10 @@ type SessionConfiguration struct {
 	// turn (model-provider/src/provider.rs ProviderCapabilities).
 	ProviderCapabilities ProviderCapabilities
 
+	// StreamMaxRetries is the provider's reconnect budget for a dropped model
+	// stream (model-provider-info stream_max_retries); nil = default 5.
+	StreamMaxRetries *uint64
+
 	// CollaborationMode bundles the model + reasoning effort + developer
 	// instructions for the turn.
 	CollaborationMode protocol.CollaborationMode

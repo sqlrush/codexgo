@@ -94,10 +94,10 @@ func buildReasoning(info modelsmanager.ModelInfo, effort *protocol.ReasoningEffo
 	}
 	r := &api.Reasoning{}
 	if effort != nil {
-		e := *effort
+		e := effort.ForRequest()
 		r.Effort = &e
 	} else if info.DefaultReasoningLevel != nil {
-		e := *info.DefaultReasoningLevel
+		e := info.DefaultReasoningLevel.ForRequest()
 		r.Effort = &e
 	}
 	if summary != protocol.ReasoningSummaryNone {

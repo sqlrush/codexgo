@@ -169,19 +169,51 @@ func userInputToResponseItem(content []protocol.UserInput) (protocol.ResponseIte
 	}, true
 }
 
-// runSamplingRequest issues one model request and processes its event stream,
+// ErrorAwareModelClient is implemented by model clients that can report
+// mid-stream failures (the api layer's terminal stream error) instead of only
+// closing the event channel. The sampling loop prefers it so a dropped stream
+// is classified and retried like upstream; plain [ModelClient] implementations
+// (mocks, adapters) still work through Stream, where an early close is treated
+// as a disconnect.
+type ErrorAwareModelClient interface {
+	StreamWithErrors(ctx context.Context, prompt Prompt) (<-chan StreamItem, error)
+}
+
+// runSamplingRequest issues model requests until one completes, retrying
+// retryable stream failures with backoff up to the turn's stream_max_retries.
+// Mirrors the Rust `run_sampling_request` loop + `responses_retry.rs`
+// (spec 50 D0.5); the prompt input is rebuilt from history on every attempt.
+//
+// STUB: plan-mode streaming, citation handling, server model warnings, model
+// verifications, and the turn-diff tracker are deferred.
+func runSamplingRequest(ctx context.Context, sess *Session, tc *TurnContext) (samplingResult, error) {
+	maxRetries := streamMaxRetries(tc)
+	var retries uint64
+	for {
+		res, err := trySamplingRequest(ctx, sess, tc)
+		if err == nil {
+			return res, nil
+		}
+		retryable, delay := samplingRetryable(err)
+		if !retryable {
+			return samplingResult{}, err
+		}
+		if rerr := handleRetryableSamplingError(ctx, sess, tc, &retries, maxRetries, err, delay); rerr != nil {
+			return samplingResult{}, rerr
+		}
+	}
+}
+
+// trySamplingRequest issues one model request and processes its event stream,
 // emitting deltas/turn-item events, dispatching tool calls, and folding outputs
 // back into history. It returns whether the model needs a follow-up request and
-// the last assistant message observed. Mirrors the Rust `run_sampling_request`
-// + `try_run_sampling_request` (reduced: no retry loop, plan-mode parsers, or
-// extension contributors).
-//
-// STUB: stream retry/backoff, plan-mode streaming, citation handling, server
-// model warnings, model verifications, and the turn-diff tracker are deferred.
-func runSamplingRequest(ctx context.Context, sess *Session, tc *TurnContext) (samplingResult, error) {
+// the last assistant message observed. Mirrors the Rust
+// `try_run_sampling_request` (reduced: no plan-mode parsers or extension
+// contributors).
+func trySamplingRequest(ctx context.Context, sess *Session, tc *TurnContext) (samplingResult, error) {
 	prompt := buildPrompt(sess, tc)
 
-	stream, err := sess.services.ModelClient.Stream(ctx, prompt)
+	stream, err := openSamplingStream(ctx, sess.services.ModelClient, prompt)
 	if err != nil {
 		return samplingResult{}, fmt.Errorf("core: model stream failed: %w", err)
 	}
@@ -199,11 +231,15 @@ func runSamplingRequest(ctx context.Context, sess *Session, tc *TurnContext) (sa
 		select {
 		case <-ctx.Done():
 			return samplingResult{}, ErrTurnAborted
-		case ev, ok := <-stream:
+		case item, ok := <-stream:
 			if !ok {
-				// Stream closed without a Completed event.
-				return samplingResult{}, fmt.Errorf("core: stream closed before response.completed")
+				// Stream closed without a Completed event: a disconnect (retryable).
+				return samplingResult{}, ErrStreamDisconnected
 			}
+			if item.Err != nil {
+				return samplingResult{}, item.Err
+			}
+			ev := *item.Event
 			done, ferr := handleStreamEvent(ctx, sess, tc, ev, &streamState{
 				needsFollowUp:       &needsFollowUp,
 				lastAgentMessage:    &lastAgentMessage,
@@ -310,4 +346,30 @@ func handleStreamEvent(ctx context.Context, sess *Session, tc *TurnContext, ev a
 		// catalog refresh, tool-argument diff streaming) is deferred.
 		return false, nil
 	}
+}
+
+// openSamplingStream opens the model stream, preferring the error-aware
+// variant when the client offers it; otherwise it adapts the plain event
+// channel (an early close surfaces as [ErrStreamDisconnected] in the caller).
+func openSamplingStream(ctx context.Context, mc ModelClient, prompt Prompt) (<-chan StreamItem, error) {
+	if aware, ok := mc.(ErrorAwareModelClient); ok {
+		return aware.StreamWithErrors(ctx, prompt)
+	}
+	events, err := mc.Stream(ctx, prompt)
+	if err != nil {
+		return nil, err
+	}
+	out := make(chan StreamItem, streamForwardBuffer)
+	go func() {
+		defer close(out)
+		for ev := range events {
+			ev := ev
+			select {
+			case out <- StreamItem{Event: &ev}:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return out, nil
 }

@@ -54,6 +54,10 @@ type TurnContext struct {
 	// [turnProviderCapabilities]. Mirrors the Rust
 	// `turn_context.provider.capabilities()`.
 	ProviderCapabilities ProviderCapabilities
+	// StreamMaxRetries is the provider's reconnect budget for a dropped model
+	// stream (model-provider-info stream_max_retries); nil = default 5, capped
+	// at 100. Consumed by the sampling retry loop.
+	StreamMaxRetries *uint64
 	// ExperimentalRequestUserInput gates the request_user_input tool
 	// (config.experimental_request_user_input_enabled). Nil means the codex
 	// default (enabled); resolve through [turnRequestUserInputEnabled].

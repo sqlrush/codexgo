@@ -15,7 +15,22 @@ const (
 	ReasoningEffortMedium  ReasoningEffort = "medium"
 	ReasoningEffortHigh    ReasoningEffort = "high"
 	ReasoningEffortXHigh   ReasoningEffort = "xhigh"
+	// ReasoningEffortMax / ReasoningEffortUltra were added upstream in 0.147.
+	// Unknown values are carried verbatim (Rust `Custom(String)`) since the type
+	// is a string alias.
+	ReasoningEffortMax   ReasoningEffort = "max"
+	ReasoningEffortUltra ReasoningEffort = "ultra"
 )
+
+// ForRequest maps the configured effort to the value sent on the wire: 0.147
+// sends `max` for the `ultra` tier (`reasoning_effort_for_request`); every
+// other value passes through unchanged.
+func (e ReasoningEffort) ForRequest() ReasoningEffort {
+	if e == ReasoningEffortUltra {
+		return ReasoningEffortMax
+	}
+	return e
+}
 
 // InputModality is a user-input modality tag advertised by a model. Rust:
 // lowercase.
