@@ -11,30 +11,44 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/agentgraph"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/agentgraph"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // Factory returns a fresh, empty store and a cleanup function.
 type Factory func(t *testing.T) (agentgraph.AgentGraphStore, func())
 
+// ContextFactory returns the context every store call in a test is made with.
+// Stores that need per-call context values (a tenant, a deadline) supply one;
+// RunSuite defaults to context.Background().
+type ContextFactory func(t *testing.T) context.Context
+
 // RunSuite runs every behavioural test against stores produced by newStore.
 func RunSuite(t *testing.T, newStore Factory) {
 	t.Helper()
+	RunSuiteWithContext(t, newStore, func(*testing.T) context.Context { return context.Background() })
+}
+
+// RunSuiteWithContext is RunSuite with a caller-supplied context per test.
+func RunSuiteWithContext(t *testing.T, newStore Factory, newCtx ContextFactory) {
+	t.Helper()
+	if newCtx == nil {
+		t.Fatal("agentgraphtest: ContextFactory is required")
+	}
 	t.Run("UpsertAndListDirectChildrenWithStatusFilters", func(t *testing.T) {
-		testUpsertAndListDirectChildren(t, newStore)
+		testUpsertAndListDirectChildren(t, newStore, newCtx)
 	})
 	t.Run("UpsertReplacesParentAndStatus", func(t *testing.T) {
-		testUpsertReplacesParentAndStatus(t, newStore)
+		testUpsertReplacesParentAndStatus(t, newStore, newCtx)
 	})
 	t.Run("SetEdgeStatus", func(t *testing.T) {
-		testSetEdgeStatus(t, newStore)
+		testSetEdgeStatus(t, newStore, newCtx)
 	})
 	t.Run("SetEdgeStatusMissingChildIsNoOp", func(t *testing.T) {
-		testSetEdgeStatusMissingChildIsNoOp(t, newStore)
+		testSetEdgeStatusMissingChildIsNoOp(t, newStore, newCtx)
 	})
 	t.Run("ListDescendantsBreadthFirstWithStatusFilters", func(t *testing.T) {
-		testListDescendantsBreadthFirst(t, newStore)
+		testListDescendantsBreadthFirst(t, newStore, newCtx)
 	})
 }
 
@@ -65,8 +79,8 @@ func assertThreadIDs(t *testing.T, got, want []protocol.ThreadID) {
 	}
 }
 
-func testUpsertAndListDirectChildren(t *testing.T, newStore Factory) {
-	ctx := context.Background()
+func testUpsertAndListDirectChildren(t *testing.T, newStore Factory, newCtx ContextFactory) {
+	ctx := newCtx(t)
 	store, cleanup := newStore(t)
 	defer cleanup()
 
@@ -100,8 +114,8 @@ func testUpsertAndListDirectChildren(t *testing.T, newStore Factory) {
 	assertThreadIDs(t, closed, ids(3))
 }
 
-func testUpsertReplacesParentAndStatus(t *testing.T, newStore Factory) {
-	ctx := context.Background()
+func testUpsertReplacesParentAndStatus(t *testing.T, newStore Factory, newCtx ContextFactory) {
+	ctx := newCtx(t)
 	store, cleanup := newStore(t)
 	defer cleanup()
 
@@ -129,8 +143,8 @@ func testUpsertReplacesParentAndStatus(t *testing.T, newStore Factory) {
 	assertThreadIDs(t, newChildren, ids(3))
 }
 
-func testSetEdgeStatus(t *testing.T, newStore Factory) {
-	ctx := context.Background()
+func testSetEdgeStatus(t *testing.T, newStore Factory, newCtx ContextFactory) {
+	ctx := newCtx(t)
 	store, cleanup := newStore(t)
 	defer cleanup()
 
@@ -157,8 +171,8 @@ func testSetEdgeStatus(t *testing.T, newStore Factory) {
 	assertThreadIDs(t, closed, ids(11))
 }
 
-func testSetEdgeStatusMissingChildIsNoOp(t *testing.T, newStore Factory) {
-	ctx := context.Background()
+func testSetEdgeStatusMissingChildIsNoOp(t *testing.T, newStore Factory, newCtx ContextFactory) {
+	ctx := newCtx(t)
 	store, cleanup := newStore(t)
 	defer cleanup()
 
@@ -167,8 +181,8 @@ func testSetEdgeStatusMissingChildIsNoOp(t *testing.T, newStore Factory) {
 	}
 }
 
-func testListDescendantsBreadthFirst(t *testing.T, newStore Factory) {
-	ctx := context.Background()
+func testListDescendantsBreadthFirst(t *testing.T, newStore Factory, newCtx ContextFactory) {
+	ctx := newCtx(t)
 	store, cleanup := newStore(t)
 	defer cleanup()
 

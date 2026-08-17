@@ -17,9 +17,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/rollout"
-	"github.com/sqlrush/codexgo/internal/threadstore"
+	"github.com/sqlrush/codexgo/pkg/protocol"
+	"github.com/sqlrush/codexgo/pkg/rollout"
+	"github.com/sqlrush/codexgo/pkg/threadstore"
 )
 
 // Config describes how to build a store under test.
@@ -48,6 +48,10 @@ type Config struct {
 	// (the in-memory debug store does not). When true the suite asserts the
 	// archive/unarchive round trip on ArchivedAt.
 	TracksArchivedAt bool
+	// Context returns the context every store call in a test is made with.
+	// Optional; defaults to context.Background(). Stores that need per-call
+	// context values (a tenant, a deadline) supply one.
+	Context func(t *testing.T) context.Context
 }
 
 // Run runs the contract suite.
@@ -58,6 +62,9 @@ func Run(t *testing.T, cfg Config) {
 	}
 	if cfg.NewCreateParams == nil {
 		cfg.NewCreateParams = DefaultCreateParams
+	}
+	if cfg.Context == nil {
+		cfg.Context = func(*testing.T) context.Context { return context.Background() }
 	}
 	s := &suite{cfg: cfg}
 	t.Run("CreateReadRoundTrip", s.testCreateReadRoundTrip)
@@ -124,7 +131,7 @@ type suite struct {
 func (s *suite) create(t *testing.T, store threadstore.ThreadStore, n int) protocol.ThreadID {
 	t.Helper()
 	id := ThreadID(n)
-	if err := store.CreateThread(context.Background(), s.cfg.NewCreateParams(t, id)); err != nil {
+	if err := store.CreateThread(s.cfg.Context(t), s.cfg.NewCreateParams(t, id)); err != nil {
 		t.Fatalf("CreateThread(%d): %v", n, err)
 	}
 	return id
@@ -138,7 +145,7 @@ func (s *suite) create(t *testing.T, store threadstore.ThreadStore, n int) proto
 // that have one).
 func (s *suite) createLive(t *testing.T, store threadstore.ThreadStore, n int) protocol.ThreadID {
 	t.Helper()
-	ctx := context.Background()
+	ctx := s.cfg.Context(t)
 	id := s.create(t, store, n)
 	if err := store.AppendItems(ctx, threadstore.AppendThreadItemsParams{ThreadID: id, Items: []rollout.RolloutItem{UserMessage("hello")}}); err != nil {
 		t.Fatalf("AppendItems(%d): %v", n, err)
@@ -180,7 +187,7 @@ func isKind(err error, kind threadstore.ErrorKind) bool {
 }
 
 func (s *suite) testCreateReadRoundTrip(t *testing.T) {
-	ctx := context.Background()
+	ctx := s.cfg.Context(t)
 	store := s.cfg.NewStore(t)
 	parent := s.createLive(t, store, 1)
 	id := ThreadID(2)
@@ -230,7 +237,7 @@ func (s *suite) testCreateReadRoundTrip(t *testing.T) {
 }
 
 func (s *suite) testAppendLoadOrder(t *testing.T) {
-	ctx := context.Background()
+	ctx := s.cfg.Context(t)
 	store := s.cfg.NewStore(t)
 	id := s.create(t, store, 3)
 	items := []rollout.RolloutItem{UserMessage("first"), AssistantMessage("second"), UserMessage("third")}
@@ -265,7 +272,7 @@ func (s *suite) testAppendLoadOrder(t *testing.T) {
 }
 
 func (s *suite) testReadUnknown(t *testing.T) {
-	ctx := context.Background()
+	ctx := s.cfg.Context(t)
 	store := s.cfg.NewStore(t)
 	unknown := ThreadID(999)
 	_, err := store.ReadThread(ctx, threadstore.ReadThreadParams{ThreadID: unknown})
@@ -275,7 +282,7 @@ func (s *suite) testReadUnknown(t *testing.T) {
 }
 
 func (s *suite) testLifecycleOps(t *testing.T) {
-	ctx := context.Background()
+	ctx := s.cfg.Context(t)
 	store := s.cfg.NewStore(t)
 	id := s.create(t, store, 4)
 	if err := store.AppendItems(ctx, threadstore.AppendThreadItemsParams{ThreadID: id, Items: []rollout.RolloutItem{UserMessage("x")}}); err != nil {
@@ -311,7 +318,7 @@ func (s *suite) testLifecycleOps(t *testing.T) {
 }
 
 func (s *suite) testUpdateMetadataPatch(t *testing.T) {
-	ctx := context.Background()
+	ctx := s.cfg.Context(t)
 	store := s.cfg.NewStore(t)
 	id := s.create(t, store, 5)
 	name := "renamed"
@@ -367,7 +374,7 @@ func (s *suite) testUpdateMetadataPatch(t *testing.T) {
 }
 
 func (s *suite) testListThreads(t *testing.T) {
-	ctx := context.Background()
+	ctx := s.cfg.Context(t)
 	store := s.cfg.NewStore(t)
 	a := s.createLive(t, store, 6)
 	b := s.createLive(t, store, 7)
@@ -385,7 +392,7 @@ func (s *suite) testListThreads(t *testing.T) {
 }
 
 func (s *suite) testArchiveUnarchive(t *testing.T) {
-	ctx := context.Background()
+	ctx := s.cfg.Context(t)
 	store := s.cfg.NewStore(t)
 	id := s.createLive(t, store, 8)
 	if err := store.ArchiveThread(ctx, threadstore.ArchiveThreadParams{ThreadID: id}); err != nil {
@@ -413,7 +420,7 @@ func (s *suite) testArchiveUnarchive(t *testing.T) {
 }
 
 func (s *suite) testArchiveThreads(t *testing.T) {
-	ctx := context.Background()
+	ctx := s.cfg.Context(t)
 	store := s.cfg.NewStore(t)
 	a := s.createLive(t, store, 9)
 	b := s.createLive(t, store, 10)
@@ -427,7 +434,7 @@ func (s *suite) testArchiveThreads(t *testing.T) {
 }
 
 func (s *suite) testDelete(t *testing.T) {
-	ctx := context.Background()
+	ctx := s.cfg.Context(t)
 	store := s.cfg.NewStore(t)
 	id := s.createLive(t, store, 11)
 	if !s.cfg.SupportsDelete {
@@ -456,7 +463,7 @@ func (s *suite) testDelete(t *testing.T) {
 }
 
 func (s *suite) testOptionalOps(t *testing.T) {
-	ctx := context.Background()
+	ctx := s.cfg.Context(t)
 	store := s.cfg.NewStore(t)
 	id := s.create(t, store, 13)
 	if !store.SupportsThreadSections() {
