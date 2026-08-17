@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/rollout"
-	"github.com/sqlrush/codexgo/internal/threadstore"
+	"github.com/sqlrush/codexgo/pkg/protocol"
+	"github.com/sqlrush/codexgo/pkg/rollout"
+	"github.com/sqlrush/codexgo/pkg/threadstore"
 )
 
 // ----------------------------------------------------------------------------
@@ -770,5 +770,24 @@ func TestUserMessagePositionsInRollout(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("positions[%d] = %d, want %d", i, got[i], want[i])
 		}
+	}
+}
+
+// TestStartThreadWithHostThreadID: StartThreadOptions.ThreadID pins a brand-new
+// thread's identity (hosts that pre-create the store row); resumed history keeps
+// its own id.
+func TestStartThreadWithHostThreadID(t *testing.T) {
+	m := newManager(t, &stubStore{}, nil)
+	want := protocol.NewThreadID("00000000-0000-4000-8000-0000000000ff")
+	nt, err := m.StartThreadWithOptions(context.Background(), StartThreadOptions{
+		Configuration: testConfig(),
+		ThreadID:      &want,
+	})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	t.Cleanup(func() { _ = nt.Thread.ShutdownAndWait(context.Background()) })
+	if nt.ThreadID.String() != want.String() {
+		t.Fatalf("thread id = %s, want %s", nt.ThreadID, want)
 	}
 }

@@ -138,3 +138,9 @@ ThreadManager 仍不调用 `store.CreateThread`（port 现状）：宿主先建�
 `newSubmissionID` 原为 `sub-<计数>`（port 自注 STUB："swap for a real UUIDv7 generator when one lands"）。
 turn id 就是 submission id，上游用 UUID；airush 的 `agent_rollout_events.turn_id` / `agent_thread_queue.admitted_turn_id`
 是 uuid 列。现用 D0.1 的 `protocol.NewUUIDV7()`，删掉进程内计数器；无用例依赖前缀。
+
+### 2026-08-16 D0.12 补：`StartThreadOptions.ThreadID`（宿主指定新线程 id）
+
+宿主先在自己的 store 建线程行、首轮才 spawn 会话（airush：pgstore CreateThread → SubmitTurn 时 spawn）时，
+需要 ThreadManager 用同一个 id：新增 `StartThreadOptions.ThreadID *protocol.ThreadID`（仅对新线程生效，
+resume 仍取历史里的 id）；不设则照旧走 `ThreadIDFactory`。用例 `TestStartThreadWithHostThreadID`。

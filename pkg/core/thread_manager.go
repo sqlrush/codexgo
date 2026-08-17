@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/rollout"
-	"github.com/sqlrush/codexgo/internal/threadstore"
+	"github.com/sqlrush/codexgo/pkg/protocol"
+	"github.com/sqlrush/codexgo/pkg/rollout"
+	"github.com/sqlrush/codexgo/pkg/threadstore"
 )
 
 // ErrThreadNotFound is returned when a requested thread id is not tracked by the
@@ -85,6 +85,12 @@ type StartThreadOptions struct {
 	DynamicTools []protocol.DynamicToolSpec
 	// PersistExtendedHistory selects extended vs. limited event persistence.
 	PersistExtendedHistory bool
+	// ThreadID, when set, is the id for a brand-new thread instead of one minted
+	// by the manager's ThreadIDFactory. Hosts that create the thread row in their
+	// store before the first turn (airush: pgstore CreateThread → later spawn)
+	// pass it so the session, its rollout and the row share one identity.
+	// Ignored for resumed history (the id comes from the history).
+	ThreadID *protocol.ThreadID
 }
 
 // NewThread is the result of a successful spawn: the live [CodexThread], its id,
@@ -429,6 +435,9 @@ func (m *ThreadManager) spawnThread(ctx context.Context, options StartThreadOpti
 	}
 
 	threadID, isResume := m.resolveThreadID(options.InitialHistory)
+	if !isResume && options.ThreadID != nil {
+		threadID = *options.ThreadID
+	}
 
 	source := m.sessionSource
 	if options.SessionSource != nil {
