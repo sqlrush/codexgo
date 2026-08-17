@@ -1,14 +1,8 @@
 package core
 
 import (
-	"sync/atomic"
-
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
-
-// submissionCounter backs newSubmissionID. It is process-global because ids must
-// be unique across all sessions in a process.
-var submissionCounter atomic.Uint64
 
 // runSubmissionLoop drains the submission queue and dispatches each op to its
 // handler, preserving FIFO ordering and submission_id/turn_id correlation. It is

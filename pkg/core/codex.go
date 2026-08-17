@@ -350,12 +350,10 @@ func (c *Codex) isClosed() bool {
 	}
 }
 
-// newSubmissionID generates a unique submission id. The Rust engine uses
-// UUIDv7; here we use a monotonic counter combined with a process-unique prefix.
-// STUB: swap for a real UUIDv7 generator when one lands in a shared util.
+// newSubmissionID generates a unique submission id: a UUIDv7 like the Rust
+// engine (turn ids are these ids; hosts store them in uuid columns).
 func newSubmissionID() string {
-	n := submissionCounter.Add(1)
-	return "sub-" + strconv.FormatUint(n, 10)
+	return protocol.NewUUIDV7()
 }
 
 // itoa formats a uint64 as a decimal string (small helper to avoid importing

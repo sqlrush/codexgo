@@ -132,3 +132,9 @@ airush 的事件溯源（spec-1.8 D2：PG 事件流是 SSOT，resume 靠回放�
 recorder 为 nil 即空操作，错误吞掉（上游同样 log-and-continue）。CLI 装配 recorder 仍为 nil，行为不变。
 ThreadManager 仍不调用 `store.CreateThread`（port 现状）：宿主先建线程行再 StartThread（airush pgstore 如此接）。
 用例：`rollout_persist_test.go`（过滤/事件策略/失败不影响会话/seed 不重写）。
+
+### 2026-08-16 D0.11 补：submission id 改 UUIDv7
+
+`newSubmissionID` 原为 `sub-<计数>`（port 自注 STUB："swap for a real UUIDv7 generator when one lands"）。
+turn id 就是 submission id，上游用 UUID；airush 的 `agent_rollout_events.turn_id` / `agent_thread_queue.admitted_turn_id`
+是 uuid 列。现用 D0.1 的 `protocol.NewUUIDV7()`，删掉进程内计数器；无用例依赖前缀。
