@@ -24,6 +24,9 @@ type turnInput struct {
 	ClientID *string
 	// ResponseItem, when non-nil, is a pre-built conversation item to inject.
 	ResponseItem *protocol.ResponseItem
+	// Communication, when non-nil, is an inter-agent message delivered from the
+	// mailbox (Rust `TurnInput::InterAgentCommunication`).
+	Communication *protocol.InterAgentCommunication
 }
 
 // samplingResult is the outcome of a single model sampling request. It mirrors
@@ -70,10 +73,21 @@ func runTurn(ctx context.Context, sess *Session, tc *TurnContext, input []turnIn
 	})
 
 	var lastAgentMessage *string
+	// Pending input (steered user messages, mailbox mail) is drained into
+	// history before building the next model request — except at the start of a
+	// turn that carried its own input, so that input is sampled first (Rust
+	// `can_drain_pending_input`).
+	canDrainPendingInput := len(input) == 0
+	inputQueue, _ := sess.queueState()
 	for {
 		// Honor cancellation before issuing the next request.
 		if ctx.Err() != nil {
 			return lastAgentMessage
+		}
+
+		if canDrainPendingInput {
+			pending, _ := inputQueue.GetPendingInput(sess.ActiveTurn())
+			recordTurnInput(sess, pending)
 		}
 
 		out, err := runSamplingRequest(ctx, sess, tc)
@@ -92,11 +106,14 @@ func runTurn(ctx context.Context, sess *Session, tc *TurnContext, input []turnIn
 			lastAgentMessage = out.LastAgentMessage
 		}
 
-		if !out.NeedsFollowUp {
+		// The model may need a follow-up (tool outputs to observe) or the user
+		// may have steered more input / mail may have arrived while it sampled;
+		// either continues the turn (Rust `needs_follow_up = model_needs_follow_up
+		// || has_pending_input`).
+		canDrainPendingInput = true
+		if !out.NeedsFollowUp && !inputQueue.HasPendingInput(sess.ActiveTurn()) {
 			return lastAgentMessage
 		}
-		// Otherwise loop: history already carries the tool outputs the model
-		// must observe on the next request.
 	}
 }
 
@@ -114,6 +131,8 @@ func recordTurnInput(sess *Session, input []turnInput) {
 			if item, ok := userInputToResponseItem(in.UserContent); ok {
 				items = append(items, item)
 			}
+		case in.Communication != nil:
+			items = append(items, interAgentCommunicationToResponseItem(*in.Communication))
 		}
 	}
 	if len(items) > 0 {
@@ -372,4 +391,19 @@ func openSamplingStream(ctx context.Context, mc ModelClient, prompt Prompt) (<-c
 		}
 	}()
 	return out, nil
+}
+
+// interAgentCommunicationToResponseItem renders mailbox mail as the model-input
+// item, mirroring `InterAgentCommunication::to_model_input_item` for plaintext
+// content: an agent_message from author to recipient carrying the text.
+func interAgentCommunicationToResponseItem(c protocol.InterAgentCommunication) protocol.ResponseItem {
+	return protocol.ResponseItem{
+		Type:      protocol.ResponseItemKindAgentMessage,
+		Author:    c.Author.String(),
+		Recipient: c.Recipient.String(),
+		AgentMessageContent: []protocol.AgentMessageInputContent{{
+			Type: protocol.AgentMessageInputContentKindInputText,
+			Text: c.Content,
+		}},
+	}
 }

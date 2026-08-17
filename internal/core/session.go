@@ -52,6 +52,14 @@ type Session struct {
 	// services holds the injected manager dependencies.
 	services SessionServices
 
+	// inputQueue is the session-scoped steer/mailbox input queue (D0.2) and
+	// admissions resolves SubmitUserMessage waiters once a user message is
+	// admitted (started or steered). Both are lazily created by queueState()
+	// so directly constructed test sessions work.
+	inputQueue *InputQueue
+	admissions *pendingUserMessageAdmissions
+	queueOnce  sync.Once
+
 	// txEvent is the outbound event-queue sender; events are correlated to
 	// submissions by their id.
 	txEvent chan<- protocol.Event

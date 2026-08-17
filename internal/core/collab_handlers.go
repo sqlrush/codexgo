@@ -782,12 +782,14 @@ func handleWaitAgent(ctx context.Context, control CollabControl, h *ToolHandlerC
 	// sub-agent failure is surfaced to the parent instead of an empty success.
 	emitCollabToolCallItem(h, protocol.CollabAgentToolWait, receivers, receiverAgents, protocol.CollabAgentToolCallStatusInProgress, nil, false)
 
-	statuses, werr := collectWaitStatuses(ctx, control, h, receivers, receiverAgents, timeoutMS)
+	statuses, steered, werr := collectWaitStatuses(ctx, control, h, receivers, receiverAgents, timeoutMS)
 	if werr != nil {
 		return nil, werr
 	}
 
-	timedOut := len(statuses) == 0
+	// An empty result is a timeout unless a steer interrupted the wait
+	// (0.147 WaitOutcome::Steered), which is neither a timeout nor a final status.
+	timedOut := len(statuses) == 0 && !steered
 	statusesByID := make(map[string]protocol.AgentStatus, len(statuses))
 	statusMap := make(map[string]protocol.AgentStatus, len(statuses))
 	for _, entry := range statuses {
@@ -841,7 +843,7 @@ func collectWaitStatuses(
 	receivers []protocol.ThreadID,
 	receiverAgents []protocol.CollabAgentRef,
 	timeoutMS int64,
-) ([]waitStatusEntry, error) {
+) (entries []waitStatusEntry, steered bool, err error) {
 	var subs []waitSubscription
 	var initialFinal []waitStatusEntry
 	defer func() {
@@ -877,21 +879,31 @@ func collectWaitStatuses(
 				},
 			})
 			emitCollabToolCallItem(h, protocol.CollabAgentToolWait, receivers, receiverAgents, protocol.WaitToolCallStatus(statuses), statuses, true)
-			return nil, collabAgentError(id, serr)
+			return nil, false, collabAgentError(id, serr)
 		}
 	}
 
 	if len(initialFinal) > 0 {
-		return initialFinal, nil
+		return initialFinal, false, nil
 	}
 
 	deadline := time.NewTimer(time.Duration(timeoutMS) * time.Millisecond)
 	defer deadline.Stop()
 
-	// Wait for the first target to reach a final status (or the deadline / ctx).
-	first, ok := waitFirstFinal(ctx, control, subs, deadline.C)
+	// A steer (user input for the waiting parent) interrupts the wait so the
+	// parent can react, mirroring the 0.147 `WaitOutcome::Steered` (spec 50
+	// D0.2). Subscribe before blocking; pending steer input ends the wait at once.
+	steerCh, pendingActivity, unsubscribeActivity := subscribeWaitActivity(h)
+	defer unsubscribeActivity()
+	if pendingActivity != nil && *pendingActivity == InputQueueActivitySteer {
+		return nil, true, nil
+	}
+
+	// Wait for the first target to reach a final status (or the deadline / ctx /
+	// a steer).
+	first, ok, steered := waitFirstFinal(ctx, control, subs, deadline.C, steerCh)
 	if !ok {
-		return nil, nil
+		return nil, steered, nil
 	}
 	results := []waitStatusEntry{first}
 	// Drain any other targets that have already become final without blocking.
@@ -903,32 +915,57 @@ func collectWaitStatuses(
 			results = append(results, entry)
 		}
 	}
-	return results, nil
+	return results, false, nil
 }
 
 // waitFirstFinal blocks until one subscription reports a final status, the
-// deadline elapses, or ctx is cancelled. It returns (entry, true) on a final
-// status and (zero, false) otherwise.
+// deadline elapses, ctx is cancelled, or a steer arrives. It returns (entry,
+// true, false) on a final status, (zero, false, true) on a steer and (zero,
+// false, false) otherwise.
 func waitFirstFinal(
 	ctx context.Context,
 	control CollabControl,
 	subs []waitSubscription,
 	deadline <-chan time.Time,
-) (waitStatusEntry, bool) {
+	activity <-chan InputQueueActivity,
+) (entry waitStatusEntry, ok bool, steered bool) {
 	resultCh := make(chan waitStatusEntry, len(subs))
 	stop := make(chan struct{})
 	defer close(stop)
 	for _, s := range subs {
 		go watchUntilFinal(ctx, control, s.id, s.ch, resultCh, stop)
 	}
-	select {
-	case entry := <-resultCh:
-		return entry, true
-	case <-deadline:
-		return waitStatusEntry{}, false
-	case <-ctx.Done():
-		return waitStatusEntry{}, false
+	for {
+		select {
+		case entry := <-resultCh:
+			return entry, true, false
+		case <-deadline:
+			return waitStatusEntry{}, false, false
+		case <-ctx.Done():
+			return waitStatusEntry{}, false, false
+		case a, open := <-activity:
+			if open && a == InputQueueActivitySteer {
+				return waitStatusEntry{}, false, true
+			}
+			if !open {
+				activity = nil
+			}
+			// Mailbox activity does not end a v1 wait.
+		}
 	}
+}
+
+// subscribeWaitActivity subscribes the waiting parent to its session's input
+// queue; a nil session yields a never-firing channel.
+func subscribeWaitActivity(h *ToolHandlerContext) (<-chan InputQueueActivity, *InputQueueActivity, func()) {
+	if h == nil || h.Session == nil {
+		return nil, nil, func() {}
+	}
+	var turnState *TurnState
+	if at := h.Session.ActiveTurn(); at != nil {
+		turnState = at.State
+	}
+	return h.Session.InputQueue().SubscribeActivity(turnState)
 }
 
 // watchUntilFinal forwards the first final status observed on ch (or the latest

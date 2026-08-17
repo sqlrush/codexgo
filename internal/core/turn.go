@@ -115,6 +115,11 @@ type TurnState struct {
 
 	mailboxPhase MailboxDeliveryPhase
 
+	// pendingInput is the input steered into this turn (and mail folded into
+	// it) that the next sampling request must consume. Mirrors the Rust
+	// `TurnInputQueue`.
+	pendingInput []turnInput
+
 	// toolCalls counts tool invocations made during this turn.
 	toolCalls uint64
 	// tokenUsageAtTurnStart snapshots the running total when the turn began.
@@ -213,4 +218,73 @@ func (s *TurnState) AcceptsMailboxDeliveryForCurrentTurn() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.mailboxPhase == MailboxCurrentTurn
+}
+
+// AcceptMailboxDeliveryForCurrentTurn re-opens mailbox delivery for this turn
+// (a steer means the turn will sample again, so queued mail can ride along).
+func (s *TurnState) AcceptMailboxDeliveryForCurrentTurn() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.mailboxPhase = MailboxCurrentTurn
+}
+
+// ExtendPendingInput appends input to the turn's pending input.
+func (s *TurnState) ExtendPendingInput(input []turnInput) {
+	if len(input) == 0 {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pendingInput = append(s.pendingInput, input...)
+}
+
+// TakePendingInput removes and returns the pending input.
+func (s *TurnState) TakePendingInput() []turnInput {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := s.pendingInput
+	s.pendingInput = nil
+	return out
+}
+
+// HasPendingInput reports whether any input is pending.
+func (s *TurnState) HasPendingInput() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.pendingInput) > 0
+}
+
+// HasPendingUserInput reports whether steered USER input is pending (the Rust
+// `TurnInputQueue::has_user_input`, which decides a Steer activity).
+func (s *TurnState) HasPendingUserInput() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, in := range s.pendingInput {
+		if len(in.UserContent) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// HasExplicitSameTurnWork reports whether pending input contains anything other
+// than queue-only (non-trigger) child mail — user input, injected items, or
+// trigger-turn mail all require another sampling request in this turn.
+func (s *TurnState) HasExplicitSameTurnWork() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, in := range s.pendingInput {
+		if in.Communication != nil && !in.Communication.TriggerTurn {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// ClearPendingInput drops pending input (used when a turn is interrupted).
+func (s *TurnState) ClearPendingInput() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pendingInput = nil
 }

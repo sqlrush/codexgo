@@ -2,33 +2,95 @@ package core
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"github.com/sqlrush/codexgo/internal/protocol"
 )
 
-// handleUserInput starts a regular user-driven turn for an Op::UserInput
-// submission. It builds the turn context (applying any thread-settings override
-// and the turn-local final-output schema / environments), then spawns a regular
-// task that runs the turn loop against the model client. Mirrors the Rust
-// `user_input_or_turn_inner` (no-active-turn / new-turn subset).
+// handleUserInput admits an Op::UserInput submission, mirroring the Rust
+// `user_input_or_turn` + `user_input_or_turn_inner` (0.147; spec 50 D0.2):
+// the settings override is applied, then the input is STEERED into the running
+// regular turn when there is one (it becomes pending input consumed at the next
+// sampling boundary) and otherwise starts a new regular turn. A running review
+// or compaction turn cannot be steered; that submission is rejected with a
+// BadRequest error event instead of silently replacing the turn. The admission
+// outcome is delivered to any [Codex.SubmitUserMessage] waiter.
 //
-// STUB: steering input into an already-running turn (steer_input), realtime text
-// mirroring, MCP-server refresh, additional-context merging, and the
-// thread-settings-applied echo are deferred to the relevant area agents. If a
-// turn is already running, this submission replaces it (spawnTask cancels the
-// previous task).
-func handleUserInput(sess *Session, subID string, op protocol.Op) {
+// STUB: realtime text mirroring, MCP-server refresh, additional-context merging,
+// and the thread-settings-applied echo are deferred.
+func handleUserInput(sess *Session, subID string, op protocol.Op, clientUserMessageID *string) {
+	admission, err := admitUserInput(sess, subID, op, clientUserMessageID)
+	_, admissions := sess.queueState()
+	admissions.complete(subID, admission, err)
+}
+
+// admitUserInput is the body of handleUserInput; it returns how the message
+// was admitted or the error that rejected it (already reported as an event).
+func admitUserInput(sess *Session, subID string, op protocol.Op, clientUserMessageID *string) (UserMessageAdmission, error) {
 	update := userInputSettingsUpdate(op)
 
 	tc, err := newTurnContext(sess.ctx, sess, subID, update)
 	if err != nil {
 		emitTurnContextError(sess, subID, err)
-		return
+		return UserMessageAdmission{}, err
 	}
 
-	input := turnInputFromOp(op)
+	turnID, serr := sess.SteerInput(op.Items, "", clientUserMessageID)
+	switch {
+	case serr == nil:
+		return UserMessageAdmission{Kind: UserMessageAdmissionSteered, TurnID: turnID}, nil
+	case IsSteerInputError(serr, SteerInputNoActiveTurn):
+		input := turnInputFromOp(op)
+		spawnTask(sess, tc, TaskKindRegular, func(ctx context.Context) *string {
+			return runTurn(ctx, sess, tc, input)
+		})
+		return UserMessageAdmission{Kind: UserMessageAdmissionStarted, TurnID: subID}, nil
+	default:
+		var se *SteerInputError
+		if errors.As(serr, &se) {
+			sess.SendEvent(subID, protocol.EventMsg{Type: protocol.EventMsgKindError, Error: se.ToErrorEvent()})
+		}
+		return UserMessageAdmission{}, fmt.Errorf("core: failed to admit user message: %w", serr)
+	}
+}
+
+// handleInterAgentCommunication queues an inter-agent message in the mailbox
+// and, when it asks to trigger a turn, lets the pending-work scheduler start a
+// regular turn on an idle session. Mirrors the Rust `inter_agent_communication`
+// handler + `maybe_start_turn_for_pending_work_with_sub_id`.
+func handleInterAgentCommunication(sess *Session, subID string, op protocol.Op) {
+	if op.Communication == nil {
+		return
+	}
+	q, _ := sess.queueState()
+	// STUB: the parent turn id of trigger-turn mail (upstream Submission
+	// parent_turn_id) is not threaded through codexgo submissions yet.
+	q.EnqueueMailboxCommunication(*op.Communication, nil)
+	if op.Communication.TriggerTurn {
+		maybeStartTurnForPendingWork(sess, subID)
+	}
+}
+
+// maybeStartTurnForPendingWork starts a regular turn with EMPTY input when the
+// session is idle and pending work (steer / trigger-turn mail) is queued; the
+// turn loop drains the queue before its first sampling request. A running turn
+// picks the work up itself. Mirrors `maybe_start_turn_for_pending_work_with_sub_id`.
+func maybeStartTurnForPendingWork(sess *Session, subID string) {
+	if at := sess.ActiveTurn(); at != nil && at.Task != nil {
+		return
+	}
+	q, _ := sess.queueState()
+	if !q.HasPendingInput(nil) {
+		return
+	}
+	tc, err := newTurnContext(sess.ctx, sess, subID, nil)
+	if err != nil {
+		emitTurnContextError(sess, subID, err)
+		return
+	}
 	spawnTask(sess, tc, TaskKindRegular, func(ctx context.Context) *string {
-		return runTurn(ctx, sess, tc, input)
+		return runTurn(ctx, sess, tc, nil)
 	})
 }
 

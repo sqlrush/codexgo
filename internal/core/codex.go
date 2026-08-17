@@ -243,6 +243,34 @@ func (c *Codex) Submit(op protocol.Op) (string, error) {
 	return id, nil
 }
 
+// SubmitUserMessage submits an Op::UserInput and waits until core has admitted
+// it — started a new turn or steered it into the running one — returning which
+// turn took it. It is the entry point hosts use when they need to correlate a
+// message with its turn (app-server turn/start, airush's runtime API). Mirrors
+// the Rust `Codex::submit_user_message` (0.147; spec 50 D0.2). A rejected
+// admission (non-steerable active turn, invalid settings) is returned as an
+// error after the corresponding Error event was emitted.
+func (c *Codex) SubmitUserMessage(ctx context.Context, op protocol.Op, clientUserMessageID *string) (UserMessageAdmission, error) {
+	if op.Type != protocol.OpUserInput {
+		return UserMessageAdmission{}, fmt.Errorf("core: SubmitUserMessage requires an Op::UserInput, got %s", op.Type)
+	}
+	id := newSubmissionID()
+	_, admissions := c.session.queueState()
+	result, cancel := admissions.register(id)
+	defer cancel()
+	if err := c.SubmitWithID(protocol.Submission{ID: id, Op: op, ClientUserMessageID: clientUserMessageID}); err != nil {
+		return UserMessageAdmission{}, err
+	}
+	select {
+	case res := <-result:
+		return res.admission, res.err
+	case <-ctx.Done():
+		return UserMessageAdmission{}, ctx.Err()
+	case <-c.loopDone:
+		return UserMessageAdmission{}, ErrInternalAgentDied
+	}
+}
+
 // SubmitWithID enqueues a pre-built submission. Prefer [Codex.Submit] so core
 // owns id generation. Mirrors the Rust `Codex::submit_with_id`.
 func (c *Codex) SubmitWithID(sub protocol.Submission) error {

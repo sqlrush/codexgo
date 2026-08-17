@@ -57,7 +57,11 @@ func (c *Codex) dispatch(sub protocol.Submission) (shutdown bool) {
 		return false
 
 	case protocol.OpUserInput:
-		handleUserInput(sess, sub.ID, sub.Op)
+		handleUserInput(sess, sub.ID, sub.Op, sub.ClientUserMessageID)
+		return false
+
+	case protocol.OpInterAgentCommunication:
+		handleInterAgentCommunication(sess, sub.ID, sub.Op)
 		return false
 
 	case protocol.OpExecApproval:
@@ -84,7 +88,7 @@ func (c *Codex) dispatch(sub protocol.Submission) (shutdown bool) {
 		// Unknown / deferred ops are ignored (the Op enum is non-exhaustive to
 		// allow forward-compatible extensions).
 		//
-		// STUB: realtime_conversation_*, inter_agent_communication,
+		// STUB: realtime_conversation_*,
 		// resolve_elicitation, request_*_response, dynamic_tool_response,
 		// refresh_mcp_servers, reload_user_config, set_thread_memory_mode,
 		// thread_rollback, approve_guardian_denied_action, and
@@ -122,6 +126,9 @@ func handleInterrupt(sess *Session) {
 	}
 	at.Task.Cancel()
 	at.State.ClearPendingWaiters()
+	// Rust `input_queue.clear_pending`: steered input queued for the aborted
+	// turn is dropped with it.
+	at.State.ClearPendingInput()
 }
 
 // handleApproval resolves a pending exec/patch approval by delivering the

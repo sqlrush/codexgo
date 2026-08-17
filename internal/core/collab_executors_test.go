@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/sqlrush/codexgo/internal/features"
 	"github.com/sqlrush/codexgo/internal/protocol"
@@ -557,5 +558,57 @@ func TestCollabWaitAgentUpcastsSubAgentFailure(t *testing.T) {
 				t.Fatalf("completed item should carry the target state, got %v", items[1].AgentsStates)
 			}
 		})
+	}
+}
+
+// TestCollabWaitAgentInterruptedBySteer asserts a steer for the waiting parent
+// ends wait_agent early (0.147 WaitOutcome::Steered; spec 50 D0.2): the wait
+// returns without a timeout and without statuses so the parent can react to
+// the new input.
+func TestCollabWaitAgentInterruptedBySteer(t *testing.T) {
+	sess, _ := newTestSession(t)
+	fake := newFakeCollabControl()
+	target := protocol.NewThreadID("55555555-5555-5555-5555-555555555555")
+	// A live target that never reaches a final status.
+	fake.statuses[target.String()] = protocol.AgentStatus{Kind: protocol.AgentStatusRunning}
+	fake.subscribeCh[target.String()] = make(chan protocol.AgentStatus, 1)
+
+	deps := BuiltinToolDeps{Collab: fake}
+	ex := findCollabExecutor(t, deps, "wait_agent")
+	type result struct {
+		out tools.ToolOutput
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		out, err := ex.Handle(context.Background(), &ToolHandlerContext{
+			Session: sess, Turn: collabTurn(t), CallID: "w", ToolName: ex.Name(),
+			Payload: collabPayload(`{"targets":["` + target.String() + `"],"timeout_ms":30000}`),
+		})
+		done <- result{out, err}
+	}()
+
+	// Give the wait a moment to subscribe, then steer the parent.
+	time.Sleep(50 * time.Millisecond)
+	sess.InputQueue().ExtendPendingInputAndAcceptMailboxDelivery(sess.ActiveTurn().State, []turnInput{{UserContent: []protocol.UserInput{{Type: protocol.UserInputKindText, Text: "change of plan"}}}})
+
+	select {
+	case res := <-done:
+		if res.err != nil {
+			t.Fatalf("wait handle: %v", res.err)
+		}
+		text := toolOutputText(res.out, "w", collabPayload(`{}`))
+		var got struct {
+			Status   map[string]protocol.AgentStatus `json:"status"`
+			TimedOut bool                            `json:"timed_out"`
+		}
+		if err := json.Unmarshal([]byte(text), &got); err != nil {
+			t.Fatalf("unmarshal wait result %q: %v", text, err)
+		}
+		if got.TimedOut || len(got.Status) != 0 {
+			t.Fatalf("steer-interrupted wait = %q, want no timeout and no statuses", text)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("wait_agent was not interrupted by the steer")
 	}
 }
