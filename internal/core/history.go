@@ -145,3 +145,49 @@ func addTokenUsage(a, b protocol.TokenUsage) protocol.TokenUsage {
 		TotalTokens:           a.TotalTokens + b.TotalTokens,
 	}
 }
+
+// isModelGeneratedItem mirrors the Rust `is_model_generated_item`: items the
+// model produced (assistant messages, reasoning, tool calls, compaction
+// markers) as opposed to inputs the client added.
+func isModelGeneratedItem(item protocol.ResponseItem) bool {
+	switch item.Type {
+	case protocol.ResponseItemKindMessage:
+		return item.Role == "assistant"
+	case protocol.ResponseItemKindReasoning, protocol.ResponseItemKindFunctionCall, protocol.ResponseItemKindToolSearchCall,
+		protocol.ResponseItemKindWebSearchCall, protocol.ResponseItemKindImageGenerationCall, protocol.ResponseItemKindCustomToolCall,
+		protocol.ResponseItemKindLocalShellCall, protocol.ResponseItemKindCompaction, protocol.ResponseItemKindContextCompaction:
+		return true
+	default:
+		return false
+	}
+}
+
+// itemsAfterLastModelGeneratedItem returns the trailing items the model has not
+// yet seen (recorded after its last output). The caller must hold h.mu.
+func (h *ConversationHistory) itemsAfterLastModelGeneratedItem() []protocol.ResponseItem {
+	start := len(h.items)
+	for i := len(h.items) - 1; i >= 0; i-- {
+		if isModelGeneratedItem(h.items[i]) {
+			start = i + 1
+			break
+		}
+	}
+	return h.items[start:]
+}
+
+// GetTotalTokenUsage returns the tokens in the active context window: the last
+// request's total plus, when the server already accounts past reasoning
+// (serverReasoningIncluded), an estimate for items recorded after the model's
+// last output. Mirrors the Rust `ContextManager::get_total_token_usage`.
+func (h *ConversationHistory) GetTotalTokenUsage(serverReasoningIncluded bool) int64 {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var last int64
+	if h.tokenInfo != nil {
+		last = h.tokenInfo.LastTokenUsage.TotalTokens
+	}
+	if !serverReasoningIncluded {
+		return last
+	}
+	return last + approxHistoryTokens(h.itemsAfterLastModelGeneratedItem())
+}

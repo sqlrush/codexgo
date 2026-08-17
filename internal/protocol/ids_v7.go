@@ -48,3 +48,7 @@ func mustV7() string {
 	}
 	return id.String()
 }
+
+// NewUUIDV7 mints a bare UUIDv7 string for identities that are not thread /
+// session / item ids (e.g. context-window ids, `Uuid::now_v7()` upstream).
+func NewUUIDV7() string { return mustV7() }

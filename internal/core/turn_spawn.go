@@ -44,6 +44,8 @@ func newTurnContext(ctx context.Context, sess *Session, subID string, update *Se
 		WebSearchMode:                cfg.WebSearchMode,
 		ProviderCapabilities:         cfg.ProviderCapabilities,
 		StreamMaxRetries:             cfg.StreamMaxRetries,
+		AutoCompactTokenLimitScope:   cfg.AutoCompactTokenLimitScope,
+		TokenBudget:                  cfg.TokenBudget,
 		ExperimentalRequestUserInput: cfg.ExperimentalRequestUserInput,
 		SessionSource:                cfg.SessionSource,
 	}

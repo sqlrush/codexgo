@@ -164,3 +164,46 @@ func mergeRateLimitFields(previous *protocol.RateLimitSnapshot, snapshot protoco
 	}
 	return &snapshot
 }
+
+// StartNewContextWindow advances to a fresh context window (0.147
+// `start_new_context_window`): new window id, cleared prefill and per-window
+// flags. Returns the new window number and identities.
+func (s *SessionState) StartNewContextWindow() (uint64, AutoCompactWindowIDs) {
+	n, ids := s.autoCompactWindow.advance()
+	s.autoCompactWindow.clearPrefill()
+	return n, ids
+}
+
+// CurrentWindowID returns the active context window id (UUIDv7).
+func (s *SessionState) CurrentWindowID() string { return s.autoCompactWindow.ids.WindowID }
+
+// RequestNewContextWindow records a pending `new_context_window` request.
+func (s *SessionState) RequestNewContextWindow() { s.autoCompactWindow.requestNewContextWindow() }
+
+// TakeNewContextWindowRequest returns and clears the pending request.
+func (s *SessionState) TakeNewContextWindowRequest() bool {
+	return s.autoCompactWindow.takeNewContextWindowRequest()
+}
+
+// ClaimTokenBudgetReminder / ClaimAutoCompactFallback return true the first
+// time they are called within the current window.
+func (s *SessionState) ClaimTokenBudgetReminder() bool {
+	return s.autoCompactWindow.claimTokenBudgetReminder()
+}
+
+// ClaimAutoCompactFallback returns true the first time per window.
+func (s *SessionState) ClaimAutoCompactFallback() bool {
+	return s.autoCompactWindow.claimAutoCompactFallback()
+}
+
+// RestoreContextWindow re-installs persisted window accounting on resume.
+func (s *SessionState) RestoreContextWindow(windowNumber uint64, ids AutoCompactWindowIDs) {
+	s.autoCompactWindow.restore(windowNumber, ids)
+}
+
+// GetTotalTokenUsage returns the tokens in the active context window (0.147
+// `get_total_token_usage`): the last request's usage plus an estimate of the
+// trailing client-added items when the server accounts past reasoning.
+func (s *SessionState) GetTotalTokenUsage() int64 {
+	return s.History.GetTotalTokenUsage(s.serverReasoningIncluded)
+}

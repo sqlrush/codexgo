@@ -326,10 +326,13 @@ func TestBuiltinToolRouterRegistration(t *testing.T) {
 			// Spec); web_search always (hosted spec, provider-executed). The shell
 			// family and apply_patch are supplied by core/localexec, so a host that
 			// does not wire them (airush) registers none of them.
+			// get_context_remaining / new_context register always and are
+			// advertised only under a token budget (0.147).
 			wantTools: []string{
+				"get_context_remaining",
 				"multi_agent_v1close_agent", "multi_agent_v1resume_agent",
 				"multi_agent_v1send_input", "multi_agent_v1spawn_agent",
-				"multi_agent_v1wait_agent",
+				"multi_agent_v1wait_agent", "new_context",
 				"tool_search", "update_plan", "view_image", "web_search",
 			},
 		},
@@ -340,10 +343,10 @@ func TestBuiltinToolRouterRegistration(t *testing.T) {
 				ApplyPatch: namedExecutor{"apply_patch"},
 			},
 			wantTools: []string{
-				"apply_patch", "exec_command",
+				"apply_patch", "exec_command", "get_context_remaining",
 				"multi_agent_v1close_agent", "multi_agent_v1resume_agent",
 				"multi_agent_v1send_input", "multi_agent_v1spawn_agent",
-				"multi_agent_v1wait_agent",
+				"multi_agent_v1wait_agent", "new_context",
 				"shell_command", "tool_search", "update_plan", "view_image", "web_search", "write_stdin",
 			},
 		},
@@ -364,10 +367,10 @@ func TestBuiltinToolRouterRegistration(t *testing.T) {
 				}},
 			},
 			wantTools: []string{
-				"apply_patch", "exec_command",
+				"apply_patch", "exec_command", "get_context_remaining",
 				"multi_agent_v1close_agent", "multi_agent_v1resume_agent",
 				"multi_agent_v1send_input", "multi_agent_v1spawn_agent",
-				"multi_agent_v1wait_agent",
+				"multi_agent_v1wait_agent", "new_context",
 				"request_permissions",
 				"request_user_input", "shell_command", "srv__tool", "tool_search",
 				"update_plan", "view_image", "web_search", "write_stdin",

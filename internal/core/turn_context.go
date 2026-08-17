@@ -67,8 +67,18 @@ type TurnContext struct {
 	// AutoCompactTokenLimit is the resolved auto-compaction token budget for the
 	// turn's model, if known. When the running total reaches it, runTurn fires a
 	// pre-sampling inline compaction (port of run_pre_sampling_compact's
-	// auto_compact_token_status check). Nil/<=0 disables auto-compaction.
+	// auto_compact_token_status check) and mid-turn rollover (0.147
+	// context_window_token_status). Nil/<=0 disables auto-compaction.
 	AutoCompactTokenLimit *int64
+	// AutoCompactTokenLimitScope selects whether the whole active context or
+	// only the tokens after the window prefill count against the limit
+	// (config.model_auto_compact_token_limit_scope); empty = Total.
+	AutoCompactTokenLimitScope protocol.AutoCompactTokenLimitScope
+	// TokenBudget, when set, enables the 0.147 token-budget mode: a reminder is
+	// recorded when the remaining window drops to the threshold, the fallback
+	// prompt when it hits zero, and compaction installs a fresh context window
+	// instead of summarizing. Nil = classic summarizing compaction.
+	TokenBudget *TokenBudgetConfig
 
 	// Tools is the resolved tool specification visible to the model this turn.
 	Tools []tools.ToolSpec

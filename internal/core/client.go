@@ -132,6 +132,11 @@ type ResponsesModelClient struct {
 	turnStateMu sync.Mutex
 	turnState   string
 
+	// windowIDMu guards windowID, the session context-window id installed by
+	// SetWindowID (0.147 x-codex-window-id).
+	windowIDMu sync.Mutex
+	windowID   string
+
 	// responsesClient is the lazily-built api streaming client.
 	once            sync.Once
 	responsesClient *api.ResponsesClient
@@ -176,9 +181,24 @@ func (c *ResponsesModelClient) AdvanceWindowGeneration() {
 	c.windowGeneration.Add(1)
 }
 
-// currentWindowID returns the "<thread_id>:<generation>" window id, mirroring
-// current_window_id.
+// SetWindowID installs the session's context-window id (UUIDv7, 0.147) as the
+// x-codex-window-id value; while unset the legacy "<thread_id>:<generation>"
+// form is sent.
+func (c *ResponsesModelClient) SetWindowID(id string) {
+	c.windowIDMu.Lock()
+	c.windowID = id
+	c.windowIDMu.Unlock()
+}
+
+// currentWindowID returns the explicit window id when set, else the legacy
+// "<thread_id>:<generation>" window id, mirroring current_window_id.
 func (c *ResponsesModelClient) currentWindowID() string {
+	c.windowIDMu.Lock()
+	id := c.windowID
+	c.windowIDMu.Unlock()
+	if id != "" {
+		return id
+	}
 	return fmt.Sprintf("%s:%d", c.cfg.ThreadID.String(), c.windowGeneration.Load())
 }
 

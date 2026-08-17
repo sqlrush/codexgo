@@ -126,6 +126,9 @@ func builtinExecutors(deps BuiltinToolDeps) []ToolExecutor {
 	if deps.Permissions != nil {
 		execs = append(execs, requestPermissionsExecutor{req: deps.Permissions})
 	}
+	// Token-budget tools (0.147 spec_plan `features.enabled(TokenBudget)`): always
+	// registered, advertised only when the turn enables the token budget.
+	execs = append(execs, newContextWindowExecutor{}, getContextRemainingExecutor{})
 	// apply_patch remains available as a standalone tool for the direct
 	// (non-shell) invocation form some models use.
 	if deps.ApplyPatch != nil {

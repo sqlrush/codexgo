@@ -15,6 +15,12 @@ import (
 type CompactedItem struct {
 	Message            string                   `json:"message"`
 	ReplacementHistory *[]protocol.ResponseItem `json:"replacement_history,omitempty"`
+	// Context-window chain metadata (0.147): the monotonic window number and
+	// the UUIDv7 identities of the first / previous / this window.
+	WindowNumber     *uint64 `json:"window_number,omitempty"`
+	FirstWindowID    *string `json:"first_window_id,omitempty"`
+	PreviousWindowID *string `json:"previous_window_id,omitempty"`
+	WindowID         *string `json:"window_id,omitempty"`
 }
 
 // TurnContextItem captures the model-visible context for a turn. It is persisted

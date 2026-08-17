@@ -106,12 +106,38 @@ func runTurn(ctx context.Context, sess *Session, tc *TurnContext, input []turnIn
 			lastAgentMessage = out.LastAgentMessage
 		}
 
-		// The model may need a follow-up (tool outputs to observe) or the user
-		// may have steered more input / mail may have arrived while it sampled;
-		// either continues the turn (Rust `needs_follow_up = model_needs_follow_up
-		// || has_pending_input`).
+		// Post-sampling: the model may need a follow-up (tool outputs to observe)
+		// or the user may have steered more input / mail may have arrived while it
+		// sampled; either continues the turn (Rust `needs_follow_up =
+		// model_needs_follow_up || has_pending_input`).
 		canDrainPendingInput = true
-		if !out.NeedsFollowUp && !inputQueue.HasPendingInput(sess.ActiveTurn()) {
+		hasPendingInput := inputQueue.HasPendingInput(sess.ActiveTurn())
+		needsFollowUp := out.NeedsFollowUp || hasPendingInput
+
+		// Context-window accounting (0.147 context_window_token_status): when the
+		// turn continues and the buffered auto-compact limit / hard cap is reached
+		// (or the model asked for a new window), roll over — compact mid-turn —
+		// before sampling again. The token-budget reminder / fallback prompt are
+		// recorded from the same status.
+		status := contextWindowTokenStatus(sess, tc)
+		var newWindowRequested bool
+		sess.WithState(func(st *SessionState) { newWindowRequested = st.TakeNewContextWindowRequest() })
+		shouldRollOver := needsFollowUp && (newWindowRequested || status.TokenLimitReached)
+		maybeRecordTokenBudget(sess, tc, status.BaseWindowTokensRemaining, !shouldRollOver && !status.TokenLimitReached)
+		if shouldRollOver {
+			if err := runAutoCompact(ctx, sess, tc); err != nil {
+				if errors.Is(err, ErrTurnAborted) || errors.Is(err, context.Canceled) {
+					return lastAgentMessage
+				}
+				emitTurnError(sess, tc, err)
+				return lastAgentMessage
+			}
+			// After compaction the model/tool continuation resumes before any
+			// steer is drained (Rust `can_drain_pending_input = !model_needs_follow_up`).
+			canDrainPendingInput = !out.NeedsFollowUp
+			continue
+		}
+		if !needsFollowUp {
 			return lastAgentMessage
 		}
 	}

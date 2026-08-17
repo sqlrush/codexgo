@@ -36,6 +36,13 @@ type SessionConfiguration struct {
 	// stream (model-provider-info stream_max_retries); nil = default 5.
 	StreamMaxRetries *uint64
 
+	// AutoCompactTokenLimitScope mirrors config.model_auto_compact_token_limit_scope
+	// (total or body_after_prefix); empty = total.
+	AutoCompactTokenLimitScope protocol.AutoCompactTokenLimitScope
+	// TokenBudget mirrors config.token_budget (0.147 features.token_budget);
+	// nil = disabled.
+	TokenBudget *TokenBudgetConfig
+
 	// CollaborationMode bundles the model + reasoning effort + developer
 	// instructions for the turn.
 	CollaborationMode protocol.CollaborationMode
