@@ -108,6 +108,10 @@ type TurnContext struct {
 
 	// ApprovalPolicy controls when execution escalates for approval.
 	ApprovalPolicy protocol.AskForApproval
+	// ApprovalsReviewer routes approvals to the user or to the automated
+	// reviewer (config.approvals_reviewer; the 0.147 approval stage). Empty =
+	// user.
+	ApprovalsReviewer protocol.ApprovalsReviewer
 	// PermissionProfile is the effective permission profile (opaque to core;
 	// owned by the permissions area agent).
 	PermissionProfile any

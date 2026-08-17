@@ -235,10 +235,11 @@ func (e shellCommandExecutor) runShellWithEscalation(ctx context.Context, h *cor
 	}
 
 	decision := resolveSandboxEscalation(ctx, h.Session, sandboxEscalationRequest{
-		Turn:    h.Turn,
-		CallID:  h.CallID,
-		Command: argv,
-		Cwd:     cwd,
+		Turn:     h.Turn,
+		CallID:   h.CallID,
+		Command:  argv,
+		Cwd:      cwd,
+		ToolName: h.ToolName,
 	})
 	if decision != sandboxEscalationRetryUnsandboxed {
 		// Surface the denial unchanged (Never/OnRequest, denied reads, or the

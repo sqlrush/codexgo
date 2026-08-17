@@ -64,6 +64,11 @@ type sandboxEscalationRequest struct {
 	Command []string
 	// Cwd is the working directory for the command.
 	Cwd string
+	// TTY marks a unified-exec (PTY) command; it selects the ExecCommand
+	// approval action kind (separate cache key from shell_command).
+	TTY bool
+	// ToolName is the invoking tool, recorded with the approval decision.
+	ToolName protocol.ToolName
 }
 
 // resolveSandboxEscalation decides whether a first-attempt sandbox denial should
@@ -110,14 +115,30 @@ func resolveSandboxEscalation(ctx context.Context, sess *core.Session, req sandb
 		return sandboxEscalationSurfaceDenial
 	}
 
+	// The retry approval goes through the centralized approval stage (0.147
+	// tools/approvals.rs; spec 50 D0.4): hooks → automated reviewer → user, with
+	// the approved-for-session cache and decision recording applied uniformly.
 	retryReason := sandboxDenialReason
-	decision := sess.RequestCommandApproval(ctx, req.Turn, core.ExecApprovalRequest{
-		CallID:  req.CallID,
-		Command: req.Command,
-		Cwd:     protocol.AbsolutePath(req.Cwd),
-		Reason:  &retryReason,
+	kind := core.ApprovalActionShell
+	if req.TTY {
+		kind = core.ApprovalActionExecCommand
+	}
+	decision, err := sess.RequestApproval(ctx, core.ApprovalAction{
+		Kind:        kind,
+		ID:          req.CallID,
+		Command:     req.Command,
+		HookCommand: strings.Join(req.Command, " "),
+		Cwd:         req.Cwd,
+		TTY:         req.TTY,
+	}, core.ApprovalContext{
+		Turn:        req.Turn,
+		CallID:      req.CallID,
+		ToolName:    req.ToolName,
+		RetryReason: &retryReason,
 	})
-
+	if err != nil {
+		return sandboxEscalationSurfaceDenial
+	}
 	if reviewDecisionApproves(decision) {
 		return sandboxEscalationRetryUnsandboxed
 	}

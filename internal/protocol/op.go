@@ -588,6 +588,10 @@ type ReviewDecision struct {
 	ProposedExecpolicyAmendment *ExecPolicyAmendment
 	// Populated only for the NetworkPolicyAmendment variant.
 	NetworkPolicyAmendment *NetworkPolicyAmendment
+	// Rejection is the model-facing reason of a Denied decision (upstream 0.147
+	// `Denied { rejection }`). nil marshals the 0.136 bare "denied" string; a
+	// value marshals the 0.147 object form; both are accepted on input.
+	Rejection *string
 }
 
 // NewReviewDecisionApproved returns a unit Approved decision.
@@ -603,9 +607,13 @@ func NewReviewDecisionDenied() ReviewDecision {
 // MarshalJSON encodes the externally-tagged ReviewDecision.
 func (d ReviewDecision) MarshalJSON() ([]byte, error) {
 	switch d.Kind {
+	case ReviewDecisionDenied:
+		if d.Rejection != nil {
+			return json.Marshal(map[string]any{string(d.Kind): map[string]any{"rejection": *d.Rejection}})
+		}
+		return json.Marshal(string(d.Kind))
 	case ReviewDecisionApproved,
 		ReviewDecisionApprovedForSession,
-		ReviewDecisionDenied,
 		ReviewDecisionTimedOut,
 		ReviewDecisionAbort:
 		return json.Marshal(string(d.Kind))
@@ -646,6 +654,16 @@ func (d *ReviewDecision) UnmarshalJSON(data []byte) error {
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal(data, &obj); err != nil {
 		return err
+	}
+	if raw, ok := obj[string(ReviewDecisionDenied)]; ok {
+		var payload struct {
+			Rejection string `json:"rejection"`
+		}
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			return err
+		}
+		*d = ReviewDecision{Kind: ReviewDecisionDenied, Rejection: &payload.Rejection}
+		return nil
 	}
 	if raw, ok := obj[string(ReviewDecisionApprovedExecpolicyAmendment)]; ok {
 		var payload struct {
@@ -1190,4 +1208,10 @@ func (o *Op) UnmarshalJSON(data []byte) error {
 
 	*o = out
 	return nil
+}
+
+// NewReviewDecisionDeniedWith returns a Denied decision carrying the
+// model-facing rejection reason (upstream 0.147 `ReviewDecision::denied`).
+func NewReviewDecisionDeniedWith(rejection string) ReviewDecision {
+	return ReviewDecision{Kind: ReviewDecisionDenied, Rejection: &rejection}
 }

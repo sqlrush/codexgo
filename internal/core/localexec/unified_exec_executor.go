@@ -223,10 +223,12 @@ func (e unifiedExecCommandExecutor) Handle(ctx context.Context, h *core.ToolHand
 // skipped (wantsNoSandboxApproval is false), preserving existing behavior.
 func (e unifiedExecCommandExecutor) maybeEscalateUnifiedExec(ctx context.Context, h *core.ToolHandlerContext, base unifiedExecRequestParams) (*unifiedexec.Output, bool) {
 	decision := resolveSandboxEscalation(ctx, h.Session, sandboxEscalationRequest{
-		Turn:    h.Turn,
-		CallID:  h.CallID,
-		Command: base.Argv,
-		Cwd:     base.Cwd,
+		Turn:     h.Turn,
+		CallID:   h.CallID,
+		Command:  base.Argv,
+		Cwd:      base.Cwd,
+		TTY:      true,
+		ToolName: h.ToolName,
 	})
 	if decision != sandboxEscalationRetryUnsandboxed {
 		return nil, false

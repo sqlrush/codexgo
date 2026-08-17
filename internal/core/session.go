@@ -24,6 +24,11 @@ type SessionServices struct {
 	HooksEngine     HooksEngine
 	ModelsManager   ModelsManager
 	RolloutRecorder RolloutRecorder
+	// Approver is the automated approval reviewer consulted by the approval
+	// stage (0.147 Guardian route; spec 50 D0.4). Optional: nil routes approvals
+	// to the user unless a turn demands strict auto-review, which then fails
+	// closed. Hosts inject their own reviewer (airush AD-9 approvals).
+	Approver ReviewerApprover
 }
 
 // Session owns the long-lived, thread-safe state for a single Codex thread and
@@ -59,6 +64,11 @@ type Session struct {
 	inputQueue *InputQueue
 	admissions *pendingUserMessageAdmissions
 	queueOnce  sync.Once
+
+	// approvals is the approved-for-session cache behind the approval stage
+	// (lazily created).
+	approvals         *ApprovalStore
+	approvalStoreOnce sync.Once
 
 	// txEvent is the outbound event-queue sender; events are correlated to
 	// submissions by their id.
