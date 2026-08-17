@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // This file ports the approval *routing* core of codex-core: the Session methods

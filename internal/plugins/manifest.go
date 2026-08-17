@@ -13,9 +13,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sqlrush/codexgo/internal/config"
 	"github.com/sqlrush/codexgo/internal/utils/abspath"
 	"github.com/sqlrush/codexgo/internal/utils/pluginutil"
+	"github.com/sqlrush/codexgo/pkg/config"
 )
 
 const (

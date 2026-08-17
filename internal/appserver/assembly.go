@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/core"
-	"github.com/sqlrush/codexgo/internal/modelsmanager"
-	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/rollout"
-	"github.com/sqlrush/codexgo/internal/threadstore"
-	"github.com/sqlrush/codexgo/internal/tools"
+	"github.com/sqlrush/codexgo/pkg/core"
+	"github.com/sqlrush/codexgo/pkg/modelsmanager"
+	"github.com/sqlrush/codexgo/pkg/protocol"
+	"github.com/sqlrush/codexgo/pkg/rollout"
+	"github.com/sqlrush/codexgo/pkg/threadstore"
+	"github.com/sqlrush/codexgo/pkg/tools"
 )
 
 // ModelClientFactory builds the per-thread [core.ModelClient] for a spawning

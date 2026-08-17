@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/utils/abspath"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // PostToolUseRequest is the input for a PostToolUse dispatch. Mirrors

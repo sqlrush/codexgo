@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/sqlrush/codexgo/internal/api"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/api"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // CompactionInput is the canonical request payload for the compaction endpoint.

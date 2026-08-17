@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // uintVal returns a pointer to v for pragma expectations.

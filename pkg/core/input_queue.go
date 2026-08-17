@@ -4,7 +4,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // This file ports codex-core's `session/input_queue.rs` (upstream 0.147; spec 50

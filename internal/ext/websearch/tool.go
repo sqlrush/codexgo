@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/tools"
+	"github.com/sqlrush/codexgo/pkg/protocol"
+	"github.com/sqlrush/codexgo/pkg/tools"
 )
 
 // Namespace and tool name constants. Rust: WEB_NAMESPACE, RUN_TOOL_NAME.

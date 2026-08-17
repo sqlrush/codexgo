@@ -6,11 +6,11 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/sqlrush/codexgo/internal/core/localexec"
 	"github.com/sqlrush/codexgo/internal/execserver"
-	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/pty"
 	"github.com/sqlrush/codexgo/internal/sandbox"
+	"github.com/sqlrush/codexgo/pkg/core/localexec"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // localExecService is the binary's [localexec.ExecService]: it runs an already-argv-

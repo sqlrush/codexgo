@@ -29,8 +29,8 @@ import (
 	"time"
 
 	"github.com/sqlrush/codexgo/internal/brand"
-	"github.com/sqlrush/codexgo/internal/config"
 	"github.com/sqlrush/codexgo/internal/utils/abspath"
+	"github.com/sqlrush/codexgo/pkg/config"
 )
 
 const (

@@ -5,8 +5,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/api"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/api"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 func phasedMessage(role, text string, phase *protocol.MessagePhase) protocol.ResponseItem {

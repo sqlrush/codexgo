@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/sqlrush/codexgo/internal/modelsmanager"
+	"github.com/sqlrush/codexgo/pkg/modelsmanager"
 )
 
 // runDebugSubcommand handles `codex debug <models|prompt-input>`, mirroring the

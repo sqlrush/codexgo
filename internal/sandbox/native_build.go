@@ -3,7 +3,7 @@ package sandbox
 import (
 	"path"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // buildLinuxSandboxSpec resolves a SpawnRequest into the NativeSandboxSpec the

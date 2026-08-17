@@ -3,10 +3,10 @@ package core
 import (
 	"encoding/json"
 
-	"github.com/sqlrush/codexgo/internal/api"
-	"github.com/sqlrush/codexgo/internal/modelsmanager"
-	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/tools"
+	"github.com/sqlrush/codexgo/pkg/api"
+	"github.com/sqlrush/codexgo/pkg/modelsmanager"
+	"github.com/sqlrush/codexgo/pkg/protocol"
+	"github.com/sqlrush/codexgo/pkg/tools"
 )
 
 // buildResponsesRequest assembles a Responses API request body from a [Prompt]

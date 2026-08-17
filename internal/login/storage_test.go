@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/sqlrush/codexgo/internal/appserverproto"
-	"github.com/sqlrush/codexgo/internal/config"
 	"github.com/sqlrush/codexgo/internal/keyring"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/config"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // TestAuthDotJsonSerializeShape verifies the on-disk JSON shape and serde

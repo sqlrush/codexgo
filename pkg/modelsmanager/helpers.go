@@ -3,7 +3,7 @@ package modelsmanager
 import (
 	"strings"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // nonNilStrings returns the input slice, or an empty (non-nil) slice when nil so

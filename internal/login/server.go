@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/sqlrush/codexgo/internal/appserverproto"
-	"github.com/sqlrush/codexgo/internal/config"
+	"github.com/sqlrush/codexgo/pkg/config"
 )
 
 // OAuth issuer and callback ports, mirroring server.rs constants.

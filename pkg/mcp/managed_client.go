@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/config"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/config"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // Default timeouts for MCP startup and tool calls, matching the reference

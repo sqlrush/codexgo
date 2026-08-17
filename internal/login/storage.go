@@ -13,10 +13,10 @@ import (
 
 	"github.com/sqlrush/codexgo/internal/agentidentity"
 	"github.com/sqlrush/codexgo/internal/appserverproto"
-	"github.com/sqlrush/codexgo/internal/config"
 	"github.com/sqlrush/codexgo/internal/keyring"
 	syskeyring "github.com/sqlrush/codexgo/internal/keyring/system"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/config"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // AuthDotJson is the expected structure of $CODEXGO_HOME/auth.json.

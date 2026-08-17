@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // jwtWithPayload builds an unsigned-style JWT (header.payload.sig) whose payload

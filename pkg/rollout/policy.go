@@ -1,8 +1,8 @@
 package rollout
 
 import (
-	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/utils/strutil"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // persistedExecAggregatedOutputMaxBytes is the maximum size of the aggregated

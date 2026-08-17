@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // rolloutWriterState is the mutable state owned by the background writer

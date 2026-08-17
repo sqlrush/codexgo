@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/tools"
+	"github.com/sqlrush/codexgo/pkg/protocol"
+	"github.com/sqlrush/codexgo/pkg/tools"
 )
 
 // The token-budget tools of upstream 0.147 (`get_context_remaining` and

@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/sqlrush/codexgo/internal/appserverproto"
-	"github.com/sqlrush/codexgo/internal/config"
+	"github.com/sqlrush/codexgo/pkg/config"
 )
 
 // FromAuthDotJson converts a stored AuthDotJson into a CodexAuth. Mirrors

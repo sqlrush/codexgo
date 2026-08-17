@@ -5,10 +5,10 @@ import (
 	"os"
 	"sort"
 
-	"github.com/sqlrush/codexgo/internal/config"
-	"github.com/sqlrush/codexgo/internal/features"
-	"github.com/sqlrush/codexgo/internal/modelproviderinfo"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/config"
+	"github.com/sqlrush/codexgo/pkg/features"
+	"github.com/sqlrush/codexgo/pkg/modelproviderinfo"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // configLoadCheck loads the merged configuration and reports unknown-field

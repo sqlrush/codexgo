@@ -3,9 +3,9 @@ package cli
 import (
 	"fmt"
 
-	"github.com/sqlrush/codexgo/internal/config"
-	"github.com/sqlrush/codexgo/internal/modelproviderinfo"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/config"
+	"github.com/sqlrush/codexgo/pkg/modelproviderinfo"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // loadedConfig is the subset of resolved configuration the CLI subcommands need:

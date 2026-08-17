@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/sqlrush/codexgo/internal/client"
+	"github.com/sqlrush/codexgo/pkg/client"
 )
 
 // Originator constants mirror default_client.rs.

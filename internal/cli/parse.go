@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sqlrush/codexgo/internal/features"
+	"github.com/sqlrush/codexgo/pkg/features"
 )
 
 // RootOptions holds the parsed top-level flags shared by every subcommand. They

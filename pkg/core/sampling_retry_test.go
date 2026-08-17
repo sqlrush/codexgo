@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/api"
-	"github.com/sqlrush/codexgo/internal/client"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/api"
+	"github.com/sqlrush/codexgo/pkg/client"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // noSleep makes the retry loop skip its backoff for the duration of a test.

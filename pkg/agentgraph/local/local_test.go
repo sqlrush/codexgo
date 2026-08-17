@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/agentgraph"
-	"github.com/sqlrush/codexgo/internal/agentgraph/agentgraphtest"
 	"github.com/sqlrush/codexgo/internal/state"
+	"github.com/sqlrush/codexgo/pkg/agentgraph"
+	"github.com/sqlrush/codexgo/pkg/agentgraph/agentgraphtest"
 )
 
 func TestLocalSQLiteStoreConformance(t *testing.T) {

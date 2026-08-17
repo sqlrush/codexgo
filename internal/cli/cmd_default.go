@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/sqlrush/codexgo/internal/appserverclient"
-	"github.com/sqlrush/codexgo/internal/config"
 	"github.com/sqlrush/codexgo/internal/tui"
+	"github.com/sqlrush/codexgo/pkg/config"
 )
 
 // runDefaultNoSubcommand handles `codex` with no subcommand: launch the

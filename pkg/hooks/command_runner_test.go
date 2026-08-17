@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // unixOnly skips the test on Windows, where these shell snippets do not apply.

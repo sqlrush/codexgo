@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // marshalEvent encodes a protocol.Event to JSON using the protocol package's

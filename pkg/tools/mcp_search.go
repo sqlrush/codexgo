@@ -16,7 +16,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // McpToolInfo is the model-visible + routing metadata for a single MCP tool,

@@ -3,9 +3,9 @@ package tools
 import (
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/features"
-	"github.com/sqlrush/codexgo/internal/modelsmanager"
 	"github.com/sqlrush/codexgo/internal/pty"
+	"github.com/sqlrush/codexgo/pkg/features"
+	"github.com/sqlrush/codexgo/pkg/modelsmanager"
 )
 
 // shellFeatures mirrors the reference test fixture (tool_config_tests.rs

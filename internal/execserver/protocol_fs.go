@@ -2,7 +2,7 @@ package execserver
 
 import (
 	"github.com/sqlrush/codexgo/internal/filesystem"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // FsReadFileParams is the payload for the fs/readFile request.

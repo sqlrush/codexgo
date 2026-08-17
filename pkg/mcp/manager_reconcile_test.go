@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/config"
+	"github.com/sqlrush/codexgo/pkg/config"
 )
 
 // openFactory records the transports it hands out and never blocks.

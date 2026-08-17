@@ -2,7 +2,7 @@ package engine
 
 import (
 	"github.com/sqlrush/codexgo/internal/codemode"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // Public tool names live in the codemode package (shared with the tool

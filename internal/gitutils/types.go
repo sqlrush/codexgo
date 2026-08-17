@@ -12,7 +12,7 @@
 // behaviour is preserved by invoking `git`.
 package gitutils
 
-import "github.com/sqlrush/codexgo/internal/protocol"
+import "github.com/sqlrush/codexgo/pkg/protocol"
 
 // GitSha is a git commit SHA. The canonical definition lives in the protocol
 // package (mirroring the Rust re-export `pub use codex_protocol::protocol::GitSha`);

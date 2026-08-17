@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/rollout"
 	"github.com/sqlrush/codexgo/internal/state"
-	"github.com/sqlrush/codexgo/internal/threadstore"
+	"github.com/sqlrush/codexgo/pkg/protocol"
+	"github.com/sqlrush/codexgo/pkg/rollout"
+	"github.com/sqlrush/codexgo/pkg/threadstore"
 )
 
 // loadHistory resolves the rollout path for the thread and returns its persisted

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/sqlrush/codexgo/internal/core"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/core"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // runningRequests tracks the mapping from MCP request id (string form) to the

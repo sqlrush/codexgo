@@ -3,8 +3,8 @@ package threadstore_test
 import (
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/threadstore"
-	"github.com/sqlrush/codexgo/internal/threadstore/contracttest"
+	"github.com/sqlrush/codexgo/pkg/threadstore"
+	"github.com/sqlrush/codexgo/pkg/threadstore/contracttest"
 )
 
 // TestInMemoryStoreContract runs the storage-neutral contract suite against

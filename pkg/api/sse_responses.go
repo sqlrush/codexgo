@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/client"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/client"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // Header names consulted on the stream response, mirroring the Rust constants.

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 func TestResolveAgentPath(t *testing.T) {

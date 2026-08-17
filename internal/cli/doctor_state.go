@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/rollout"
 	"github.com/sqlrush/codexgo/internal/state"
+	"github.com/sqlrush/codexgo/pkg/rollout"
 )
 
 // statePathsCheck reports the resolved local state directories and database

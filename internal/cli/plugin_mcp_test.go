@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/config"
+	"github.com/sqlrush/codexgo/pkg/config"
 )
 
 // installFakePlugin lays out a plugin in the store cache under codexHome with the

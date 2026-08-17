@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/modelproviderinfo"
+	"github.com/sqlrush/codexgo/pkg/modelproviderinfo"
 )
 
 func TestDefaultOSSModel(t *testing.T) {

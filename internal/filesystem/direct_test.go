@@ -11,7 +11,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 func ap(path string) protocol.AbsolutePath { return protocol.AbsolutePath(path) }

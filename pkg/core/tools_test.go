@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/tools"
+	"github.com/sqlrush/codexgo/pkg/protocol"
+	"github.com/sqlrush/codexgo/pkg/tools"
 )
 
 // This file tests the core tool-dispatch layer ported from codex-core's

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/sqlrush/codexgo/internal/appserverproto"
-	"github.com/sqlrush/codexgo/internal/config"
+	"github.com/sqlrush/codexgo/pkg/config"
 )
 
 // Environment variable names for direct (non-OAuth) auth, mirroring manager.rs.

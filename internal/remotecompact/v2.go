@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/sqlrush/codexgo/internal/api"
-	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/utils/truncation"
+	"github.com/sqlrush/codexgo/pkg/api"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // RetainedMessageTokenBudget mirrors the current "/responses/compact"

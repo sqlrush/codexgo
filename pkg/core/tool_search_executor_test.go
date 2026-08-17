@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/features"
-	"github.com/sqlrush/codexgo/internal/modelsmanager"
+	"github.com/sqlrush/codexgo/pkg/features"
+	"github.com/sqlrush/codexgo/pkg/modelsmanager"
 )
 
 // newSearchToolTurn builds a turn whose model supports the search tool.

@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/config"
+	"github.com/sqlrush/codexgo/pkg/config"
 )
 
 // stubFactory builds fake transports keyed by server name.

@@ -9,9 +9,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/api"
-	"github.com/sqlrush/codexgo/internal/client"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/api"
+	"github.com/sqlrush/codexgo/pkg/client"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // This file ports the sampling-request retry loop of codex-core

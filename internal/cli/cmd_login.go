@@ -9,7 +9,7 @@ import (
 
 	"github.com/sqlrush/codexgo/internal/appserverproto"
 	"github.com/sqlrush/codexgo/internal/login"
-	"github.com/sqlrush/codexgo/internal/modelproviderinfo"
+	"github.com/sqlrush/codexgo/pkg/modelproviderinfo"
 )
 
 const loginSuccessMessage = "Successfully logged in"

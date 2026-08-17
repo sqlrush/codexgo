@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/sqlrush/codexgo/internal/features"
+	"github.com/sqlrush/codexgo/pkg/features"
 )
 
 // knownConfigTomlKeys is the set of top-level keys accepted by ConfigToml. It is

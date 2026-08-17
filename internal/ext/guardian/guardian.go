@@ -12,7 +12,7 @@ import (
 	"context"
 
 	"github.com/sqlrush/codexgo/internal/ext/extensionapi"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // GuardianExtension holds the guardian extension dependencies supplied by the

@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/features"
-	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/rollout"
-	"github.com/sqlrush/codexgo/internal/tools"
+	"github.com/sqlrush/codexgo/pkg/features"
+	"github.com/sqlrush/codexgo/pkg/protocol"
+	"github.com/sqlrush/codexgo/pkg/rollout"
+	"github.com/sqlrush/codexgo/pkg/tools"
 )
 
 // This file tests the deferred collab (multi-agent) tool executors once they are

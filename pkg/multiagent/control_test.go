@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/agentgraph"
-	"github.com/sqlrush/codexgo/internal/api"
-	"github.com/sqlrush/codexgo/internal/core"
-	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/rollout"
-	"github.com/sqlrush/codexgo/internal/threadstore"
+	"github.com/sqlrush/codexgo/pkg/agentgraph"
+	"github.com/sqlrush/codexgo/pkg/api"
+	"github.com/sqlrush/codexgo/pkg/core"
+	"github.com/sqlrush/codexgo/pkg/protocol"
+	"github.com/sqlrush/codexgo/pkg/rollout"
+	"github.com/sqlrush/codexgo/pkg/threadstore"
 )
 
 // completingTurn returns a single mock turn that completes cleanly: created,

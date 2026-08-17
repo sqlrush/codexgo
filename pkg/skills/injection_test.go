@@ -5,8 +5,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/utils/abspath"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // makeSkill builds a minimal SkillMetadata with an absolute SKILL.md path,

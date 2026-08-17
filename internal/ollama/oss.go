@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/sqlrush/codexgo/internal/modelproviderinfo"
+	"github.com/sqlrush/codexgo/pkg/modelproviderinfo"
 )
 
 // DefaultOSSModel is the default OSS model used when --oss is passed without an

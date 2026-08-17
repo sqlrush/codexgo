@@ -3,7 +3,7 @@ package analytics
 import (
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // GuardianReviewDecision is the high-level decision of a guardian review.

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // waitFor polls cond until true or the deadline elapses, failing the test on

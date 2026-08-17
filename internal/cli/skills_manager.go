@@ -11,9 +11,9 @@ import (
 	"context"
 	"os"
 
-	"github.com/sqlrush/codexgo/internal/core"
-	"github.com/sqlrush/codexgo/internal/skills"
 	"github.com/sqlrush/codexgo/internal/utils/abspath"
+	"github.com/sqlrush/codexgo/pkg/core"
+	"github.com/sqlrush/codexgo/pkg/skills"
 )
 
 // skillsInstructionsOpenTag / skillsInstructionsCloseTag mirror the Rust

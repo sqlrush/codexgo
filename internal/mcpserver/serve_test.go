@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/sqlrush/codexgo/internal/appserver"
-	"github.com/sqlrush/codexgo/internal/core"
+	"github.com/sqlrush/codexgo/pkg/core"
 )
 
 // newServeAssembly builds an assembly with a completing mock turn for serve

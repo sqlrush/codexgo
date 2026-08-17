@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/sqlrush/codexgo/internal/codemode"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // AugmentToolSpecForCodeMode augments tool descriptions with code-mode-specific

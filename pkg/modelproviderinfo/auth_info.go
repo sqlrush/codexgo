@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // Default values for command-backed provider auth, mirroring the Rust

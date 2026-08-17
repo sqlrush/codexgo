@@ -7,8 +7,8 @@ import (
 	"sync"
 
 	"github.com/sqlrush/codexgo/internal/appserverproto"
-	"github.com/sqlrush/codexgo/internal/core"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/core"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // InitializeMethod is the v1 handshake method name. It is handled specially,

@@ -8,7 +8,7 @@ package tui
 import (
 	"encoding/json"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // derefStr returns *s or "" when nil.

@@ -3,8 +3,8 @@ package localexec
 import (
 	"context"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/sandbox"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // ExecRequest describes a command to run through the exec service.

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // stageHooks is a HooksEngine that also answers permission-request hooks and

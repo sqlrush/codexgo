@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/config"
+	"github.com/sqlrush/codexgo/pkg/config"
 )
 
 // McpAuthStatus is the authentication status for an MCP server. It is a port of

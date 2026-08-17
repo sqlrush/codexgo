@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/sqlrush/codexgo/internal/brand"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // Protected workspace metadata path names that stay read-only under writable

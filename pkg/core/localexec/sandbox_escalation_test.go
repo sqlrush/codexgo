@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/core"
-	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/sandbox"
+	"github.com/sqlrush/codexgo/pkg/core"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // These tests cover the sandbox-denial approval escalation port

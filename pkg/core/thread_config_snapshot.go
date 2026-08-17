@@ -1,7 +1,7 @@
 package core
 
 import (
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // ThreadConfigSnapshot is the immutable view of a thread's effective

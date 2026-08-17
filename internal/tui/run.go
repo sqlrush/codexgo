@@ -6,8 +6,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/sqlrush/codexgo/internal/config"
 	"github.com/sqlrush/codexgo/internal/filesearch"
+	"github.com/sqlrush/codexgo/pkg/config"
 )
 
 // RunConfig parameterizes [Run], the reusable launcher that wires an in-process

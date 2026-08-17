@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/client"
+	"github.com/sqlrush/codexgo/pkg/client"
 )
 
 func TestURLForPath(t *testing.T) {

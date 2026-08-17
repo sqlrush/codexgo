@@ -19,11 +19,11 @@ import (
 	"context"
 	"sync"
 
-	"github.com/sqlrush/codexgo/internal/features"
-	"github.com/sqlrush/codexgo/internal/modelsmanager"
-	maspec "github.com/sqlrush/codexgo/internal/multiagent/spec"
-	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/tools"
+	"github.com/sqlrush/codexgo/pkg/features"
+	"github.com/sqlrush/codexgo/pkg/modelsmanager"
+	maspec "github.com/sqlrush/codexgo/pkg/multiagent/spec"
+	"github.com/sqlrush/codexgo/pkg/protocol"
+	"github.com/sqlrush/codexgo/pkg/tools"
 )
 
 // collabHandlerKind discriminates which real handler a [collabExecutor] routes a

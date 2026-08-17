@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/utils/abspath"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 const dnsLookupTimeout = 2 * time.Second

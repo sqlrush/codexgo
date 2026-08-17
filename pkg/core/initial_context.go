@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/shell"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // buildSessionInitialContext renders the codex initial-context messages seeded

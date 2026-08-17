@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"github.com/sqlrush/codexgo/internal/appserver"
-	"github.com/sqlrush/codexgo/internal/core"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/core"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // MessageProcessor handles JSON-RPC frames arriving over the MCP transport. It is

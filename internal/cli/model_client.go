@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/sqlrush/codexgo/internal/api"
 	"github.com/sqlrush/codexgo/internal/appserver"
-	"github.com/sqlrush/codexgo/internal/client"
-	"github.com/sqlrush/codexgo/internal/config"
-	"github.com/sqlrush/codexgo/internal/core"
 	"github.com/sqlrush/codexgo/internal/login"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/api"
+	"github.com/sqlrush/codexgo/pkg/client"
+	"github.com/sqlrush/codexgo/pkg/config"
+	"github.com/sqlrush/codexgo/pkg/core"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // This file bridges the CLI's credential layer (internal/login + internal/config)

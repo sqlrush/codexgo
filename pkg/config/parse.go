@@ -7,7 +7,7 @@ import (
 
 	toml "github.com/pelletier/go-toml/v2"
 
-	"github.com/sqlrush/codexgo/internal/features"
+	"github.com/sqlrush/codexgo/pkg/features"
 )
 
 // ParseTomlValue parses a TOML document into a value tree (map[string]any tables,

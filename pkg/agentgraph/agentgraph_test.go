@@ -3,8 +3,8 @@ package agentgraph_test
 import (
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/agentgraph"
-	"github.com/sqlrush/codexgo/internal/agentgraph/agentgraphtest"
+	"github.com/sqlrush/codexgo/pkg/agentgraph"
+	"github.com/sqlrush/codexgo/pkg/agentgraph/agentgraphtest"
 )
 
 func TestThreadSpawnEdgeStatusWireValue(t *testing.T) {

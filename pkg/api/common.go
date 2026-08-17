@@ -3,7 +3,7 @@ package api
 import (
 	"encoding/json"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // WebSocket request client-metadata keys, mirroring the Rust constants.

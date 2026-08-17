@@ -3,7 +3,7 @@ package analytics
 import (
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // NowUnixSeconds returns the current Unix time in seconds. Mirrors Rust

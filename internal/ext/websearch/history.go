@@ -3,8 +3,8 @@ package websearch
 import (
 	"strings"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/utils/truncation"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // assistantContextTokenLimit caps assistant output text retained in the search

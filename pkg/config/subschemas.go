@@ -1,7 +1,7 @@
 package config
 
 import (
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // WebSearchToolConfig is the web-search tool config (lives in protocol upstream;

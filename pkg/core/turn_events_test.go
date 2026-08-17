@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/client"
+	"github.com/sqlrush/codexgo/pkg/client"
 )
 
 // TestModelFacingErrorMessage asserts HTTP transport failures surface the

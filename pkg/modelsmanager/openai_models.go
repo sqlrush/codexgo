@@ -13,7 +13,7 @@
 package modelsmanager
 
 import (
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // SpeedTierFast is the legacy "fast" speed-tier identifier. Rust:

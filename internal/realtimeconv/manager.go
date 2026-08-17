@@ -5,7 +5,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // Channel capacities mirror the Rust queue-capacity constants.

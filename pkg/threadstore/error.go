@@ -3,7 +3,7 @@ package threadstore
 import (
 	"fmt"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // ErrorKind classifies a [Error], mirroring the variants of the Rust

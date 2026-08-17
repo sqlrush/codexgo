@@ -1,6 +1,6 @@
 package core
 
-import "github.com/sqlrush/codexgo/internal/protocol"
+import "github.com/sqlrush/codexgo/pkg/protocol"
 
 // autoCompactWindowPrefillKind distinguishes how the prefill baseline for the
 // active auto-compaction window was obtained. A server-observed sample always

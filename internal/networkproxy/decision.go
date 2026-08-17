@@ -3,7 +3,7 @@ package networkproxy
 import (
 	"context"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // NetworkPolicyRequest describes a network request being evaluated. command and

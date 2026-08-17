@@ -3,7 +3,7 @@ package multiagent
 import (
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 func TestRenderInputPreview(t *testing.T) {

@@ -3,7 +3,7 @@ package otel
 import (
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 func ptr[T any](v T) *T { return &v }

@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sqlrush/codexgo/internal/config"
+	"github.com/sqlrush/codexgo/pkg/config"
 )
 
 // runMcpSubcommand handles `codex mcp <list|get|add|remove|login|logout>`,

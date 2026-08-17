@@ -1,8 +1,8 @@
 package config
 
 import (
-	"github.com/sqlrush/codexgo/internal/features"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/features"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // ProfileTui holds TUI settings allowed inside a named profile.

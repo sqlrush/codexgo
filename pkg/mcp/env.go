@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sqlrush/codexgo/internal/config"
+	"github.com/sqlrush/codexgo/pkg/config"
 )
 
 // EnvLookup resolves an environment variable, returning its value and whether it

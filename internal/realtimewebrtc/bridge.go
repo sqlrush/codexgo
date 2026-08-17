@@ -3,7 +3,7 @@ package realtimewebrtc
 import (
 	"fmt"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // OfferSdpEvent wraps a freshly generated offer SDP as the protocol

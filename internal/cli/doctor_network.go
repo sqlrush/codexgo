@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/sqlrush/codexgo/internal/login"
-	"github.com/sqlrush/codexgo/internal/modelproviderinfo"
+	"github.com/sqlrush/codexgo/pkg/modelproviderinfo"
 )
 
 // doctorSkipNetworkEnv is the environment variable that disables live network

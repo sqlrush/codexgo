@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/client"
+	"github.com/sqlrush/codexgo/pkg/client"
 )
 
 // APIErrorKind discriminates the variants of APIError, mirroring the Rust

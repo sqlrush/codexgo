@@ -3,7 +3,7 @@ package networkproxy
 import (
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 const (

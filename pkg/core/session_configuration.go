@@ -1,8 +1,8 @@
 package core
 
 import (
-	"github.com/sqlrush/codexgo/internal/features"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/features"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // SessionConfiguration is the snapshot of per-session settings that the turn

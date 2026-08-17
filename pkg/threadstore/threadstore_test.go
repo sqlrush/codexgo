@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/rollout"
+	"github.com/sqlrush/codexgo/pkg/protocol"
+	"github.com/sqlrush/codexgo/pkg/rollout"
 )
 
 func tid(s string) protocol.ThreadID { return protocol.NewThreadID(s) }

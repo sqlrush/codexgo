@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // ErrEmptySessionFile is returned when a rollout file contains no records.

@@ -5,8 +5,8 @@ import (
 	"errors"
 
 	"github.com/sqlrush/codexgo/internal/networkproxy"
-	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/pty"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // OutputMode selects how a sandboxed command's stdio is wired.

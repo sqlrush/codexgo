@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/sqlrush/codexgo/internal/gitutils/gitroot"
-	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/utils/abspath"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // ProjectTrustContext captures the data needed to decide whether a directory is

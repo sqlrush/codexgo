@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // TaskKind classifies the work a running task performs. Mirrors the Rust

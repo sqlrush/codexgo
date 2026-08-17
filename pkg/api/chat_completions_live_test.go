@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/client"
+	"github.com/sqlrush/codexgo/pkg/client"
 )
 
 // probeBearer is a minimal AuthProvider attaching a fixed bearer token.

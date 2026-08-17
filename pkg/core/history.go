@@ -3,7 +3,7 @@ package core
 import (
 	"sync"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // ConversationHistory is the thread-safe, session-scoped record of conversation

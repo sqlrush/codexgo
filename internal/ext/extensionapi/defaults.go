@@ -3,7 +3,7 @@ package extensionapi
 import (
 	"context"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // BaseThreadLifecycleContributor provides no-op defaults for every

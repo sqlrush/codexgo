@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/sqlrush/codexgo/internal/login"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // PathStyle selects the URL prefix used for backend requests.

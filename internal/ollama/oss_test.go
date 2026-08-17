@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/modelproviderinfo"
+	"github.com/sqlrush/codexgo/pkg/modelproviderinfo"
 )
 
 func TestSupportsResponses(t *testing.T) {

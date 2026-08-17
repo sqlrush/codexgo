@@ -3,7 +3,7 @@ package realtimeconv
 import (
 	"encoding/base64"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // outputAudioState tracks the cumulative duration of model audio for the current

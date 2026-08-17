@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/sqlrush/codexgo/internal/ext/extensionapi"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // hostConfig is a stand-in for the host configuration type the registry is built

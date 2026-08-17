@@ -3,8 +3,8 @@ package core
 import (
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/modelsmanager"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/modelsmanager"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // TestBuildReasoningMapsUltraToMax mirrors the 0.147 client test for

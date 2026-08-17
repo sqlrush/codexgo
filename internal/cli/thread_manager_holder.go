@@ -3,7 +3,7 @@ package cli
 import (
 	"sync"
 
-	"github.com/sqlrush/codexgo/internal/core"
+	"github.com/sqlrush/codexgo/pkg/core"
 )
 
 // threadManagerHolder is the guarded late-binding cell for the process-wide

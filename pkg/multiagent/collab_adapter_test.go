@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/rollout"
-	"github.com/sqlrush/codexgo/internal/threadstore"
+	"github.com/sqlrush/codexgo/pkg/protocol"
+	"github.com/sqlrush/codexgo/pkg/rollout"
+	"github.com/sqlrush/codexgo/pkg/threadstore"
 
-	"github.com/sqlrush/codexgo/internal/core"
+	"github.com/sqlrush/codexgo/pkg/core"
 )
 
 // TestCollabAdapterSpawnSendCloseRoundTrip drives the adapter against a real

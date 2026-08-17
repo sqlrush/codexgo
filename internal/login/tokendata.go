@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // TokenData is the token bundle persisted under auth.json's "tokens" field.

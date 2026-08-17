@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 func eventItem(t *testing.T, kind protocol.EventMsgKind, payload string) RolloutItem {

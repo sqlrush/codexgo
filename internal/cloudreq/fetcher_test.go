@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/sqlrush/codexgo/internal/login"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 func TestBackendFetcherMapsStatuses(t *testing.T) {

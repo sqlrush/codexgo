@@ -3,7 +3,7 @@ package read
 import (
 	"strings"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // MemoriesUsageKind classifies which memory artifact a read command touched. It

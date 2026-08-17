@@ -7,7 +7,7 @@ import (
 
 	"github.com/sqlrush/codexgo/internal/appserverclient"
 	"github.com/sqlrush/codexgo/internal/appserverproto"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // EventSink consumes the JSONL events the session produces and is responsible

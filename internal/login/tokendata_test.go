@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // fakeJWT builds a header.payload.sig JWT whose payload is JSON, mirroring the

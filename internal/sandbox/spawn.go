@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/pty"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // SelectParams describes the policy inputs that decide which sandbox backend a

@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // DirectFileSystem performs the raw filesystem I/O. It rejects any non-nil

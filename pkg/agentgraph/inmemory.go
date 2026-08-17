@@ -5,7 +5,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // InMemoryAgentGraphStore is a process-local [AgentGraphStore] used for tests and

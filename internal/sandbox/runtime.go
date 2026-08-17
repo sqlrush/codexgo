@@ -1,6 +1,6 @@
 package sandbox
 
-import "github.com/sqlrush/codexgo/internal/protocol"
+import "github.com/sqlrush/codexgo/pkg/protocol"
 
 // This file ports the slice of codex-protocol's permission-resolution engine
 // that the sandboxing crate depends on but that internal/protocol intentionally

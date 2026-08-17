@@ -3,7 +3,7 @@ package hooks
 import (
 	"context"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // Engine holds the resolved set of command hook handlers plus the shell used to

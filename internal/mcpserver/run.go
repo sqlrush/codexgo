@@ -6,9 +6,9 @@ import (
 	"io"
 
 	"github.com/sqlrush/codexgo/internal/appserver"
-	"github.com/sqlrush/codexgo/internal/core"
-	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/rollout"
+	"github.com/sqlrush/codexgo/pkg/core"
+	"github.com/sqlrush/codexgo/pkg/protocol"
+	"github.com/sqlrush/codexgo/pkg/rollout"
 )
 
 // RunConfig bundles the inputs needed to run the MCP server over stdio. The

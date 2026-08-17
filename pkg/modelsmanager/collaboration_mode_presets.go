@@ -6,7 +6,7 @@ import (
 
 	_ "embed"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // collaborationModePlan is the bundled "plan" collaboration-mode template.

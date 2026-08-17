@@ -3,7 +3,7 @@ package write
 import (
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 func inputText(text string) protocol.ContentItem {

@@ -3,7 +3,7 @@ package appserverproto
 import (
 	"fmt"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // This file ports the stateless projections from the Rust app-server-protocol

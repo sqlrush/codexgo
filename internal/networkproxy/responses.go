@@ -1,6 +1,6 @@
 package networkproxy
 
-import "github.com/sqlrush/codexgo/internal/protocol"
+import "github.com/sqlrush/codexgo/pkg/protocol"
 
 // policyDecisionDetails carries the policy context for a blocked response.
 type policyDecisionDetails struct {

@@ -5,7 +5,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // codexThreadIDEnvVar is the environment variable populated with the thread id.

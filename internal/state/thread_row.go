@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/rollout"
+	"github.com/sqlrush/codexgo/pkg/protocol"
+	"github.com/sqlrush/codexgo/pkg/rollout"
 )
 
 // insertThreadColumns is the shared INSERT prefix for thread upserts. It writes

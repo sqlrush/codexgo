@@ -3,8 +3,8 @@ package extensionapi
 import (
 	"context"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/tools"
+	"github.com/sqlrush/codexgo/pkg/protocol"
+	"github.com/sqlrush/codexgo/pkg/tools"
 )
 
 // AgentSpawner is the constructor-injected host helper for extensions that need

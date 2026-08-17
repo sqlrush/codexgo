@@ -3,7 +3,7 @@ package threadstore
 import (
 	"context"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // ThreadStore is the storage-neutral thread persistence boundary, mirroring the

@@ -1,6 +1,6 @@
 package sandbox
 
-import "github.com/sqlrush/codexgo/internal/protocol"
+import "github.com/sqlrush/codexgo/pkg/protocol"
 
 // globScanDepth mirrors the policy_transforms::GlobScanDepth enum: a bounded
 // depth or an unbounded marker, used only when a deny-glob entry is present.

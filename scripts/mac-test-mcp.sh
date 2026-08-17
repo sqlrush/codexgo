@@ -5,4 +5,4 @@ set -eu
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 export GOFLAGS=-mod=readonly
 cd /Users/sqlrush/codexgo
-go test -race ./internal/mcp/... ./internal/cli/... ./internal/core/... "$@"
+go test -race ./pkg/mcp/... ./internal/cli/... ./pkg/core/... "$@"

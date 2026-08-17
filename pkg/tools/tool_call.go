@@ -3,8 +3,8 @@ package tools
 import (
 	"context"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/utils/truncation"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // ConversationHistory is a raw response-history snapshot available when an

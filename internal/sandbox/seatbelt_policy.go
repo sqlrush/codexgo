@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/sqlrush/codexgo/internal/networkproxy"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // CreateSeatbeltCommandArgsParams bundles the inputs for generating the

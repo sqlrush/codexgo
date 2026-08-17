@@ -6,8 +6,8 @@ import (
 	"io"
 	"sort"
 
-	"github.com/sqlrush/codexgo/internal/config"
-	"github.com/sqlrush/codexgo/internal/features"
+	"github.com/sqlrush/codexgo/pkg/config"
+	"github.com/sqlrush/codexgo/pkg/features"
 )
 
 // runFeaturesSubcommand handles `codex features <list|enable|disable>`, mirroring

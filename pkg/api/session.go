@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/client"
+	"github.com/sqlrush/codexgo/pkg/client"
 )
 
 // endpointSession drives request building, retries, auth, and telemetry for a

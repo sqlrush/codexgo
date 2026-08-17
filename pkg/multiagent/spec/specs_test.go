@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/modelsmanager"
-	"github.com/sqlrush/codexgo/internal/tools"
+	"github.com/sqlrush/codexgo/pkg/modelsmanager"
+	"github.com/sqlrush/codexgo/pkg/tools"
 )
 
 // bareSpawnOptions builds the SpawnAgentToolOptions used in a default codex run:

@@ -1,6 +1,6 @@
 package multiagent
 
-import "github.com/sqlrush/codexgo/internal/protocol"
+import "github.com/sqlrush/codexgo/pkg/protocol"
 
 // StatusFromEvent derives the next agent status from a single emitted event,
 // returning (status, true) when the event affects status tracking and

@@ -5,7 +5,7 @@ import (
 
 	_ "embed"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // BaseInstructions is the bundled base prompt. Rust: BASE_INSTRUCTIONS =

@@ -12,7 +12,7 @@ package agentgraph
 import (
 	"context"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // ThreadSpawnEdgeStatus is the lifecycle status attached to a directional

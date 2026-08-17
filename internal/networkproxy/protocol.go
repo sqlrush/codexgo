@@ -1,6 +1,6 @@
 package networkproxy
 
-import "github.com/sqlrush/codexgo/internal/protocol"
+import "github.com/sqlrush/codexgo/pkg/protocol"
 
 // NetworkProtocol identifies the transport that a policy decision applies to.
 // It mirrors the Rust `NetworkProtocol` enum and is distinct from

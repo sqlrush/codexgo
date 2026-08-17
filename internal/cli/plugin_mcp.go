@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sqlrush/codexgo/internal/config"
 	"github.com/sqlrush/codexgo/internal/plugins"
+	"github.com/sqlrush/codexgo/pkg/config"
 )
 
 // pluginRootPlaceholders are substituted with the resolved plugin install root

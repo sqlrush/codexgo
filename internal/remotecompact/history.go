@@ -3,7 +3,7 @@ package remotecompact
 import (
 	"math"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // KeepUserMessage decides whether a user-role message from a compacted

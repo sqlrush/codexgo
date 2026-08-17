@@ -2,7 +2,7 @@ package engine
 
 import (
 	"github.com/sqlrush/codexgo/internal/codemode"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // runtimeCommandKind enumerates the commands a host delivers to a running cell

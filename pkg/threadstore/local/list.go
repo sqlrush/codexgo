@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/rollout"
 	"github.com/sqlrush/codexgo/internal/state"
-	"github.com/sqlrush/codexgo/internal/threadstore"
+	"github.com/sqlrush/codexgo/pkg/rollout"
+	"github.com/sqlrush/codexgo/pkg/threadstore"
 )
 
 // listScanFallbackPageMax bounds how many rollout files the scan fallback reads

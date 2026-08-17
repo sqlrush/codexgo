@@ -1,8 +1,8 @@
 package core
 
 import (
-	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/rollout"
+	"github.com/sqlrush/codexgo/pkg/protocol"
+	"github.com/sqlrush/codexgo/pkg/rollout"
 )
 
 // ForkSnapshot selects how an existing thread's persisted history is snapshotted

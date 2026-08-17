@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	"github.com/sqlrush/codexgo/internal/appserverproto"
-	"github.com/sqlrush/codexgo/internal/core"
-	"github.com/sqlrush/codexgo/internal/modelproviderinfo"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/core"
+	"github.com/sqlrush/codexgo/pkg/modelproviderinfo"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // strp returns a pointer to s, used to build optional config fields in tests.

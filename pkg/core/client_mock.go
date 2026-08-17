@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/sqlrush/codexgo/internal/api"
+	"github.com/sqlrush/codexgo/pkg/api"
 )
 
 // MockModelClient is a [ModelClient] that replays scripted responses. It is the

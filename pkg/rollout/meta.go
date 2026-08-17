@@ -1,7 +1,7 @@
 package rollout
 
 import (
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // BaseInstructions holds the base instructions for a thread. It corresponds to

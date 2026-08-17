@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/config"
 	"github.com/sqlrush/codexgo/internal/keyring"
+	"github.com/sqlrush/codexgo/pkg/config"
 )
 
 func TestDefaultFactoryUnknownTransport(t *testing.T) {

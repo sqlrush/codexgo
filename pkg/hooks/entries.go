@@ -1,6 +1,6 @@
 package hooks
 
-import "github.com/sqlrush/codexgo/internal/protocol"
+import "github.com/sqlrush/codexgo/pkg/protocol"
 
 func errorEntry(text string) protocol.HookOutputEntry {
 	return protocol.HookOutputEntry{Kind: protocol.HookOutputEntryKindError, Text: text}

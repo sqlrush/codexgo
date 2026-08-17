@@ -9,9 +9,9 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/sqlrush/codexgo/internal/agentgraph"
-	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/state"
+	"github.com/sqlrush/codexgo/pkg/agentgraph"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 const sqliteDriverName = "sqlite"

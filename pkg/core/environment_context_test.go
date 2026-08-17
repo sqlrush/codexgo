@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // TestRenderEnvironmentContextReadOnly pins the `<environment_context>` block

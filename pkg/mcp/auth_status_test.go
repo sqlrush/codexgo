@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/config"
 	"github.com/sqlrush/codexgo/internal/keyring"
+	"github.com/sqlrush/codexgo/pkg/config"
 )
 
 func TestMcpAuthStatusString(t *testing.T) {

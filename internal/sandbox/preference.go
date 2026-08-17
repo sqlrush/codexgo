@@ -1,6 +1,6 @@
 package sandbox
 
-import "github.com/sqlrush/codexgo/internal/protocol"
+import "github.com/sqlrush/codexgo/pkg/protocol"
 
 // SandboxType identifies which platform sandbox backend a command should run
 // under. Mirrors codex-sandboxing SandboxType.

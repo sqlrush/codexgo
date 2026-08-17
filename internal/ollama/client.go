@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/modelproviderinfo"
+	"github.com/sqlrush/codexgo/pkg/modelproviderinfo"
 )
 
 // connectTimeout is the dial timeout applied when probing or talking to a local

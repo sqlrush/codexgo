@@ -12,9 +12,9 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 
-	"github.com/sqlrush/codexgo/internal/config"
-	"github.com/sqlrush/codexgo/internal/modelsmanager"
 	"github.com/sqlrush/codexgo/internal/tui"
+	"github.com/sqlrush/codexgo/pkg/config"
+	"github.com/sqlrush/codexgo/pkg/modelsmanager"
 )
 
 // buildModelPickerEntries assembles the /model picker list: the bundled

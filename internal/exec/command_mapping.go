@@ -1,8 +1,8 @@
 package exec
 
 import (
-	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/shellcmd"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // Command executions are not modeled as engine v1 TurnItems; the engine reports

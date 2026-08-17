@@ -17,8 +17,8 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/tools"
+	"github.com/sqlrush/codexgo/pkg/protocol"
+	"github.com/sqlrush/codexgo/pkg/tools"
 )
 
 // turnSearchToolEnabled mirrors spec_plan's search_tool_enabled:

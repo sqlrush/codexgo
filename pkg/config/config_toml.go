@@ -1,9 +1,9 @@
 package config
 
 import (
-	"github.com/sqlrush/codexgo/internal/features"
-	"github.com/sqlrush/codexgo/internal/modelproviderinfo"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/features"
+	"github.com/sqlrush/codexgo/pkg/modelproviderinfo"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // ConfigToml is the base configuration deserialized from ~/.codexgo/config.toml.

@@ -13,7 +13,7 @@
 // not redefine them.
 package hooks
 
-import "github.com/sqlrush/codexgo/internal/protocol"
+import "github.com/sqlrush/codexgo/pkg/protocol"
 
 // HookEventNames are the hook event labels as they appear in hooks JSON and
 // config files, in canonical declaration order. Mirrors HOOK_EVENT_NAMES.

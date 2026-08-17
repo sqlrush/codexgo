@@ -10,7 +10,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // OAuth client id and endpoints, mirroring manager.rs constants.

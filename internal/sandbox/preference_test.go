@@ -4,7 +4,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // rootEntry builds a Special(Root) entry with the given access mode.

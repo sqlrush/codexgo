@@ -5,7 +5,7 @@ import (
 	"path"
 	"strconv"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // errInvalidPort is returned when a *_PROXY_URL port is not a valid u16.

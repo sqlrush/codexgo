@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/sqlrush/codexgo/internal/appserverproto"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // CodexEventMethod is the JSON-RPC notification method used to stream raw core

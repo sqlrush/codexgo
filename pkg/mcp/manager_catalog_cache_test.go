@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/config"
+	"github.com/sqlrush/codexgo/pkg/config"
 )
 
 // TestManagerPopulatesCatalogCache covers spec 49 need 2/4 step 1: a successful

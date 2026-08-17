@@ -1,6 +1,6 @@
 package websearch
 
-import "github.com/sqlrush/codexgo/internal/protocol"
+import "github.com/sqlrush/codexgo/pkg/protocol"
 
 // SearchSettings carries server-side search configuration. Rust: SearchSettings;
 // every field uses skip_serializing_if = Option::is_none.

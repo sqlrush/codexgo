@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/config"
+	"github.com/sqlrush/codexgo/pkg/config"
 )
 
 // flakyFactory fails the first failTimes NewTransport calls per server, then

@@ -3,8 +3,8 @@ package core
 import (
 	"context"
 
-	"github.com/sqlrush/codexgo/internal/modelsmanager"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/modelsmanager"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // newTurnContext builds the per-turn read-only [TurnContext] for a submission,

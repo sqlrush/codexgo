@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 func TestFsHelperRequestUsesFsMethodNames(t *testing.T) {

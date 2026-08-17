@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/client"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/client"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 const cyberRestrictedModelForTests = "gpt-5.3-codex"

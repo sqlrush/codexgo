@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/config"
+	"github.com/sqlrush/codexgo/pkg/config"
 )
 
 func TestSetFeatureEnabledInConfig(t *testing.T) {

@@ -1,8 +1,8 @@
 package threadstore
 
 import (
-	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/rollout"
+	"github.com/sqlrush/codexgo/pkg/protocol"
+	"github.com/sqlrush/codexgo/pkg/rollout"
 )
 
 // This file carries the store types added by upstream 0.147 (spec 50 D0.1):

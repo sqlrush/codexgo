@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/core/localexec"
-	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/sandbox"
+	"github.com/sqlrush/codexgo/pkg/core/localexec"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // TestLocalExecServiceSeatbeltEnforcesReadOnly is a behavioral exec test on the

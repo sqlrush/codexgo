@@ -1,8 +1,8 @@
 package websearch
 
 import (
-	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/tools"
+	"github.com/sqlrush/codexgo/pkg/protocol"
+	"github.com/sqlrush/codexgo/pkg/tools"
 )
 
 // EncryptedSearchOutput is the encrypted server-side search result returned to

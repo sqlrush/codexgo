@@ -13,7 +13,7 @@
 package realtimeconv
 
 import (
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // EventKind discriminates the variants of Event. It mirrors the Rust

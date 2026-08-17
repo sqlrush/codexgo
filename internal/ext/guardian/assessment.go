@@ -2,7 +2,7 @@ package guardian
 
 import (
 	"github.com/sqlrush/codexgo/internal/ext/extensionapi"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // AssessmentEmitter publishes guardian assessment lifecycle events into the

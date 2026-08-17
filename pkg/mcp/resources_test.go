@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/config"
+	"github.com/sqlrush/codexgo/pkg/config"
 )
 
 // pagingResourceServer answers initialize, then two pages of resources and a

@@ -3,9 +3,9 @@ package appserver
 import (
 	"context"
 
-	"github.com/sqlrush/codexgo/internal/core"
-	"github.com/sqlrush/codexgo/internal/modelsmanager"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/core"
+	"github.com/sqlrush/codexgo/pkg/modelsmanager"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // defaultThreadIDFactory returns a [core.ThreadIDFactory] that mints UUIDv7

@@ -3,9 +3,9 @@ package skills
 import (
 	"strings"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/utils/abspath"
 	"github.com/sqlrush/codexgo/internal/utils/pluginutil"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // This file ports the pure-logic portion of the Rust

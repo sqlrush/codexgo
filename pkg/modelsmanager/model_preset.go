@@ -1,7 +1,7 @@
 package modelsmanager
 
 import (
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // ModelPreset is the picker-ready model metadata derived from a ModelInfo.

@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/client"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/client"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // hopByHopHeaders are stripped from forwarded requests/responses.

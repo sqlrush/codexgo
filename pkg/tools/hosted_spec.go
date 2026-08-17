@@ -1,8 +1,8 @@
 package tools
 
 import (
-	"github.com/sqlrush/codexgo/internal/modelsmanager"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/modelsmanager"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // This file ports the hosted (provider-executed) tool specs from codex-core's

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/config"
 	"github.com/sqlrush/codexgo/internal/utils/abspath"
+	"github.com/sqlrush/codexgo/pkg/config"
 )
 
 // writeProjectSkill creates a project `.codexgo/skills/<name>/SKILL.md` under root

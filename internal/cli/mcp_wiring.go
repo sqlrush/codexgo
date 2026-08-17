@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sqlrush/codexgo/internal/config"
 	syskeyring "github.com/sqlrush/codexgo/internal/keyring/system"
-	"github.com/sqlrush/codexgo/internal/mcp"
+	"github.com/sqlrush/codexgo/pkg/config"
+	"github.com/sqlrush/codexgo/pkg/mcp"
 )
 
 // effectiveMcpServers merges the explicitly-configured [mcp_servers] with the

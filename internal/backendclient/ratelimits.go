@@ -1,7 +1,7 @@
 package backendclient
 
 import (
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // RateLimitStatusPayload mirrors the backend `/usage` JSON body. It is the

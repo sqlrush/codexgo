@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/config"
 	"github.com/sqlrush/codexgo/internal/keyring"
+	"github.com/sqlrush/codexgo/pkg/config"
 )
 
 func sampleTokens() StoredOAuthTokens {

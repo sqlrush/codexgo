@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/rollout"
+	"github.com/sqlrush/codexgo/pkg/protocol"
+	"github.com/sqlrush/codexgo/pkg/rollout"
 )
 
 // ErrCollabManagerUnavailable mirrors the Rust `CodexErr::UnsupportedOperation`

@@ -1,7 +1,7 @@
 package config
 
 import (
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // Default constants ported from the Rust config crate.

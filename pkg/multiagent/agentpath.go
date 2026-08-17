@@ -3,7 +3,7 @@ package multiagent
 import (
 	"strings"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // resolveAgentPath resolves a reference (absolute or relative) against a base

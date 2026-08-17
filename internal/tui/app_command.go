@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/sqlrush/codexgo/internal/appserverproto"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // AppCommandKind discriminates the [AppCommand] union.

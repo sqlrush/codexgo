@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/sqlrush/codexgo/internal/codemode"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // fakeDelegate is a configurable CodeModeSessionDelegate for exercising the

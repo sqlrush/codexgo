@@ -3,7 +3,7 @@ package filesystem
 import (
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 func rootEntry(access protocol.FileSystemAccessMode) protocol.FileSystemSandboxEntry {

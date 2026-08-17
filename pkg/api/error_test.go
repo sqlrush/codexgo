@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/client"
+	"github.com/sqlrush/codexgo/pkg/client"
 )
 
 func TestAPIErrorMessages(t *testing.T) {

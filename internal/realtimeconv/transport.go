@@ -3,7 +3,7 @@ package realtimeconv
 import (
 	"context"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // Writer sends outbound messages into a realtime session. It is the locally

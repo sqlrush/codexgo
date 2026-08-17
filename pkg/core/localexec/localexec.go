@@ -18,8 +18,8 @@ package localexec
 
 import (
 	"github.com/sqlrush/codexgo/internal/applypatch"
-	"github.com/sqlrush/codexgo/internal/core"
 	"github.com/sqlrush/codexgo/internal/unifiedexec"
+	"github.com/sqlrush/codexgo/pkg/core"
 )
 
 // Deps bundles the local-execution dependencies. Nil fields disable the

@@ -8,9 +8,9 @@ import (
 	"time"
 
 	appserverproto "github.com/sqlrush/codexgo/internal/appserverproto"
-	"github.com/sqlrush/codexgo/internal/config"
 	"github.com/sqlrush/codexgo/internal/login"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/config"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // businessAuth builds a managed-ChatGPT auth on a Business plan with identity.

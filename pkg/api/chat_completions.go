@@ -31,8 +31,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/client"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/client"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // chatCompletionsPath is the endpoint path joined onto the provider base URL.

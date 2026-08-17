@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // Initialize performs the MCP initialization handshake: it sends the initialize

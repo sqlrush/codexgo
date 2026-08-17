@@ -3,8 +3,8 @@ package hooks
 import (
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/config"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/config"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 func boolPtr(b bool) *bool { return &b }

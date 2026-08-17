@@ -8,7 +8,7 @@ import (
 
 	"github.com/sqlrush/codexgo/internal/appserverclient"
 	"github.com/sqlrush/codexgo/internal/appserverproto"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // engineClient is the subset of the in-process app-server client the TUI spine

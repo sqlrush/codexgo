@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // SOCKS5 protocol constants (RFC 1928).

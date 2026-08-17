@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 //go:embed agent_names.txt

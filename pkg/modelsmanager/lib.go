@@ -10,7 +10,7 @@ import (
 
 	_ "embed"
 
-	"github.com/sqlrush/codexgo/internal/modelproviderinfo"
+	"github.com/sqlrush/codexgo/pkg/modelproviderinfo"
 )
 
 // bundledModelsJSON is the model catalog shipped with the crate. Rust:

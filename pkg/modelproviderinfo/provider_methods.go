@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/api"
 	"github.com/sqlrush/codexgo/internal/appserverproto"
+	"github.com/sqlrush/codexgo/pkg/api"
 )
 
 // Validate checks the mutually-exclusive auth configuration for this provider.

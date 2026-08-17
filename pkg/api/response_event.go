@@ -1,6 +1,6 @@
 package api
 
-import "github.com/sqlrush/codexgo/internal/protocol"
+import "github.com/sqlrush/codexgo/pkg/protocol"
 
 // ResponseEventKind discriminates the variants of ResponseEvent, mirroring the
 // Rust `ResponseEvent` enum.

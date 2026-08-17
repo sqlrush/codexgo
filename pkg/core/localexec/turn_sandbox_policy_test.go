@@ -3,8 +3,8 @@ package localexec
 import (
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/sandbox"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // TestResolveTurnSandboxPolicyModes pins the per-turn mapping from sandbox mode +

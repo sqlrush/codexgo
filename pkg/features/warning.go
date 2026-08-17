@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // UnstableFeaturesWarningEvent builds a protocol.Event carrying a WarningEvent

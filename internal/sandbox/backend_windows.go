@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/pty"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // windowsBackend runs commands under the native Windows sandbox: a restricted /

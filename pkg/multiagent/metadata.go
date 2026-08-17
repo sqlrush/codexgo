@@ -1,8 +1,8 @@
 package multiagent
 
 import (
-	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/rollout"
+	"github.com/sqlrush/codexgo/pkg/protocol"
+	"github.com/sqlrush/codexgo/pkg/rollout"
 )
 
 // AgentMetadata is the per-agent bookkeeping tracked in the in-memory

@@ -1,7 +1,7 @@
 package core
 
 import (
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // PreviousTurnSettings captures the model/realtime settings used by the most

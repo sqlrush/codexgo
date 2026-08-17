@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/tools"
+	"github.com/sqlrush/codexgo/pkg/protocol"
+	"github.com/sqlrush/codexgo/pkg/tools"
 )
 
 // This file ports codex-core's `tools/router.rs` + `tools/mod.rs` and the core

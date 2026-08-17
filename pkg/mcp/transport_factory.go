@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/config"
+	"github.com/sqlrush/codexgo/pkg/config"
 )
 
 // dereferenceMap returns the value of a *map or nil.

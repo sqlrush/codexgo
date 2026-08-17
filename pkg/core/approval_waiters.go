@@ -3,7 +3,7 @@ package core
 import (
 	"sync"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // This file owns the auxiliary pending-waiter registries used by the approval

@@ -3,7 +3,7 @@ package tui
 import (
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/config"
+	"github.com/sqlrush/codexgo/pkg/config"
 )
 
 func TestLoadThemeDefault(t *testing.T) {

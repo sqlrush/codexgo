@@ -3,7 +3,7 @@ package api
 import (
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/client"
+	"github.com/sqlrush/codexgo/pkg/client"
 )
 
 // RequestTelemetry is re-exported from the client package for convenience, so API

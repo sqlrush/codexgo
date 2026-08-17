@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // maxJSSafeInteger is 2^53 - 1, the largest integer JavaScript can represent

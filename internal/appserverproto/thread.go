@@ -3,7 +3,7 @@ package appserverproto
 import (
 	"encoding/json"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // This file ports app-server-protocol v2 thread.rs: the request/response and

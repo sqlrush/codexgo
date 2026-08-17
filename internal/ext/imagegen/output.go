@@ -3,8 +3,8 @@ package imagegen
 import (
 	"fmt"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/tools"
+	"github.com/sqlrush/codexgo/pkg/protocol"
+	"github.com/sqlrush/codexgo/pkg/tools"
 )
 
 // GeneratedImageOutput is the completed image result returned to the model. Rust:

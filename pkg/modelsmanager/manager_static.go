@@ -3,7 +3,7 @@ package modelsmanager
 import (
 	"context"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // Ensure StaticModelsManager satisfies the ModelsManager interface.

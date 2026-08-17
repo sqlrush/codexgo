@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 const fixedPrefix = "2025-02-11T15-35-19-jqmb"

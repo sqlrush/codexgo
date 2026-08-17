@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/sqlrush/codexgo/internal/config"
+	"github.com/sqlrush/codexgo/pkg/config"
 )
 
 // persistTokens persists refreshed tokens into auth storage and updates

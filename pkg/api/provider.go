@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/client"
+	"github.com/sqlrush/codexgo/pkg/client"
 )
 
 // RetryConfig is the high-level retry configuration for a provider. It mirrors

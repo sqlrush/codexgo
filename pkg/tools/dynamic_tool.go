@@ -3,7 +3,7 @@ package tools
 import (
 	"fmt"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // ParseDynamicTool lowers a dynamic tool spec into a ToolDefinition, sanitizing

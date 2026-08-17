@@ -3,7 +3,7 @@ package sandbox
 import (
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // TestToLegacySandboxPolicyExternal verifies the ExternalSandbox arm maps onto

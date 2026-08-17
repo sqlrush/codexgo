@@ -3,7 +3,7 @@ package tools
 import (
 	"context"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // ToolExposure controls where a tool is exposed to the model. Mirrors Rust

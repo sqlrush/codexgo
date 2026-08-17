@@ -3,7 +3,7 @@ package filesystem
 import (
 	"context"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // UnsandboxedFileSystem wraps a [DirectFileSystem] and rejects any sandbox

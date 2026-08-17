@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // fakeUploader records the batches it receives.

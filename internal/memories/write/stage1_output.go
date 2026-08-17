@@ -3,7 +3,7 @@ package write
 import (
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // Stage1Output is the DB-backed stage-1 memory extraction row used to rebuild

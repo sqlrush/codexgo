@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/sqlrush/codexgo/internal/brand"
-	"github.com/sqlrush/codexgo/internal/config"
 	"github.com/sqlrush/codexgo/internal/keyring"
+	"github.com/sqlrush/codexgo/pkg/config"
 )
 
 // keyringService is the keyring service name under which MCP OAuth credentials

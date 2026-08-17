@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/sqlrush/codexgo/internal/exec"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // runExecSubcommand handles `codex exec` (alias `e`): non-interactive agent runs.

@@ -5,7 +5,7 @@ import (
 
 	"github.com/sqlrush/codexgo/internal/backendclient"
 	"github.com/sqlrush/codexgo/internal/login"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // fetchAttemptKind categorizes a fetch attempt failure.

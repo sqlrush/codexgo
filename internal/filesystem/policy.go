@@ -3,7 +3,7 @@ package filesystem
 import (
 	"path/filepath"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // This file ports the subset of `FileSystemSandboxPolicy` predicate logic from

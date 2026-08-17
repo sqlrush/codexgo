@@ -1,9 +1,9 @@
 package unifiedexec
 
 import (
-	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/sandbox"
 	"github.com/sqlrush/codexgo/internal/utils/truncation"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // ExecCommandRequest describes a command to open as a unified-exec session.

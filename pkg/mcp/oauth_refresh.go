@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/config"
+	"github.com/sqlrush/codexgo/pkg/config"
 )
 
 // refreshTimeout bounds a single token-refresh request (upstream: 45s).

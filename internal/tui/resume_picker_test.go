@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/threadstore"
+	"github.com/sqlrush/codexgo/pkg/protocol"
+	"github.com/sqlrush/codexgo/pkg/threadstore"
 )
 
 // fakeStore is a minimal ThreadStore for picker tests: it serves a fixed page

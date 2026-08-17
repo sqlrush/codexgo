@@ -3,7 +3,7 @@ package cli
 import (
 	"context"
 
-	"github.com/sqlrush/codexgo/internal/config"
+	"github.com/sqlrush/codexgo/pkg/config"
 )
 
 // doctorContext is the resolved configuration projection shared across doctor

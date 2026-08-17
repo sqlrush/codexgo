@@ -1,6 +1,6 @@
 package spec
 
-import "github.com/sqlrush/codexgo/internal/tools"
+import "github.com/sqlrush/codexgo/pkg/tools"
 
 // Search-text constants for the five collab tools, mirroring the literals in the
 // Rust multi_agents handlers' `search_info` methods.

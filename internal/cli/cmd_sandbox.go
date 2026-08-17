@@ -6,9 +6,9 @@ import (
 	"io"
 	"os"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/pty"
 	"github.com/sqlrush/codexgo/internal/sandbox"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // runSandboxSubcommand handles `codex sandbox [OPTIONS] -- <COMMAND>...`: run a

@@ -3,7 +3,7 @@ package core
 import (
 	"net/http"
 
-	"github.com/sqlrush/codexgo/internal/api"
+	"github.com/sqlrush/codexgo/pkg/api"
 )
 
 // buildResponsesOptions assembles the per-request [api.ResponsesOptions],
