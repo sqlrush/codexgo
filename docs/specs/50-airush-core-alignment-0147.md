@@ -144,3 +144,13 @@ turn id 就是 submission id，上游用 UUID；airush 的 `agent_rollout_events
 宿主先在自己的 store 建线程行、首轮才 spawn 会话（airush：pgstore CreateThread → SubmitTurn 时 spawn）时，
 需要 ThreadManager 用同一个 id：新增 `StartThreadOptions.ThreadID *protocol.ThreadID`（仅对新线程生效，
 resume 仍取历史里的 id）；不设则照旧走 `ThreadIDFactory`。用例 `TestStartThreadWithHostThreadID`。
+
+### 2026-08-17 D0.13 补：事件队列不再关闭 + 子 agent 会话脱离父 tool 调用的取消
+
+① `runSubmissionLoop` 退出时 `close(rxEvent)`，而 turn 任务 goroutine 可能仍在 `SendEvent`——`select` 里
+"发到已关闭通道"是 panic（airush 子 agent 场景实测：`panic: send on closed channel`）。上游 async_channel
+对关闭后的发送返回 Err 而非崩溃。改为：队列不关闭，`NextEvent` 以 `loopDone` 判 EOF（先排空缓冲再报
+`ErrInternalAgentDied`）。用例 `TestNextEventAfterTeardownDrainsThenEOF`。
+② `multiagent.Control.spawnThread` 用的 ctx 是父线程 tool 调用的 ctx，父 turn 结束即取消 → 子会话被杀
+（上游子线程独立存活，直到 close_agent）。改为 `context.WithoutCancel(ctx)`：保留宿主 values（租户/trace），
+去掉取消链。

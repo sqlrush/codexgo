@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/sqlrush/codexgo/pkg/api"
 	"github.com/sqlrush/codexgo/pkg/protocol"
@@ -135,5 +136,35 @@ func TestSeededHistoryIsNotRePersisted(t *testing.T) {
 		if k == "response_item:message" {
 			t.Fatalf("resumed history was re-persisted: %v", rec.kinds())
 		}
+	}
+}
+
+// TestNextEventAfterTeardownDrainsThenEOF: the event queue is never closed; a
+// task goroutine emitting during teardown must not panic, and NextEvent still
+// yields buffered events before reporting ErrInternalAgentDied.
+func TestNextEventAfterTeardownDrainsThenEOF(t *testing.T) {
+	rec := &captureRecorder{}
+	codex := spawnWithRecorder(t, rec, rollout.InitialHistory{})
+	sess := codex.Session()
+	if err := codex.Shutdown(context.Background()); err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+	// Late emit after the loop exited: must not panic (channel is open, ctx done).
+	sess.SendEvent("late", protocol.EventMsg{Type: protocol.EventMsgKindAgentMessage, AgentMessage: &protocol.AgentMessageEvent{Message: "late"}})
+	deadline, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	sawEOF := false
+	for i := 0; i < 16; i++ {
+		_, err := codex.NextEvent(deadline)
+		if errors.Is(err, ErrInternalAgentDied) {
+			sawEOF = true
+			break
+		}
+		if err != nil {
+			t.Fatalf("next event: %v", err)
+		}
+	}
+	if !sawEOF {
+		t.Fatal("NextEvent never reported EOF after teardown")
 	}
 }

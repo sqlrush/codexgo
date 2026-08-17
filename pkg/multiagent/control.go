@@ -242,6 +242,10 @@ func (c *Control) spawnThread(
 	source rollout.SessionSource,
 	options SpawnOptions,
 ) (core.NewThread, error) {
+	// A child's lifetime is not the parent's tool call: the Rust child thread keeps
+	// running after spawn_agent returns (the parent waits on it later, or closes
+	// it). Keep the caller's values (host tenant, tracing) but drop its cancellation.
+	ctx = context.WithoutCancel(ctx)
 	if options.Fork != nil {
 		return c.spawnForkedThread(ctx, cfg, source, options)
 	}

@@ -12,8 +12,9 @@ import (
 // received or the submission channel/session context closes. On exit it closes
 // loopDone (so waiters unblock) and the event queue (so consumers see EOF).
 func (c *Codex) runSubmissionLoop() {
+	// Note: rxEvent is deliberately left open — a still-running task goroutine
+	// may emit after teardown; NextEvent reports EOF via loopDone instead.
 	defer close(c.loopDone)
-	defer close(c.rxEvent)
 	defer c.session.cancel()
 
 	sess := c.session

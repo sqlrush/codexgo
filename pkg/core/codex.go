@@ -296,14 +296,22 @@ func (c *Codex) SubmitWithID(sub protocol.Submission) error {
 // cancellation. It returns [ErrInternalAgentDied] once the loop has terminated
 // and the event queue is drained. Mirrors the Rust `Codex::next_event`.
 func (c *Codex) NextEvent(ctx context.Context) (protocol.Event, error) {
+	// The event queue is never closed (a task goroutine may still be emitting
+	// while the loop tears down; Rust's async_channel turns late sends into an
+	// error, Go would panic on a closed channel). EOF is "loop done and queue
+	// drained": prefer buffered events over the done signal so nothing is lost.
 	select {
-	case ev, ok := <-c.rxEvent:
-		if !ok {
-			return protocol.Event{}, ErrInternalAgentDied
-		}
+	case ev := <-c.rxEvent:
 		return ev, nil
 	case <-ctx.Done():
 		return protocol.Event{}, ctx.Err()
+	case <-c.loopDone:
+		select {
+		case ev := <-c.rxEvent:
+			return ev, nil
+		default:
+			return protocol.Event{}, ErrInternalAgentDied
+		}
 	}
 }
 
