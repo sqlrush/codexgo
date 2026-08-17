@@ -55,6 +55,9 @@ type Config struct {
 	NicknameCandidates func(role string) []string
 	// NicknamePicker selects a nickname from the available pool (testability seam).
 	NicknamePicker NicknamePicker
+	// ExecutionLimiter bounds concurrently EXECUTING sub-agent turns (0.147
+	// AgentExecutionLimiter); nil = unlimited. See [NewCountingExecutionLimiter].
+	ExecutionLimiter ExecutionLimiter
 }
 
 // Control is the control-plane handle for multi-agent operations. It is held by
@@ -70,6 +73,7 @@ type Control struct {
 	sessionID          protocol.SessionID
 	maxThreads         *uint64
 	nicknameCandidates func(role string) []string
+	executionLimiter   ExecutionLimiter
 }
 
 // NewControl constructs a [Control], validating required dependencies at the
@@ -92,6 +96,7 @@ func NewControl(cfg Config) (*Control, error) {
 		sessionID:          cfg.SessionID,
 		maxThreads:         cloneUint64(cfg.MaxThreads),
 		nicknameCandidates: candidates,
+		executionLimiter:   cfg.ExecutionLimiter,
 	}, nil
 }
 
@@ -318,6 +323,9 @@ func (c *Control) sendOp(ctx context.Context, agentID protocol.ThreadID, op prot
 	thread, err := c.engine.GetThread(agentID)
 	if err != nil {
 		return "", fmt.Errorf("multiagent: get agent %s: %w", agentID, err)
+	}
+	if err := c.ensureExecutionCapacity(thread, agentID, op); err != nil {
+		return "", err
 	}
 	subID, err := thread.Submit(op)
 	if err != nil {
@@ -616,4 +624,48 @@ func cloneUint64(p *uint64) *uint64 {
 	}
 	v := *p
 	return &v
+}
+
+// ensureExecutionCapacity mirrors the upstream
+// `ensure_execution_capacity_for_op`: an op that starts a turn on an agent that
+// is not already running must obtain an execution slot from the configured
+// limiter; when the slot is granted a watcher releases it once the agent's
+// status leaves Running (the upstream guard dropping at turn end). Ops that do
+// not start a turn, agents mid-turn, and Controls without a limiter pass through.
+func (c *Control) ensureExecutionCapacity(thread *core.CodexThread, agentID protocol.ThreadID, op protocol.Op) error {
+	if c.executionLimiter == nil || !opStartsTurn(op) {
+		return nil
+	}
+	if thread.AgentStatus().Kind == protocol.AgentStatusRunning {
+		return nil
+	}
+	if err := c.executionLimiter.TryAcquire(agentID); err != nil {
+		return fmt.Errorf("multiagent: start turn for agent %s: %w", agentID, err)
+	}
+	current, ch, unsubscribe := thread.SubscribeAgentStatus()
+	go c.releaseWhenIdle(agentID, current, ch, unsubscribe)
+	return nil
+}
+
+// releaseWhenIdle returns the agent's execution slot once its status is no
+// longer Running (or the status stream closes). It tolerates the brief window
+// in which the submitted op has not yet flipped the status to Running by
+// waiting for the first Running→non-Running transition, or for the stream to
+// close, so a slot is never held past the turn.
+func (c *Control) releaseWhenIdle(agentID protocol.ThreadID, current protocol.AgentStatus, ch <-chan protocol.AgentStatus, unsubscribe func()) {
+	defer unsubscribe()
+	defer c.executionLimiter.Release(agentID)
+	sawRunning := current.Kind == protocol.AgentStatusRunning
+	for st := range ch {
+		switch {
+		case st.Kind == protocol.AgentStatusRunning:
+			sawRunning = true
+		case sawRunning:
+			return
+		case IsFinal(st):
+			// The turn ended before we observed Running (very short turn or
+			// rejected op): release now.
+			return
+		}
+	}
 }

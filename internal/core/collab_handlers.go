@@ -777,6 +777,10 @@ func handleWaitAgent(ctx context.Context, control CollabControl, h *ToolHandlerC
 			CallID:            h.CallID,
 		},
 	})
+	// 0.147 lifecycle item (spec 50 D0.7): the wait call starts in_progress and
+	// completes as failed when any target ended Errored/NotFound, so a
+	// sub-agent failure is surfaced to the parent instead of an empty success.
+	emitCollabToolCallItem(h, protocol.CollabAgentToolWait, receivers, receiverAgents, protocol.CollabAgentToolCallStatusInProgress, nil, false)
 
 	statuses, werr := collectWaitStatuses(ctx, control, h, receivers, receiverAgents, timeoutMS)
 	if werr != nil {
@@ -803,6 +807,7 @@ func handleWaitAgent(ctx context.Context, control CollabControl, h *ToolHandlerC
 			Statuses:       statusesByID,
 		},
 	})
+	emitCollabToolCallItem(h, protocol.CollabAgentToolWait, receivers, receiverAgents, protocol.WaitToolCallStatus(statusesByID), statusesByID, true)
 
 	return collabJSONOutput(waitAgentResult{Status: statusMap, TimedOut: timedOut}, "wait_agent"), nil
 }
@@ -871,6 +876,7 @@ func collectWaitStatuses(
 					Statuses:       statuses,
 				},
 			})
+			emitCollabToolCallItem(h, protocol.CollabAgentToolWait, receivers, receiverAgents, protocol.WaitToolCallStatus(statuses), statuses, true)
 			return nil, collabAgentError(id, serr)
 		}
 	}
@@ -1128,4 +1134,35 @@ func sourceRole(src rollout.SessionSource) *string {
 		return cloneStringPtr(src.SubAgent.ThreadSpawn.AgentRole)
 	}
 	return nil
+}
+
+// emitCollabToolCallItem emits the 0.147 CollabAgentToolCall lifecycle item for
+// a collab tool call: ItemStarted while in_progress, ItemCompleted with the
+// final status (completed / failed) and the targets' states. Mirrors the
+// emit_turn_item_started / emit_turn_item_completed pairs in the upstream
+// multi_agents handlers (spec 50 D0.7).
+func emitCollabToolCallItem(h *ToolHandlerContext, tool protocol.CollabAgentTool, receivers []protocol.ThreadID, receiverAgents []protocol.CollabAgentRef, status protocol.CollabAgentToolCallStatus, states map[string]protocol.AgentStatus, completed bool) {
+	if h == nil || h.Session == nil || h.Turn == nil {
+		return
+	}
+	if states == nil {
+		states = map[string]protocol.AgentStatus{}
+	}
+	item := protocol.TurnItem{
+		Type: protocol.TurnItemKindCollabAgentToolCall,
+		CollabAgentToolCall: &protocol.CollabAgentToolCallItem{
+			ID:                h.CallID,
+			Tool:              tool,
+			Status:            status,
+			SenderThreadID:    senderThreadID(h),
+			ReceiverThreadIDs: append([]protocol.ThreadID(nil), receivers...),
+			ReceiverAgents:    append([]protocol.CollabAgentRef(nil), receiverAgents...),
+			AgentsStates:      states,
+		},
+	}
+	if completed {
+		EmitTurnItemCompleted(h.Session, h.Turn, item)
+		return
+	}
+	EmitTurnItemStarted(h.Session, h.Turn, item)
 }

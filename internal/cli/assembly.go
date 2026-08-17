@@ -11,13 +11,11 @@ import (
 	"github.com/sqlrush/codexgo/internal/config"
 	"github.com/sqlrush/codexgo/internal/core"
 	"github.com/sqlrush/codexgo/internal/core/localexec"
-	"github.com/sqlrush/codexgo/internal/ext/goal"
 	"github.com/sqlrush/codexgo/internal/modelproviderinfo"
 	"github.com/sqlrush/codexgo/internal/modelsmanager"
 	"github.com/sqlrush/codexgo/internal/multiagent"
 	"github.com/sqlrush/codexgo/internal/protocol"
 	"github.com/sqlrush/codexgo/internal/rollout"
-	"github.com/sqlrush/codexgo/internal/state"
 	"github.com/sqlrush/codexgo/internal/tools"
 	"github.com/sqlrush/codexgo/internal/unifiedexec"
 	"github.com/sqlrush/codexgo/internal/utils/abspath"
@@ -237,17 +235,6 @@ func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultMode
 		}
 	})
 	model := resolveDefaultModel(defaultModel)
-	// Open the SQLite state runtime under the codex home so goal tools persist
-	// thread goals exactly like codex (goal_tools_supported requires the state
-	// DB). A failed open degrades to no goal tools rather than failing the
-	// assembly, mirroring codex's state_db().is_none() path. The runtime stays
-	// open for the process lifetime (the pools close on exit).
-	var goalStateRuntime *state.StateRuntime
-	if rt, err := state.InitRuntime(context.Background(), codexHome, providerID); err == nil {
-		goalStateRuntime = rt
-	} else {
-		fmt.Fprintf(os.Stderr, "warning: state runtime unavailable, goal tools disabled: %v\n", err)
-	}
 	// The skills manager installs the embedded system skills under
 	// CODEXGO_HOME/skills/.system and renders the <skills_instructions> developer
 	// section for new threads, like codex's include_skill_instructions default.
@@ -274,12 +261,10 @@ func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultMode
 		mcpGateway = mcpManager
 	}
 
-	// Multi-agent control plane + goal event sink: the thread manager only exists
-	// after Assemble returns, while the per-thread router factory below closes over
-	// it, so the manager is published through a guarded holder after assembly. The
-	// holder is shared by the collab control plane (engine) and the goal event sink
-	// (session lookup). The spawn-edge graph is process-wide (shared across roots),
-	// like the Rust agent graph.
+	// Multi-agent control plane: the thread manager only exists after Assemble
+	// returns, while the per-thread router factory below closes over it, so the
+	// manager is published through a guarded holder after assembly. The spawn-edge
+	// graph is process-wide (shared across roots), like the Rust agent graph.
 	threadMgr := &threadManagerHolder{}
 	collabGraph := agentgraph.NewInMemoryAgentGraphStore()
 	asm, err := appserver.Assemble(appserver.AssemblyConfig{
@@ -318,19 +303,6 @@ func assembleResult(factory appserver.ModelClientFactory, codexHome, defaultMode
 			if mcpManager != nil {
 				deps.Mcp = mcpManager
 				deps.McpTools = mcpToolInfos
-			}
-			if goalStateRuntime != nil {
-				// Goal tools persist per-thread goals in the goals DB; the event
-				// sink routes thread_goal_updated accounting events to this thread's
-				// session event stream (late-bound via the shared thread-manager
-				// holder, since the session does not exist yet). The metrics client
-				// stays nil (headless default).
-				deps.GoalTools = goal.NewToolExecutors(
-					threadID,
-					goal.NewStateRuntimeBridge(goalStateRuntime),
-					newGoalEventSink(threadID, threadMgr),
-					nil,
-				)
 			}
 			// Wire the multi-agent control plane so the deferred collab tools
 			// (spawn_agent et al., discovered via tool_search) actually execute.

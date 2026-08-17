@@ -91,11 +91,6 @@ type BuiltinToolDeps struct {
 	DeferredMcpTools []tools.McpToolInfo
 	// WebSearch performs web searches.
 	WebSearch WebSearchRunner
-	// GoalTools are the per-thread goal tool executors (get/create/update) from
-	// internal/ext/goal, present only when the host wires a persistent goal
-	// store — the Go analogue of the Rust goal_tools_supported state-DB check.
-	// A nil slice omits the goal tools.
-	GoalTools []goalToolBridge
 	// Collab is the multi-agent control plane the deferred collab tools route
 	// through (spawn_agent/send_input/resume_agent/wait_agent/close_agent). A nil
 	// value leaves the tools registered for tool_search but unable to execute
@@ -125,11 +120,6 @@ func builtinExecutors(deps BuiltinToolDeps) []ToolExecutor {
 
 	// Core utility tools (spec_plan::add_core_utility_tools order).
 	execs = append(execs, planExecutor{})
-	// Goal tools register right after update_plan, mirroring spec_plan's
-	// goal_tools_enabled block; the per-turn gate lives in goalExecutor.Spec.
-	for _, goalTool := range deps.GoalTools {
-		execs = append(execs, goalExecutor{inner: goalTool})
-	}
 	if deps.UserInput != nil {
 		execs = append(execs, requestUserInputExecutor{req: deps.UserInput})
 	}

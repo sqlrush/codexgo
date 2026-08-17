@@ -486,3 +486,76 @@ func (r *resumingFakeControl) ResumeAgent(ctx context.Context, req CollabResumeR
 	r.fakeCollabControl.mu.Unlock()
 	return nil
 }
+
+// collabToolCallItems collects the CollabAgentToolCall lifecycle items among
+// the buffered item_started/item_completed events, in order.
+func collabToolCallItems(events <-chan protocol.Event) []protocol.CollabAgentToolCallItem {
+	var out []protocol.CollabAgentToolCallItem
+	for {
+		select {
+		case ev := <-events:
+			var item *protocol.TurnItem
+			switch ev.Msg.Type {
+			case protocol.EventMsgKindItemStarted:
+				item = &ev.Msg.ItemStarted.Item
+			case protocol.EventMsgKindItemCompleted:
+				item = &ev.Msg.ItemCompleted.Item
+			}
+			if item != nil && item.Type == protocol.TurnItemKindCollabAgentToolCall {
+				out = append(out, *item.CollabAgentToolCall)
+			}
+		default:
+			return out
+		}
+	}
+}
+
+// TestCollabWaitAgentUpcastsSubAgentFailure asserts the 0.147 wait semantics
+// (spec 50 D0.7): the CollabAgentToolCall item starts in_progress and completes
+// as failed when a target ended Errored or NotFound, and as completed otherwise —
+// a failed sub-agent is no longer an empty success for the parent.
+func TestCollabWaitAgentUpcastsSubAgentFailure(t *testing.T) {
+	cases := []struct {
+		name   string
+		status *protocol.AgentStatus // nil = unknown target (NotFound)
+		want   protocol.CollabAgentToolCallStatus
+	}{
+		{"errored target", &protocol.AgentStatus{Kind: protocol.AgentStatusErrored, ErroredMessage: "boom"}, protocol.CollabAgentToolCallStatusFailed},
+		{"not found target", nil, protocol.CollabAgentToolCallStatusFailed},
+		{"completed target", &protocol.AgentStatus{Kind: protocol.AgentStatusCompleted}, protocol.CollabAgentToolCallStatusCompleted},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sess, events := newTestSession(t)
+			fake := newFakeCollabControl()
+			target := protocol.NewThreadID("44444444-4444-4444-4444-444444444444")
+			if tc.status != nil {
+				fake.statuses[target.String()] = *tc.status
+				ch := make(chan protocol.AgentStatus, 1)
+				ch <- *tc.status
+				fake.subscribeCh[target.String()] = ch
+			}
+			deps := BuiltinToolDeps{Collab: fake}
+			ex := findCollabExecutor(t, deps, "wait_agent")
+			if _, err := ex.Handle(context.Background(), &ToolHandlerContext{
+				Session: sess, Turn: collabTurn(t), CallID: "wait-1", ToolName: ex.Name(),
+				Payload: collabPayload(`{"targets":["` + target.String() + `"],"timeout_ms":10000}`),
+			}); err != nil {
+				t.Fatalf("wait handle: %v", err)
+			}
+			items := collabToolCallItems(events)
+			if len(items) != 2 {
+				t.Fatalf("collab tool-call items = %d, want started+completed", len(items))
+			}
+			if items[0].Status != protocol.CollabAgentToolCallStatusInProgress || items[0].Tool != protocol.CollabAgentToolWait || items[0].ID != "wait-1" {
+				t.Fatalf("started item = %+v", items[0])
+			}
+			if items[1].Status != tc.want {
+				t.Fatalf("completed status = %q, want %q (states %v)", items[1].Status, tc.want, items[1].AgentsStates)
+			}
+			if _, ok := items[1].AgentsStates[target.String()]; !ok {
+				t.Fatalf("completed item should carry the target state, got %v", items[1].AgentsStates)
+			}
+		})
+	}
+}

@@ -891,3 +891,18 @@ func mustMarshal(t *testing.T, v any) string {
 	}
 	return string(raw)
 }
+
+// specNames returns the model-visible spec names for a turn, in advertised
+// order (shared by the router/tool_search/MCP tests).
+func specNames(t *testing.T, router *DefaultToolRouter, tc *TurnContext) []string {
+	t.Helper()
+	specs, err := router.SpecsForTurn(context.Background(), tc)
+	if err != nil {
+		t.Fatalf("SpecsForTurn: %v", err)
+	}
+	names := make([]string, 0, len(specs))
+	for _, spec := range specs {
+		names = append(names, spec.Name())
+	}
+	return names
+}

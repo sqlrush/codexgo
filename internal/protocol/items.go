@@ -31,6 +31,9 @@ const (
 	TurnItemKindFileChange        TurnItemKind = "FileChange"
 	TurnItemKindMcpToolCall       TurnItemKind = "McpToolCall"
 	TurnItemKindContextCompaction TurnItemKind = "ContextCompaction"
+	// TurnItemKindCollabAgentToolCall was added upstream in 0.147 (spec 50 D0.7):
+	// the lifecycle item for spawn/send_input/resume/wait/close collab tools.
+	TurnItemKindCollabAgentToolCall TurnItemKind = "CollabAgentToolCall"
 )
 
 // TurnItem is a single item in a turn-item stream. It is internally tagged on
@@ -38,17 +41,18 @@ const (
 type TurnItem struct {
 	Type TurnItemKind
 
-	UserMessage       *UserMessageItem
-	HookPrompt        *HookPromptItem
-	AgentMessage      *AgentMessageItem
-	Plan              *PlanItem
-	Reasoning         *ReasoningTurnItem
-	WebSearch         *WebSearchItem
-	ImageView         *ImageViewItem
-	ImageGeneration   *ImageGenerationItem
-	FileChange        *FileChangeItem
-	McpToolCall       *McpToolCallItem
-	ContextCompaction *ContextCompactionItem
+	UserMessage         *UserMessageItem
+	HookPrompt          *HookPromptItem
+	AgentMessage        *AgentMessageItem
+	Plan                *PlanItem
+	Reasoning           *ReasoningTurnItem
+	WebSearch           *WebSearchItem
+	ImageView           *ImageViewItem
+	ImageGeneration     *ImageGenerationItem
+	FileChange          *FileChangeItem
+	McpToolCall         *McpToolCallItem
+	ContextCompaction   *ContextCompactionItem
+	CollabAgentToolCall *CollabAgentToolCallItem
 }
 
 // ID returns the id of the active variant.
@@ -76,6 +80,8 @@ func (t TurnItem) ID() string {
 		return t.McpToolCall.ID
 	case TurnItemKindContextCompaction:
 		return t.ContextCompaction.ID
+	case TurnItemKindCollabAgentToolCall:
+		return t.CollabAgentToolCall.ID
 	default:
 		return ""
 	}
@@ -107,6 +113,8 @@ func (t TurnItem) MarshalJSON() ([]byte, error) {
 		payload = t.McpToolCall
 	case TurnItemKindContextCompaction:
 		payload = t.ContextCompaction
+	case TurnItemKindCollabAgentToolCall:
+		payload = t.CollabAgentToolCall
 	default:
 		return nil, fmt.Errorf("unknown TurnItem type: %q", t.Type)
 	}
@@ -157,6 +165,9 @@ func (t *TurnItem) UnmarshalJSON(data []byte) error {
 	case TurnItemKindContextCompaction:
 		out.ContextCompaction = new(ContextCompactionItem)
 		err = json.Unmarshal(data, out.ContextCompaction)
+	case TurnItemKindCollabAgentToolCall:
+		out.CollabAgentToolCall = new(CollabAgentToolCallItem)
+		err = json.Unmarshal(data, out.CollabAgentToolCall)
 	default:
 		return fmt.Errorf("unknown TurnItem type: %q", probe.Type)
 	}
@@ -321,4 +332,61 @@ type McpToolCallItem struct {
 // ContextCompactionItem marks a context-compaction turn item.
 type ContextCompactionItem struct {
 	ID string `json:"id"`
+}
+
+// ----------------------------------------------------------------------------
+// CollabAgentToolCall (0.147, spec 50 D0.7)
+// ----------------------------------------------------------------------------
+
+// CollabAgentTool names the multi-agent v1 tool a [CollabAgentToolCallItem]
+// reports on. Mirrors Rust `CollabAgentTool` (`rename_all = "snake_case"`).
+type CollabAgentTool string
+
+const (
+	CollabAgentToolSpawnAgent  CollabAgentTool = "spawn_agent"
+	CollabAgentToolSendInput   CollabAgentTool = "send_input"
+	CollabAgentToolResumeAgent CollabAgentTool = "resume_agent"
+	CollabAgentToolWait        CollabAgentTool = "wait"
+	CollabAgentToolCloseAgent  CollabAgentTool = "close_agent"
+)
+
+// CollabAgentToolCallStatus is the lifecycle status of a collab tool call.
+// Mirrors Rust `CollabAgentToolCallStatus` (`rename_all = "snake_case"`).
+type CollabAgentToolCallStatus string
+
+const (
+	CollabAgentToolCallStatusInProgress CollabAgentToolCallStatus = "in_progress"
+	CollabAgentToolCallStatusCompleted  CollabAgentToolCallStatus = "completed"
+	// CollabAgentToolCallStatusFailed marks a call whose sub-agent(s) ended in
+	// Errored/NotFound (upstream `wait_tool_call_status`) or whose dispatch
+	// failed — the failure is surfaced to the parent instead of an empty success.
+	CollabAgentToolCallStatusFailed CollabAgentToolCallStatus = "failed"
+)
+
+// CollabAgentToolCallItem is the streamed lifecycle item for a collab tool call.
+// Mirrors Rust `CollabAgentToolCallItem`. AgentsStates maps ThreadID (string
+// on the wire) to the agent's status.
+type CollabAgentToolCallItem struct {
+	ID                string                    `json:"id"`
+	Tool              CollabAgentTool           `json:"tool"`
+	Status            CollabAgentToolCallStatus `json:"status"`
+	SenderThreadID    ThreadID                  `json:"sender_thread_id"`
+	ReceiverThreadIDs []ThreadID                `json:"receiver_thread_ids"`
+	ReceiverAgents    []CollabAgentRef          `json:"receiver_agents"`
+	Prompt            *string                   `json:"prompt,omitempty"`
+	Model             *string                   `json:"model,omitempty"`
+	ReasoningEffort   *ReasoningEffort          `json:"reasoning_effort,omitempty"`
+	AgentsStates      map[string]AgentStatus    `json:"agents_states"`
+}
+
+// WaitToolCallStatus derives the wait call's status from the final statuses of
+// its targets, mirroring upstream `wait_tool_call_status`: any Errored or
+// NotFound target makes the call Failed, otherwise Completed.
+func WaitToolCallStatus(statuses map[string]AgentStatus) CollabAgentToolCallStatus {
+	for _, st := range statuses {
+		if st.Kind == AgentStatusErrored || st.Kind == AgentStatusNotFound {
+			return CollabAgentToolCallStatusFailed
+		}
+	}
+	return CollabAgentToolCallStatusCompleted
 }
