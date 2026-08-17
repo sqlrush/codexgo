@@ -154,3 +154,9 @@ resume 仍取历史里的 id）；不设则照旧走 `ThreadIDFactory`。用例 
 ② `multiagent.Control.spawnThread` 用的 ctx 是父线程 tool 调用的 ctx，父 turn 结束即取消 → 子会话被杀
 （上游子线程独立存活，直到 close_agent）。改为 `context.WithoutCancel(ctx)`：保留宿主 values（租户/trace），
 去掉取消链。
+
+### 2026-08-17 D0.14 补：view_image 只对声明图片输入的模型广告
+
+port 的 `viewImageExecutor.Spec` 无条件返回 spec；上游 spec_plan 按 `model_info.input_modalities` 含 image 才加
+`view_image`。改为按 turn 模型的 `InputModalities` 判（空列表保持旧默认 = 允许），宿主声明纯文本模型即不广告
+（airush 无文件系统，实测金丝雀里 Kimi 看到了 view_image）。用例 `TestViewImageHiddenForTextOnlyModel`。

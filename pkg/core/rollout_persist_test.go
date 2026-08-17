@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/sqlrush/codexgo/pkg/api"
+	"github.com/sqlrush/codexgo/pkg/modelsmanager"
 	"github.com/sqlrush/codexgo/pkg/protocol"
 	"github.com/sqlrush/codexgo/pkg/rollout"
 )
@@ -166,5 +167,22 @@ func TestNextEventAfterTeardownDrainsThenEOF(t *testing.T) {
 	}
 	if !sawEOF {
 		t.Fatal("NextEvent never reported EOF after teardown")
+	}
+}
+
+// TestViewImageHiddenForTextOnlyModel: view_image is advertised only when the
+// turn model declares image input (spec_plan gating); text-only models get no spec.
+func TestViewImageHiddenForTextOnlyModel(t *testing.T) {
+	textOnly := modelsmanager.ModelInfoFromSlug("text-only")
+	textOnly.InputModalities = []protocol.InputModality{protocol.InputModalityText}
+	tc := &TurnContext{ModelInfo: textOnly}
+	if _, ok := (viewImageExecutor{}).Spec(tc); ok {
+		t.Fatal("view_image advertised for a text-only model")
+	}
+	if _, ok := (viewImageExecutor{}).Spec(&TurnContext{ModelInfo: modelsmanager.ModelInfoFromSlug("gpt-5")}); !ok {
+		t.Fatal("view_image hidden for an image-capable model")
+	}
+	if _, ok := (viewImageExecutor{}).Spec(nil); !ok {
+		t.Fatal("nil turn context keeps the historical default")
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/sqlrush/codexgo/pkg/modelsmanager"
 	"github.com/sqlrush/codexgo/pkg/protocol"
 	"github.com/sqlrush/codexgo/pkg/tools"
 )
@@ -270,11 +271,31 @@ type viewImageExecutor struct{}
 
 func (viewImageExecutor) Name() protocol.ToolName { return protocol.PlainToolName("view_image") }
 
-func (viewImageExecutor) Spec(*TurnContext) (tools.ToolSpec, bool) {
+func (viewImageExecutor) Spec(tc *TurnContext) (tools.ToolSpec, bool) {
+	// Only image-capable models see view_image (codex spec_plan gates it on the
+	// model's input_modalities); a text-only catalog entry — or a host that
+	// deliberately declares no image input, like airush — gets no spec.
+	if !modelAcceptsImages(turnModelInfo(tc)) {
+		return tools.ToolSpec{}, false
+	}
 	// Every model in the bundled 0.136.0 catalog sets
 	// supports_image_detail_original = true, so the `detail` enum is always
 	// offered (matching create_view_image_tool for the supported models).
 	return tools.CreateViewImageTool(tools.ViewImageToolOptions{CanRequestOriginalImageDetail: true}), true
+}
+
+// modelAcceptsImages reports whether the model declares image input. An empty
+// modality list keeps the historical default (image allowed).
+func modelAcceptsImages(info modelsmanager.ModelInfo) bool {
+	if len(info.InputModalities) == 0 {
+		return true
+	}
+	for _, m := range info.InputModalities {
+		if m == protocol.InputModalityImage {
+			return true
+		}
+	}
+	return false
 }
 
 func (viewImageExecutor) MatchesPayload(p tools.ToolPayload) bool {
