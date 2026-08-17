@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/sqlrush/codexgo/internal/api"
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/api"
+	"github.com/sqlrush/codexgo/pkg/protocol"
 )
 
 // ErrTurnAborted is the sentinel returned when a turn's sampling request is
@@ -49,6 +49,8 @@ type samplingResult struct {
 // subset: pre-sampling/auto compaction, skills/plugins injection, hooks, goals,
 // and the mailbox/steer machinery are deferred (see STUB notes).
 func runTurn(ctx context.Context, sess *Session, tc *TurnContext, input []turnInput) *string {
+	// Persist the turn context first (Rust run_task), then the turn input.
+	sess.persistTurnContext(ctx, tc)
 	// Record the turn's input items into shared history before the first sampling
 	// request, mirroring the Rust record/drain ordering (turn-input subset).
 	recordTurnInput(sess, input)

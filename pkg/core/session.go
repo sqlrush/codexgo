@@ -4,7 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
+	"github.com/sqlrush/codexgo/pkg/protocol"
+	"github.com/sqlrush/codexgo/pkg/rollout"
 )
 
 // SessionServices bundles the injected manager dependencies a [Session] uses to
@@ -56,6 +57,10 @@ type Session struct {
 
 	// services holds the injected manager dependencies.
 	services SessionServices
+
+	// eventPersistence is the rollout event persistence mode, fixed at spawn
+	// from SessionConfiguration.PersistExtendedHistory.
+	eventPersistence rollout.EventPersistenceMode
 
 	// inputQueue is the session-scoped steer/mailbox input queue (D0.2) and
 	// admissions resolves SubmitUserMessage waiters once a user message is
@@ -141,8 +146,17 @@ func (s *Session) UpdateConfiguration(u SessionSettingsUpdate) SessionConfigurat
 	return s.state.Config
 }
 
-// RecordItems appends items to the shared conversation history.
+// RecordItems appends items to the shared conversation history and persists the
+// persistable ones to the rollout (Rust `record_conversation_items`).
 func (s *Session) RecordItems(items []protocol.ResponseItem) {
+	s.recordIntoHistory(items)
+	s.persistResponseItems(items)
+}
+
+// recordIntoHistory appends items to the shared conversation history without
+// touching the rollout (Rust `record_into_history`): used when seeding resumed
+// or forked history that is already persisted.
+func (s *Session) recordIntoHistory(items []protocol.ResponseItem) {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
 	s.state.History.RecordItems(items)
@@ -161,6 +175,7 @@ func (s *Session) HistoryItems() []protocol.ResponseItem {
 func (s *Session) SendEvent(id string, msg protocol.EventMsg) {
 	ev := protocol.Event{ID: id, Msg: msg}
 	s.updateAgentStatusFromEvent(msg)
+	s.persistEventMsg(msg)
 	select {
 	case s.txEvent <- ev:
 	case <-s.ctx.Done():
@@ -174,6 +189,7 @@ func (s *Session) SendEvent(id string, msg protocol.EventMsg) {
 // cancellation handling match [SendEvent].
 func (s *Session) EmitEvent(ev protocol.Event) {
 	s.updateAgentStatusFromEvent(ev.Msg)
+	s.persistEventMsg(ev.Msg)
 	select {
 	case s.txEvent <- ev:
 	case <-s.ctx.Done():

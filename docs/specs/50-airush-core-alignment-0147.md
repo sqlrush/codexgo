@@ -106,3 +106,29 @@ guardian 实现、agent_jobs/goals 重建、本地文件形态的 thread-store �
 | D0.4 审批阶段 | `core/approvals_stage.go`：hooks → 自动评审（`ReviewerApprover`，`SessionServices.Approver`）→ 用户三路 + approved-for-session 缓存 + `ToolDecisionRecorder`；`ReviewDecision.Rejection`（0.147 Denied{rejection}，双形式 wire）；`TurnContext.ApprovalsReviewer`；localexec 沙箱升级改经 `RequestApproval` | guardian 本体不做（接口留）；`executed_tool_calls`（用户 shell 命令回灌）不做——codexgo 无 run_user_shell_command；shell/exec/apply_patch 首次审批仍在各执行器内（沙箱升级重试已统一，首次提示 STUB 未接入阶段） |
 
 **验收**：`go build ./...`、`go vet ./...` 全绿；Mac `dev-check.sh ./internal/core/... ./internal/threadstore/... ./internal/multiagent/... ./internal/protocol/... ./internal/appserver/...` 全过（cli 5 个 skills 环境用例基线即失败）；airush `mac-codexgo-deps.sh` 未审项仍为空。
+
+### 2026-08-17 D0.9 补：抽核目标包移出 `internal/`（`pkg/`）
+
+Go 的 `internal` 规则按导入路径判定：`github.com/sqlrush/codexgo/internal/...` 不能被 airush 模块导入，
+`go.mod replace`（airush spec-1.8 §8 Q1 ★A）在第一处 import 就编译失败。故把 airush 直接消费的包
+移到 `pkg/`：core（含 localexec/coretest/prompts）、protocol、threadstore（含 local/contracttest）、
+rollout、agentgraph（含 local/agentgraphtest）、multiagent、api（含 responsesws）、client、modelsmanager、
+modelproviderinfo、mcp、config、tools、features、hooks、skills、msghistory；其余（cli/tui/appserver/
+sandbox/exec/state/secrets/utils/…）仍在 `internal/`——`pkg/*` 导入 `internal/*` 在本模块内合法，
+外部只需能导入 `pkg/*`。全仓 import 路径机械改写（gofmt 重排导入分组），行为零变化；
+`scripts/mac-test-mcp.sh` 路径同步；airush `deploy/scripts/mac-codexgo-deps.sh` 改指 `pkg/`，
+第三方闭包不变（uuid + go-toml/v2 + klauspost/compress + uniseg）。
+
+### 2026-08-16 D0.10 补：Session 接通 rollout 持久化（补上 port 里的 STUB）
+
+port 的 `Session` 只把 response item 记进内存历史，`RolloutRecorder` 仅在 session_meta / 压缩两处被写，
+`turn_run.go` 明文标注 "Per-item rollout persistence … STUB"——CLI 装配里 recorder 为 nil，因此从未暴露。
+airush 的事件溯源（spec-1.8 D2：PG 事件流是 SSOT，resume 靠回放）要求 core 自己产出完整 rollout。
+现按上游 `session/mod.rs` 补齐：`RecordItems` = `record_conversation_items`（入历史 + 按
+`rollout.ShouldPersistResponseItem` 持久化）；新增 `recordIntoHistory` = `record_into_history`（seed 恢复/fork
+历史时只入历史不重写）；`SendEvent`/`EmitEvent` 按 `ShouldPersistEventMsg(mode)` 持久化事件（mode 由
+`SessionConfiguration.PersistExtendedHistory` 在 spawn 时定死，避免在事件路径上取状态锁）；`runTurn` 开头持久化
+`turn_context`（`run_task`）。全部经 `rollout.PersistedRolloutItems`（过滤 + 脱敏）→ `services.RolloutRecorder.Record`，
+recorder 为 nil 即空操作，错误吞掉（上游同样 log-and-continue）。CLI 装配 recorder 仍为 nil，行为不变。
+ThreadManager 仍不调用 `store.CreateThread`（port 现状）：宿主先建线程行再 StartThread（airush pgstore 如此接）。
+用例：`rollout_persist_test.go`（过滤/事件策略/失败不影响会话/seed 不重写）。

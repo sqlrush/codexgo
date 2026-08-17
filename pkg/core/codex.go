@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/sqlrush/codexgo/internal/protocol"
-	"github.com/sqlrush/codexgo/internal/rollout"
+	"github.com/sqlrush/codexgo/pkg/protocol"
+	"github.com/sqlrush/codexgo/pkg/rollout"
 )
 
 // InitialSubmitID is the submission id used for events emitted before any client
@@ -104,16 +104,17 @@ func Spawn(ctx context.Context, args CodexSpawnArgs) (CodexSpawnOk, error) {
 	sessionCtx, cancel := context.WithCancel(ctx)
 
 	sess := &Session{
-		threadID:       args.ThreadID,
-		sessionID:      sessionID,
-		installationID: args.InstallationID,
-		rolloutPath:    clonePtr(args.RolloutPath),
-		services:       args.Services,
-		txEvent:        rxEvent,
-		state:          NewSessionState(args.Configuration),
-		agentStatus:    protocol.AgentStatus{Kind: protocol.AgentStatusPendingInit},
-		ctx:            sessionCtx,
-		cancel:         cancel,
+		threadID:         args.ThreadID,
+		sessionID:        sessionID,
+		installationID:   args.InstallationID,
+		rolloutPath:      clonePtr(args.RolloutPath),
+		services:         args.Services,
+		eventPersistence: eventPersistenceFor(args.Configuration),
+		txEvent:          rxEvent,
+		state:            NewSessionState(args.Configuration),
+		agentStatus:      protocol.AgentStatus{Kind: protocol.AgentStatusPendingInit},
+		ctx:              sessionCtx,
+		cancel:           cancel,
 	}
 
 	// Let executors that need the live session (e.g. the unified-exec background
@@ -194,7 +195,8 @@ func seedInitialHistory(sess *Session, hist rollout.InitialHistory) {
 		}
 	}
 	if len(responses) > 0 {
-		sess.RecordItems(responses)
+		// Already persisted: seed history only (Rust record_into_history).
+		sess.recordIntoHistory(responses)
 	}
 }
 
